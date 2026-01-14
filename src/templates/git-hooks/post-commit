@@ -1,0 +1,11 @@
+#!/bin/bash
+# Post-commit: Check for documentation drift
+
+CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+CODE_CHANGES=$(echo "$CHANGED" | grep -cE '\.(ts|js|py|rs|go)$' || echo "0")
+DOC_CHANGES=$(echo "$CHANGED" | grep -cE '\.md$' || echo "0")
+
+if [ "$CODE_CHANGES" -gt 5 ] && [ "$DOC_CHANGES" -eq 0 ]; then
+    echo "Tip: $CODE_CHANGES code files changed with no doc updates."
+    echo "   Consider updating docs/api.md or docs/architecture.md"
+fi

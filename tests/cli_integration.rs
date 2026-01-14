@@ -1,0 +1,508 @@
+//! Integration tests for the Ralph CLI
+//!
+//! Note: We allow deprecated warnings for assert_cmd::Command::cargo_bin
+//! as the replacement requires macro usage that doesn't fit our pattern.
+#![allow(deprecated)]
+
+use assert_cmd::Command;
+use predicates::prelude::*;
+use tempfile::TempDir;
+
+/// Get a Command for the ralph binary
+fn ralph() -> Command {
+    Command::cargo_bin("ralph").unwrap()
+}
+
+#[test]
+fn test_help() {
+    ralph()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Autonomous Claude Code execution"));
+}
+
+#[test]
+fn test_version() {
+    ralph()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0.1.0"));
+}
+
+#[test]
+fn test_bootstrap_creates_structure() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Automation suite bootstrapped"));
+
+    // Verify key files were created
+    assert!(temp.path().join(".claude/CLAUDE.md").exists());
+    assert!(temp.path().join(".claude/settings.json").exists());
+    assert!(temp.path().join(".claude/mcp.json").exists());
+    assert!(temp.path().join("IMPLEMENTATION_PLAN.md").exists());
+    assert!(temp.path().join("PROMPT_build.md").exists());
+}
+
+#[test]
+fn test_context_stats_only() {
+    let temp = TempDir::new().unwrap();
+
+    // Bootstrap first
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    // Run context with stats-only
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("context")
+        .arg("--stats-only")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("files_included"));
+}
+
+#[test]
+fn test_context_builds_file() {
+    let temp = TempDir::new().unwrap();
+
+    // Bootstrap first
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    let output_file = temp.path().join("context.txt");
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("context")
+        .arg("--output")
+        .arg(&output_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Context built"));
+
+    assert!(output_file.exists());
+}
+
+#[test]
+fn test_archive_stats() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("archive")
+        .arg("stats")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("total_docs"));
+}
+
+#[test]
+fn test_archive_list_stale() {
+    let temp = TempDir::new().unwrap();
+
+    // Create docs directory
+    std::fs::create_dir_all(temp.path().join("docs")).unwrap();
+    std::fs::write(temp.path().join("docs/test.md"), "test").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("archive")
+        .arg("list-stale")
+        .arg("--stale-days")
+        .arg("0")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_analytics_sessions_empty() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("sessions")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No sessions found"));
+}
+
+#[test]
+fn test_analytics_aggregate_empty() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("aggregate")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Total sessions: 0"));
+}
+
+#[test]
+fn test_analytics_log_and_retrieve() {
+    let temp = TempDir::new().unwrap();
+
+    // Log an event
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("log")
+        .arg("--session")
+        .arg("test-session")
+        .arg("--event")
+        .arg("test_event")
+        .arg("--data")
+        .arg(r#"{"test": true}"#)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Event logged"));
+
+    // Retrieve sessions
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("sessions")
+        .arg("--json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("test-session"));
+}
+
+#[test]
+fn test_hook_validate_safe_command() {
+    ralph()
+        .arg("hook")
+        .arg("validate")
+        .arg("git status")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Command is safe"));
+}
+
+#[test]
+fn test_hook_validate_dangerous_command() {
+    ralph()
+        .arg("hook")
+        .arg("validate")
+        .arg("rm -rf /")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("Blocked"));
+}
+
+#[test]
+fn test_hook_run_security_filter() {
+    ralph()
+        .arg("hook")
+        .arg("run")
+        .arg("security-filter")
+        .arg("git commit -m test")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_hook_run_security_filter_blocks() {
+    ralph()
+        .arg("hook")
+        .arg("run")
+        .arg("security-filter")
+        .arg("chmod 777 /")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("Blocked"));
+}
+
+#[test]
+fn test_hook_scan_clean_file() {
+    let temp = TempDir::new().unwrap();
+    let file_path = temp.path().join("clean.txt");
+    std::fs::write(&file_path, "This is clean content").unwrap();
+
+    ralph()
+        .arg("hook")
+        .arg("scan")
+        .arg(&file_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No secrets found"));
+}
+
+#[test]
+fn test_hook_scan_file_with_secret() {
+    let temp = TempDir::new().unwrap();
+    let file_path = temp.path().join("secrets.txt");
+    std::fs::write(&file_path, r#"api_key = "sk-secret123""#).unwrap();
+
+    ralph()
+        .arg("hook")
+        .arg("scan")
+        .arg(&file_path)
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("potential secrets"));
+}
+
+#[test]
+fn test_config_paths() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("config")
+        .arg("paths")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Settings:"))
+        .stdout(predicate::str::contains("CLAUDE.md:"))
+        .stdout(predicate::str::contains("Analytics:"));
+}
+
+#[test]
+fn test_config_validate_no_config() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("config")
+        .arg("validate")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("settings.json not found"));
+}
+
+#[test]
+fn test_config_validate_with_config() {
+    let temp = TempDir::new().unwrap();
+
+    // Bootstrap to create config
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("config")
+        .arg("validate")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("settings.json is valid"))
+        .stdout(predicate::str::contains("CLAUDE.md exists"));
+}
+
+#[test]
+fn test_config_show() {
+    let temp = TempDir::new().unwrap();
+
+    // Bootstrap to create config
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("config")
+        .arg("show")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Respect gitignore"));
+}
+
+#[test]
+fn test_config_show_json() {
+    let temp = TempDir::new().unwrap();
+
+    // Bootstrap to create config
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("config")
+        .arg("show")
+        .arg("--json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("respectGitignore")); // Uses serde rename
+}
+
+#[test]
+fn test_analyze_generates_artifacts() {
+    let temp = TempDir::new().unwrap();
+    let output_dir = temp.path().join("analysis");
+
+    // Bootstrap first
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analyze")
+        .arg("--output-dir")
+        .arg(&output_dir)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Analyzing project"));
+
+    // Check that analysis artifacts were created
+    assert!(output_dir.exists());
+    let files: Vec<_> = std::fs::read_dir(&output_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert!(files.len() >= 2); // At least context and docs files
+}
+
+#[test]
+fn test_loop_requires_plan() {
+    let temp = TempDir::new().unwrap();
+
+    // Try to run loop without IMPLEMENTATION_PLAN.md
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("loop")
+        .arg("--max-iterations")
+        .arg("1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("IMPLEMENTATION_PLAN.md not found"));
+}
+
+#[test]
+fn test_verbose_flag() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--verbose")
+        .arg("--project")
+        .arg(temp.path())
+        .arg("archive")
+        .arg("stats")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_nonexistent_project() {
+    ralph()
+        .arg("--project")
+        .arg("/nonexistent/path/that/does/not/exist")
+        .arg("bootstrap")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("does not exist"));
+}
+
+#[test]
+fn test_hook_validate_respects_config_allow_list() {
+    let temp = TempDir::new().unwrap();
+
+    // Create config with restrictive allow list (only git commands)
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{"permissions": {"allow": ["Bash(git *)"], "deny": []}}"#,
+    ).unwrap();
+
+    // git status should be allowed
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("hook")
+        .arg("validate")
+        .arg("git status")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Command is safe"));
+
+    // npm install should be blocked by the config (not in allow list)
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("hook")
+        .arg("validate")
+        .arg("npm install")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("denied by project permissions"));
+}
+
+#[test]
+fn test_hook_validate_respects_config_deny_list() {
+    let temp = TempDir::new().unwrap();
+
+    // Create config that allows everything except npm
+    std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+    std::fs::write(
+        temp.path().join(".claude/settings.json"),
+        r#"{"permissions": {"allow": ["Bash(*)"], "deny": ["Bash(npm *)"]}}"#,
+    ).unwrap();
+
+    // git status should be allowed
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("hook")
+        .arg("validate")
+        .arg("git status")
+        .assert()
+        .success();
+
+    // npm install should be blocked by deny list
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("hook")
+        .arg("validate")
+        .arg("npm install")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("denied by project permissions"));
+}

@@ -1,0 +1,709 @@
+//! Ralph - Claude Code Automation Suite
+//!
+//! A Rust-based automation suite for running Claude Code autonomously
+//! with bombproof reliability, type-checking, and memory guarantees.
+
+use clap::{Parser, Subcommand};
+use colored::Colorize;
+use std::path::PathBuf;
+
+mod analytics;
+mod archive;
+mod bootstrap;
+mod context;
+mod hooks;
+mod loop_manager;
+mod supervisor;
+
+use crate::analytics::Analytics;
+use crate::archive::ArchiveManager;
+use crate::bootstrap::Bootstrap;
+use crate::context::ContextBuilder;
+use crate::hooks::HookType;
+use crate::loop_manager::{LoopManager, LoopMode};
+use ralph::ProjectConfig;
+
+#[derive(Parser)]
+#[command(name = "ralph")]
+#[command(author = "Claude Code Automation Suite")]
+#[command(version = "0.1.0")]
+#[command(about = "Autonomous Claude Code execution with bombproof reliability", long_about = None)]
+#[command(propagate_version = true)]
+struct Cli {
+    /// Project directory (defaults to current directory)
+    #[arg(short, long, global = true, default_value = ".")]
+    project: PathBuf,
+
+    /// Verbose output
+    #[arg(short, long, global = true)]
+    verbose: bool,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Run the main automation loop
+    Loop {
+        /// Loop mode: plan, build, or debug
+        #[arg(value_enum, default_value = "build")]
+        mode: LoopMode,
+
+        /// Maximum iterations
+        #[arg(short, long, default_value = "50")]
+        max_iterations: u32,
+
+        /// Stagnation threshold before switching to debug mode
+        #[arg(short, long, default_value = "5")]
+        stagnation_threshold: u32,
+
+        /// Sync docs every N iterations (0 to disable)
+        #[arg(long, default_value = "5")]
+        doc_sync_interval: u32,
+    },
+
+    /// Build context for LLM analysis
+    Context {
+        /// Output file path
+        #[arg(short, long, default_value = "context.txt")]
+        output: PathBuf,
+
+        /// Context mode: full, code, docs, or config
+        #[arg(short, long, default_value = "full")]
+        mode: context::ContextMode,
+
+        /// Maximum estimated tokens
+        #[arg(long, default_value = "100000")]
+        max_tokens: usize,
+
+        /// Skip narsil-mcp integration
+        #[arg(long)]
+        no_narsil: bool,
+
+        /// Output JSON stats only
+        #[arg(long)]
+        stats_only: bool,
+
+        /// Days after which files are marked stale
+        #[arg(long, default_value = "90")]
+        stale_days: u32,
+    },
+
+    /// Manage documentation archives
+    Archive {
+        #[command(subcommand)]
+        action: ArchiveAction,
+    },
+
+    /// Bootstrap automation suite in a project
+    Bootstrap {
+        /// Force overwrite existing files
+        #[arg(short, long)]
+        force: bool,
+
+        /// Skip git hook installation
+        #[arg(long)]
+        no_git_hooks: bool,
+    },
+
+    /// Analyze project (generate full analysis artifacts)
+    Analyze {
+        /// Output directory for analysis artifacts
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+    },
+
+    /// Show analytics and session history
+    Analytics {
+        #[command(subcommand)]
+        action: AnalyticsAction,
+    },
+
+    /// Security hooks and validation
+    Hook {
+        #[command(subcommand)]
+        action: HookAction,
+    },
+
+    /// Show or validate project configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ArchiveAction {
+    /// Run archive process (move stale docs to archive)
+    Run {
+        /// Stale threshold in days
+        #[arg(short, long, default_value = "90")]
+        stale_days: u32,
+
+        /// Dry run - don't actually move files
+        #[arg(short, long)]
+        dry_run: bool,
+    },
+
+    /// Show archive statistics
+    Stats {
+        /// Stale threshold in days (for stale file detection)
+        #[arg(short, long, default_value = "90")]
+        stale_days: u32,
+    },
+
+    /// List stale files that would be archived
+    ListStale {
+        /// Stale threshold in days
+        #[arg(short, long, default_value = "90")]
+        stale_days: u32,
+    },
+
+    /// Restore a file from archive
+    Restore {
+        /// Path to the archived file to restore
+        path: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum AnalyticsAction {
+    /// Show recent sessions
+    Sessions {
+        /// Show last N sessions
+        #[arg(short, long, default_value = "5")]
+        last: usize,
+
+        /// Show detailed events
+        #[arg(short, long)]
+        detailed: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show aggregate statistics across all sessions
+    Aggregate {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Clear all analytics data
+    Clear {
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Log a custom event (for scripting)
+    Log {
+        /// Session ID
+        #[arg(short, long)]
+        session: String,
+
+        /// Event name
+        #[arg(short, long)]
+        event: String,
+
+        /// Event data as JSON
+        #[arg(short, long, default_value = "{}")]
+        data: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum HookAction {
+    /// Run a specific hook type
+    Run {
+        /// Hook type to run
+        #[arg(value_enum)]
+        hook_type: HookType,
+
+        /// Input for the hook (JSON or command string)
+        input: Option<String>,
+    },
+
+    /// Validate a command against security rules
+    Validate {
+        /// The command to validate
+        command: String,
+    },
+
+    /// Scan a file for secrets
+    Scan {
+        /// File path to scan
+        path: PathBuf,
+    },
+
+    /// Scan all modified files for secrets
+    ScanModified,
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Show current configuration
+    Show {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Validate configuration files
+    Validate,
+
+    /// Show configuration file paths
+    Paths,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    // Initialize tracing
+    let filter = if cli.verbose {
+        "ralph=debug,info"
+    } else {
+        "ralph=info,warn"
+    };
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .init();
+
+    // Resolve project path
+    let project_path = cli.project.canonicalize().unwrap_or(cli.project.clone());
+
+    if !project_path.exists() {
+        eprintln!(
+            "{} Project directory does not exist: {}",
+            "Error:".red().bold(),
+            project_path.display()
+        );
+        std::process::exit(1);
+    }
+
+    match cli.command {
+        Commands::Loop {
+            mode,
+            max_iterations,
+            stagnation_threshold,
+            doc_sync_interval,
+        } => {
+            // Load project configuration
+            let config = ProjectConfig::load(&project_path).unwrap_or_default();
+
+            let mut manager = LoopManager::new(
+                project_path,
+                mode,
+                max_iterations,
+                stagnation_threshold,
+                doc_sync_interval,
+                config,
+                cli.verbose,
+            )?;
+
+            manager.run().await?;
+        }
+
+        Commands::Context {
+            output,
+            mode,
+            max_tokens,
+            no_narsil,
+            stats_only,
+            stale_days,
+        } => {
+            let builder = ContextBuilder::new(project_path)
+                .mode(mode)
+                .max_tokens(max_tokens)
+                .include_narsil(!no_narsil)
+                .stale_threshold_days(stale_days);
+
+            if stats_only {
+                let stats = builder.build_stats()?;
+                println!("{}", serde_json::to_string_pretty(&stats)?);
+            } else {
+                let stats = builder.build(&output)?;
+                println!(
+                    "\n{} Context built: {}",
+                    "OK".green().bold(),
+                    output.display()
+                );
+                println!(
+                    "   Files: {} included, {} skipped",
+                    stats.files_included, stats.files_skipped
+                );
+                println!("   Lines: {}", stats.total_lines);
+                println!("   Tokens (est): {}", stats.estimated_tokens);
+
+                if !stats.stale_files.is_empty() {
+                    println!(
+                        "   {} Stale files ({}): {}",
+                        "Warning:".yellow(),
+                        stats.stale_files.len(),
+                        stats.stale_files.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                    );
+                }
+            }
+        }
+
+        Commands::Archive { action } => {
+            match action {
+                ArchiveAction::Run { stale_days, dry_run } => {
+                    let manager = ArchiveManager::new(project_path, stale_days);
+                    let result = manager.run(dry_run)?;
+
+                    println!(
+                        "\n{} Archive Manager (threshold: {} days)",
+                        "OK".green().bold(),
+                        stale_days
+                    );
+                    println!("   Stale docs archived: {}", result.docs_archived);
+                    println!("   Deprecated ADRs archived: {}", result.decisions_archived);
+
+                    if !result.files_processed.is_empty() {
+                        println!("\n   Files processed:");
+                        for file in &result.files_processed {
+                            println!("     - {} ({})", file.original_path, file.reason);
+                        }
+                    }
+
+                    if dry_run {
+                        println!(
+                            "\n   {} Dry run - no changes made",
+                            "Info:".blue()
+                        );
+                    }
+                }
+
+                ArchiveAction::Stats { stale_days } => {
+                    let manager = ArchiveManager::new(project_path, stale_days);
+                    let stats = manager.get_stats()?;
+                    println!("{}", serde_json::to_string_pretty(&stats)?);
+                }
+
+                ArchiveAction::ListStale { stale_days } => {
+                    let manager = ArchiveManager::new(project_path, stale_days);
+                    let stale_files = manager.find_stale_files()?;
+
+                    if stale_files.is_empty() {
+                        println!("{} No stale files found (threshold: {} days)", "OK".green(), stale_days);
+                    } else {
+                        println!(
+                            "{} Found {} stale files (threshold: {} days):\n",
+                            "Warning:".yellow().bold(),
+                            stale_files.len(),
+                            stale_days
+                        );
+                        for file in &stale_files {
+                            println!("  {} ({} days old)", file.original_path, file.age_days);
+                        }
+                    }
+                }
+
+                ArchiveAction::Restore { path } => {
+                    let manager = ArchiveManager::new(project_path, 90);
+                    let restored_path = manager.restore(&path)?;
+                    println!(
+                        "{} Restored: {}",
+                        "OK".green().bold(),
+                        restored_path.display()
+                    );
+                }
+            }
+        }
+
+        Commands::Bootstrap { force, no_git_hooks } => {
+            let bootstrap = Bootstrap::new(project_path);
+            bootstrap.run(force, !no_git_hooks)?;
+
+            println!(
+                "\n{} Automation suite bootstrapped!",
+                "OK".green().bold()
+            );
+            println!("\nQuick start:");
+            println!("  1. Edit IMPLEMENTATION_PLAN.md with your tasks");
+            println!("  2. Run: ralph loop plan --max-iterations 5");
+            println!("  3. Run: ralph loop build --max-iterations 50");
+        }
+
+        Commands::Analyze { output_dir } => {
+            let output = output_dir.unwrap_or_else(|| project_path.join(".ralph/analysis"));
+            std::fs::create_dir_all(&output)?;
+
+            println!("{} Analyzing project...", "Info:".blue());
+
+            // Build full context
+            let context_output = output.join(format!(
+                "context-{}.txt",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S")
+            ));
+            let builder = ContextBuilder::new(project_path.clone());
+            let stats = builder.build(&context_output)?;
+
+            println!(
+                "   {} Context: {} ({} files, ~{} tokens)",
+                "OK".green(),
+                context_output.display(),
+                stats.files_included,
+                stats.estimated_tokens
+            );
+
+            // Build docs context
+            let docs_output = output.join(format!(
+                "docs-{}.txt",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S")
+            ));
+            let docs_builder = ContextBuilder::new(project_path.clone())
+                .mode(context::ContextMode::Docs);
+            let _ = docs_builder.build(&docs_output)?;
+
+            println!(
+                "   {} Docs context: {}",
+                "OK".green(),
+                docs_output.display()
+            );
+
+            // Generate analysis prompt
+            let prompt_output = output.join(format!(
+                "prompt-{}.md",
+                chrono::Utc::now().format("%Y%m%d-%H%M%S")
+            ));
+            std::fs::write(&prompt_output, include_str!("templates/analysis_prompt.md"))?;
+
+            println!(
+                "   {} Analysis prompt: {}",
+                "OK".green(),
+                prompt_output.display()
+            );
+
+            println!(
+                "\n{} Upload {} to Claude/Grok/Gemini for analysis",
+                "Next:".cyan().bold(),
+                context_output.display()
+            );
+        }
+
+        Commands::Analytics { action } => {
+            let analytics = Analytics::new(project_path);
+
+            match action {
+                AnalyticsAction::Sessions { last, detailed, json } => {
+                    let sessions = analytics.get_recent_sessions(last)?;
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&sessions)?);
+                    } else {
+                        analytics.print_summary(&sessions, detailed);
+                    }
+                }
+
+                AnalyticsAction::Aggregate { json } => {
+                    let stats = analytics.get_aggregate_stats()?;
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&stats)?);
+                    } else {
+                        println!("\n{} Aggregate Statistics", "Analytics:".cyan().bold());
+                        println!("{}", "─".repeat(40));
+                        println!("   Total sessions: {}", stats.total_sessions);
+                        println!("   Total iterations: {}", stats.total_iterations);
+                        println!("   Total errors: {}", stats.total_errors);
+                        println!("   Total stagnations: {}", stats.total_stagnations);
+                        println!("   Docs drift events: {}", stats.total_drift_events);
+                    }
+                }
+
+                AnalyticsAction::Clear { force } => {
+                    if !force {
+                        eprintln!(
+                            "{} This will delete all analytics data. Use --force to confirm.",
+                            "Warning:".yellow().bold()
+                        );
+                        std::process::exit(1);
+                    }
+
+                    analytics.clear()?;
+                    println!("{} Analytics data cleared", "OK".green().bold());
+                }
+
+                AnalyticsAction::Log { session, event, data } => {
+                    let data: serde_json::Value = serde_json::from_str(&data)
+                        .unwrap_or_else(|_| serde_json::json!({"raw": data}));
+
+                    analytics.log_event(&session, &event, data)?;
+                    println!("{} Event logged", "OK".green());
+                }
+            }
+        }
+
+        Commands::Hook { action } => {
+            match action {
+                HookAction::Run { hook_type, input } => {
+                    let result = hooks::run_hook(hook_type, input.as_deref())?;
+
+                    // Print warnings if any
+                    for warning in &result.warnings {
+                        println!("{} {}", "Warning:".yellow(), warning);
+                    }
+
+                    if result.blocked {
+                        eprintln!(
+                            "{} Hook blocked: {}",
+                            "Blocked:".red().bold(),
+                            result.message.unwrap_or_default()
+                        );
+                        std::process::exit(2);
+                    } else if let Some(msg) = result.message {
+                        println!("{}", msg);
+                    }
+                }
+
+                HookAction::Validate { command } => {
+                    // Load project config to check allow/deny lists
+                    let config = ProjectConfig::load(&project_path).unwrap_or_default();
+                    let result = hooks::validate_command_with_config(&command, &config)?;
+
+                    for warning in &result.warnings {
+                        println!("{} {}", "Warning:".yellow(), warning);
+                    }
+
+                    if result.blocked {
+                        eprintln!(
+                            "{} Command blocked: {}",
+                            "Blocked:".red().bold(),
+                            result.message.unwrap_or_default()
+                        );
+                        std::process::exit(2);
+                    } else {
+                        println!("{} Command is safe", "OK".green().bold());
+                    }
+                }
+
+                HookAction::Scan { path } => {
+                    let findings = hooks::scan_file_for_secrets(&path)?;
+
+                    if findings.is_empty() {
+                        println!("{} No secrets found in {}", "OK".green().bold(), path.display());
+                    } else {
+                        eprintln!(
+                            "{} Found {} potential secrets in {}:",
+                            "Warning:".yellow().bold(),
+                            findings.len(),
+                            path.display()
+                        );
+                        for finding in &findings {
+                            eprintln!("  - {}", finding);
+                        }
+                        std::process::exit(1);
+                    }
+                }
+
+                HookAction::ScanModified => {
+                    let result = hooks::run_hook(HookType::PostEditScan, None)?;
+
+                    for warning in &result.warnings {
+                        println!("{} {}", "Warning:".yellow(), warning);
+                    }
+
+                    if result.warnings.is_empty() {
+                        println!("{} No secrets found in modified files", "OK".green().bold());
+                    } else {
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+
+        Commands::Config { action } => {
+            match action {
+                ConfigAction::Show { json } => {
+                    let config = ProjectConfig::load(&project_path)?;
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&config)?);
+                    } else {
+                        println!("\n{} Project Configuration", "Config:".cyan().bold());
+                        println!("{}", "─".repeat(40));
+                        println!("   Respect gitignore: {}", config.respect_gitignore);
+                        println!("   Allowed permissions: {}", config.permissions.allow.len());
+                        println!("   Denied permissions: {}", config.permissions.deny.len());
+                        println!("   PreToolUse hooks: {}", config.hooks.pre_tool_use.len());
+                        println!("   PostToolUse hooks: {}", config.hooks.post_tool_use.len());
+                        println!("   Stop hooks: {}", config.hooks.stop.len());
+                        println!("   SessionStart hooks: {}", config.hooks.session_start.len());
+                    }
+                }
+
+                ConfigAction::Validate => {
+                    let settings_path = ProjectConfig::settings_path(&project_path);
+                    let claude_md_path = ProjectConfig::claude_md_path(&project_path);
+
+                    let mut valid = true;
+
+                    // Check settings.json
+                    if settings_path.exists() {
+                        match ProjectConfig::load(&project_path) {
+                            Ok(_) => println!("{} settings.json is valid", "OK".green()),
+                            Err(e) => {
+                                eprintln!("{} settings.json: {}", "Error:".red(), e);
+                                valid = false;
+                            }
+                        }
+                    } else {
+                        println!("{} settings.json not found (using defaults)", "Info:".blue());
+                    }
+
+                    // Check CLAUDE.md
+                    if claude_md_path.exists() {
+                        println!("{} CLAUDE.md exists", "OK".green());
+                    } else {
+                        println!("{} CLAUDE.md not found", "Warning:".yellow());
+                    }
+
+                    // Check MCP config
+                    let mcp_path = project_path.join(".claude/mcp.json");
+                    if mcp_path.exists() {
+                        match std::fs::read_to_string(&mcp_path) {
+                            Ok(content) => {
+                                match serde_json::from_str::<serde_json::Value>(&content) {
+                                    Ok(_) => println!("{} mcp.json is valid", "OK".green()),
+                                    Err(e) => {
+                                        eprintln!("{} mcp.json: {}", "Error:".red(), e);
+                                        valid = false;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("{} Cannot read mcp.json: {}", "Error:".red(), e);
+                                valid = false;
+                            }
+                        }
+                    } else {
+                        println!("{} mcp.json not found", "Info:".blue());
+                    }
+
+                    if !valid {
+                        std::process::exit(1);
+                    }
+                }
+
+                ConfigAction::Paths => {
+                    println!("\n{} Configuration Paths", "Config:".cyan().bold());
+                    println!("{}", "─".repeat(40));
+                    println!("   Settings: {}", ProjectConfig::settings_path(&project_path).display());
+                    println!("   CLAUDE.md: {}", ProjectConfig::claude_md_path(&project_path).display());
+                    println!("   Analytics: {}", ProjectConfig::analytics_dir(&project_path).display());
+                    println!("   Archive: {}", ProjectConfig::archive_dir(&project_path).display());
+                    println!("   Analysis: {}", ProjectConfig::analysis_dir(&project_path).display());
+                }
+            }
+        }
+    }
+
+    Ok(())
+}

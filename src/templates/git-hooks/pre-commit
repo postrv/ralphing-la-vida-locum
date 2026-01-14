@@ -1,0 +1,19 @@
+#!/bin/bash
+# Pre-commit: Check for secrets and run quick security scan
+
+# Check for potential secrets
+if git diff --cached --name-only | xargs grep -l -E "(api_key|password|secret|token)\s*[:=]" 2>/dev/null; then
+    echo "Warning: Potential secrets detected. Review before committing."
+    echo "Use 'git commit --no-verify' to bypass (not recommended)"
+    exit 1
+fi
+
+# Quick narsil-mcp scan if available
+if command -v narsil-mcp &> /dev/null; then
+    SCAN=$(narsil-mcp scan_security --ruleset secrets 2>&1) || true
+    if echo "$SCAN" | grep -qE "CRITICAL|HIGH"; then
+        echo "Security issues found:"
+        echo "$SCAN" | grep -E "CRITICAL|HIGH"
+        exit 1
+    fi
+fi

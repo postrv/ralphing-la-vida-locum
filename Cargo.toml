@@ -1,0 +1,65 @@
+[package]
+name = "ralph"
+version = "0.1.0"
+edition = "2021"
+description = "Claude Code Automation Suite - Autonomous coding with bombproof reliability"
+authors = ["Laurence"]
+license = "MIT"
+
+[lib]
+name = "ralph"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ralph"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# File system
+walkdir = "2.5"
+ignore = "0.4"
+globset = "0.4"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Hashing
+md5 = "0.7"
+
+# Terminal
+colored = "2.2"
+indicatif = "0.17"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Process management
+which = "7.0"
+
+# Regex
+regex = "1.11"
+
+[dev-dependencies]
+tempfile = "3.14"
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
