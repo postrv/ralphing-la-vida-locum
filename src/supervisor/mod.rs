@@ -3,9 +3,15 @@
 //! Inspired by Chief Wiggum, this supervisor periodically checks on the
 //! automation loop and can intervene when things go wrong. It catches
 //! stale loops, unhappy paths, and provides diagnostic information.
+//!
+//! # Modules
+//!
+//! - [`predictor`] - Predictive stagnation prevention with risk assessment
+
+pub mod predictor;
 
 use crate::analytics::Analytics;
-use crate::loop_manager::{LoopMode, LoopState};
+use crate::r#loop::state::{LoopMode, LoopState};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use colored::Colorize;

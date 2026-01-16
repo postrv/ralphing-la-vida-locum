@@ -22,7 +22,11 @@ Ralph is a Rust CLI tool that orchestrates Claude Code for autonomous software d
 - **Bootstrap** - Initialize a project with Claude Code configuration, hooks, skills, and templates
 - **Context Builder** - Generate LLM-optimized context bundles respecting gitignore and token limits
 - **Execution Loop** - Run Claude Code autonomously with stagnation detection and phase-based prompts
+- **Quality Gate Enforcer** - Pre-commit gates: clippy, tests, no-allow annotations, no-TODO, security scans
+- **Checkpoint & Rollback** - Git-based snapshots with quality metrics tracking and automatic rollback on regression
+- **Task-Level Tracking** - Fine-grained state machine for individual task progress (NotStarted → InProgress → Complete)
 - **Security Hooks** - Pre-validate commands, scan for secrets, enforce allow/deny permissions
+- **Dynamic Prompts** - Context-aware prompt assembly with antipattern injection and remediation hints
 - **Documentation Archive** - Manage stale documentation without polluting context
 - **Analytics** - Track sessions, iterations, and events for analysis
 
@@ -352,16 +356,50 @@ When stagnation is detected, Ralph:
 
 ## Quality Gates
 
-Ralph enforces strict quality gates before every commit:
+Ralph enforces strict quality gates via the `QualityGateEnforcer`:
 
+```rust
+let enforcer = QualityGateEnforcer::standard(".");
+match enforcer.can_commit() {
+    Ok(summary) => println!("Ready to commit: {}", summary),
+    Err(failures) => {
+        let prompt = generate_remediation_prompt(&failures);
+        // Feed prompt back to Claude for fixes
+    }
+}
 ```
-[ ] cargo clippy --all-targets -- -D warnings  → 0 warnings
-[ ] cargo test                                  → all pass
-[ ] No #[allow(...)] annotations added
-[ ] No TODO/FIXME comments in new code
-[ ] All new public APIs documented
-[ ] gh auth status                              → authenticated
+
+### Gate Types
+
+| Gate | Checks | Failure Action |
+|------|--------|----------------|
+| **ClippyGate** | Zero warnings with `-D warnings` | List all warnings with locations |
+| **TestGate** | All tests pass | List failing tests with output |
+| **NoAllowGate** | No `#[allow(...)]` annotations | List violating files:lines |
+| **NoTodoGate** | No TODO/FIXME in new code | List comments to resolve |
+| **SecurityGate** | No hardcoded secrets | List detected patterns |
+
+### Checkpoint & Rollback
+
+Ralph creates quality checkpoints before risky operations:
+
+```rust
+let manager = CheckpointManager::new(".", config);
+let checkpoint = manager.create_checkpoint("Before refactor")?;
+
+// ... Claude makes changes ...
+
+if manager.has_regression(&checkpoint)? {
+    let rollback = RollbackManager::new(".")?;
+    rollback.rollback_to(&checkpoint)?;
+}
 ```
+
+Checkpoints track:
+- Git commit SHA
+- Test pass count / fail count
+- Clippy warning count
+- Files modified since last checkpoint
 
 ### Test-Driven Development
 
@@ -369,32 +407,85 @@ Ralph follows TDD methodology:
 1. **RED** - Write a failing test that defines expected behavior
 2. **GREEN** - Write minimal code to make the test pass
 3. **REFACTOR** - Clean up while keeping tests green
-4. **REVIEW** - Run clippy + security scans
-5. **COMMIT** - Only if ALL quality gates pass
+4. **CHECKPOINT** - Create quality checkpoint
+5. **REVIEW** - Run quality gates + security scans
+6. **COMMIT** - Only if ALL gates pass, else rollback
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         LoopManager                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
+│  │ TaskTracker │  │ Supervisor  │  │ CheckpointManager       │ │
+│  │ (state      │  │ (health     │  │ (snapshots + rollback)  │ │
+│  │  machine)   │  │  verdicts)  │  │                         │ │
+│  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+         │                 │                     │
+         v                 v                     v
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ QualityGate     │ │ PromptAssembler │ │ RollbackManager │
+│ Enforcer        │ │ (dynamic        │ │ (automatic      │
+│ (clippy, tests, │ │  context)       │ │  regression     │
+│  security)      │ │                 │ │  prevention)    │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
 
 ## File Structure
 
 ```
 src/
-├── main.rs          # CLI entry point and command routing
-├── lib.rs           # Library crate with public API
-├── config.rs        # Configuration, SSH patterns, stagnation levels
-├── error.rs         # Custom error types (RalphError)
-├── context.rs       # Context builder for LLM input
-├── loop_manager.rs  # Autonomous execution loop
-├── supervisor.rs    # Chief Wiggum health monitoring
-├── hooks.rs         # Security hooks and validation
-├── archive.rs       # Documentation archival
-├── analytics.rs     # Session tracking
-├── bootstrap.rs     # Project initialization
-└── templates/       # Bootstrap templates
-    ├── CLAUDE.md
-    ├── IMPLEMENTATION_PLAN.md
-    ├── PROMPT_*.md
-    ├── agents/
-    ├── skills/
-    ├── hooks/
-    └── docs/
+├── main.rs              # CLI entry point and command routing
+├── lib.rs               # Library crate with public API
+├── config.rs            # Configuration, SSH patterns, stagnation levels
+├── error.rs             # Custom error types (RalphError)
+├── context.rs           # Context builder for LLM input
+│
+├── checkpoint/          # Git-based checkpoint system
+│   ├── mod.rs           # Core types: Checkpoint, QualityMetrics
+│   ├── manager.rs       # CheckpointManager: create, compare, decide
+│   └── rollback.rs      # RollbackManager: automatic regression rollback
+│
+├── loop/                # Autonomous execution loop
+│   ├── mod.rs           # Module exports
+│   ├── manager.rs       # LoopManager: orchestrates iterations
+│   ├── state.rs         # LoopState, LoopMode state machine
+│   ├── progress.rs      # Semantic progress detection
+│   ├── retry.rs         # Intelligent retry with failure classification
+│   ├── task_tracker.rs  # Task-level state machine (NotStarted→Complete)
+│   └── operations.rs    # Real implementations of testable traits
+│
+├── prompt/              # Dynamic prompt generation
+│   ├── mod.rs           # Module exports
+│   ├── builder.rs       # PromptBuilder: fluent API
+│   ├── assembler.rs     # PromptAssembler: context-aware assembly
+│   ├── context.rs       # PromptContext: quality state, history
+│   ├── templates.rs     # Phase-specific prompt templates
+│   └── antipatterns.rs  # Antipattern detection and injection
+│
+├── quality/             # Quality gate enforcement
+│   ├── mod.rs           # Module exports and Gate trait
+│   ├── gates.rs         # ClippyGate, TestGate, SecurityGate, etc.
+│   ├── enforcer.rs      # QualityGateEnforcer: pre-commit checks
+│   └── remediation.rs   # Remediation prompt generation
+│
+├── supervisor/          # Chief Wiggum health monitoring
+│   ├── mod.rs           # Supervisor: verdicts and health checks
+│   └── predictor.rs     # Failure prediction heuristics
+│
+├── testing/             # Test infrastructure
+│   ├── mod.rs           # Module exports
+│   ├── traits.rs        # Testable traits (GitOperations, etc.)
+│   ├── mocks.rs         # Mock implementations for testing
+│   ├── fixtures.rs      # Test fixtures and builders
+│   └── assertions.rs    # Custom test assertions
+│
+├── hooks.rs             # Security hooks and validation
+├── archive.rs           # Documentation archival
+├── analytics.rs         # Session tracking
+├── bootstrap.rs         # Project initialization
+└── templates/           # Bootstrap templates
 ```
 
 ## Development
@@ -415,11 +506,16 @@ cargo clippy
 
 ### Test Coverage
 
-- **130 total tests** (103 unit + 27 integration)
-  - 37 library tests (config, error types, public API)
-  - 66 binary tests (hooks, context, loop manager, supervisor)
-  - 27 integration tests (CLI commands, end-to-end workflows)
-- Full coverage of security validation, SSH blocking, stagnation handling, supervisor verdicts, and analytics
+- **351+ unit tests** across all modules
+- **68 doc tests** for API documentation
+- Full coverage of:
+  - Quality gates (clippy, tests, security, no-allow, no-todo)
+  - Checkpoint creation, comparison, and rollback
+  - Task-level state machine transitions
+  - Dynamic prompt assembly and antipattern injection
+  - Security validation, SSH blocking, stagnation handling
+  - Supervisor verdicts and health monitoring
+  - Mock-based testing with dependency injection
 
 ## Requirements
 

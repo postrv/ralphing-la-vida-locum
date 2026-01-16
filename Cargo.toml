@@ -36,6 +36,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # Hashing
 md5 = "0.7"
 
+# UUID generation
+uuid = { version = "1.11", features = ["v4"] }
+
 # Terminal
 colored = "2.2"
 indicatif = "0.17"
@@ -50,6 +53,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Process management
 which = "7.0"
+
+# Async traits
+async-trait = "0.1"
 
 # Regex
 regex = "1.11"

@@ -12,7 +12,7 @@ mod archive;
 mod bootstrap;
 mod context;
 mod hooks;
-mod loop_manager;
+mod r#loop;
 mod supervisor;
 
 use crate::analytics::Analytics;
@@ -20,7 +20,8 @@ use crate::archive::ArchiveManager;
 use crate::bootstrap::Bootstrap;
 use crate::context::ContextBuilder;
 use crate::hooks::HookType;
-use crate::loop_manager::{LoopManager, LoopMode};
+use crate::r#loop::{LoopManager, LoopManagerConfig, LoopMode};
+use ralph::quality::EnforcerConfig;
 use ralph::ProjectConfig;
 
 #[derive(Parser)]
@@ -61,6 +62,14 @@ enum Commands {
         /// Sync docs every N iterations (0 to disable)
         #[arg(long, default_value = "5")]
         doc_sync_interval: u32,
+
+        /// Skip running tests in quality checks (faster iteration)
+        #[arg(long)]
+        skip_tests: bool,
+
+        /// Skip security scans in quality checks
+        #[arg(long)]
+        skip_security: bool,
     },
 
     /// Build context for LLM analysis
@@ -292,19 +301,30 @@ async fn main() -> anyhow::Result<()> {
             max_iterations,
             stagnation_threshold,
             doc_sync_interval,
+            skip_tests,
+            skip_security,
         } => {
             // Load project configuration
             let config = ProjectConfig::load(&project_path).unwrap_or_default();
 
-            let mut manager = LoopManager::new(
-                project_path,
-                mode,
-                max_iterations,
-                stagnation_threshold,
-                doc_sync_interval,
-                config,
-                cli.verbose,
-            )?;
+            let mut loop_config = LoopManagerConfig::new(project_path, config)
+                .with_mode(mode)
+                .with_max_iterations(max_iterations)
+                .with_stagnation_threshold(stagnation_threshold)
+                .with_doc_sync_interval(doc_sync_interval)
+                .with_verbose(cli.verbose);
+
+            // Configure quality gates if any flags are set
+            if skip_tests || skip_security {
+                let quality_config = EnforcerConfig::new()
+                    .with_clippy(true)
+                    .with_tests(!skip_tests)
+                    .with_security(!skip_security)
+                    .with_no_allow(true);
+                loop_config = loop_config.with_quality_config(quality_config);
+            }
+
+            let mut manager = LoopManager::new(loop_config)?;
 
             manager.run().await?;
         }

@@ -1,0 +1,1427 @@
+//! Predictive Stagnation Prevention.
+//!
+//! This module provides proactive stagnation detection through risk scoring
+//! and pattern analysis. Unlike the reactive supervisor, the predictor aims
+//! to identify problems *before* they become stagnation events.
+//!
+//! # Architecture
+//!
+//! ```text
+//! ┌─────────────────────┐
+//! │ StagnationPredictor │
+//! │                     │
+//! │  ┌───────────────┐  │    ┌────────────────┐
+//! │  │ RiskFactors   │──┼───>│ RiskScore      │
+//! │  └───────────────┘  │    │ (0-100)        │
+//! │                     │    └───────┬────────┘
+//! │  ┌───────────────┐  │            │
+//! │  │ PatternDetect │  │            v
+//! │  └───────────────┘  │    ┌────────────────┐
+//! │                     │    │ PreventiveAction│
+//! └─────────────────────┘    └────────────────┘
+//! ```
+//!
+//! # Risk Factors
+//!
+//! The predictor monitors several signals that correlate with stagnation:
+//!
+//! | Factor | Weight | Description |
+//! |--------|--------|-------------|
+//! | Commit Gap | 0.25 | Iterations since last commit |
+//! | File Churn | 0.20 | Same files edited repeatedly |
+//! | Error Repeat | 0.20 | Same errors occurring |
+//! | Test Stagnation | 0.15 | No new tests added |
+//! | Mode Oscillation | 0.10 | Frequent mode switches |
+//! | Warning Growth | 0.10 | Clippy warnings increasing |
+//!
+//! # Example
+//!
+//! ```rust
+//! use ralph::supervisor::predictor::{StagnationPredictor, PredictorConfig, RiskSignals};
+//!
+//! let predictor = StagnationPredictor::new(PredictorConfig::default());
+//!
+//! let signals = RiskSignals {
+//!     iterations_since_commit: 8,
+//!     file_touch_counts: vec![("main.rs".into(), 5), ("lib.rs".into(), 3)],
+//!     error_messages: vec!["cannot find value".into(), "cannot find value".into()],
+//!     test_count_history: vec![10, 10, 10, 10],
+//!     mode_switches: 2,
+//!     clippy_warning_history: vec![3, 5, 7],
+//! };
+//!
+//! let score = predictor.risk_score(&signals);
+//! let level = predictor.risk_level(score);
+//! let action = predictor.preventive_action(&signals, score);
+//! ```
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// Risk score range: 0-100.
+pub type RiskScore = f64;
+
+/// Risk level classification based on score.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum RiskLevel {
+    /// Score 0-30: Normal operation, no intervention needed.
+    Low,
+    /// Score 30-60: Caution, monitor closely.
+    Medium,
+    /// Score 60-80: Elevated risk, consider intervention.
+    High,
+    /// Score 80-100: Critical, immediate action required.
+    Critical,
+}
+
+impl RiskLevel {
+    /// Returns the minimum score for this risk level.
+    #[must_use]
+    pub fn min_score(&self) -> f64 {
+        match self {
+            Self::Low => 0.0,
+            Self::Medium => 30.0,
+            Self::High => 60.0,
+            Self::Critical => 80.0,
+        }
+    }
+
+    /// Returns the maximum score for this risk level.
+    #[must_use]
+    pub fn max_score(&self) -> f64 {
+        match self {
+            Self::Low => 30.0,
+            Self::Medium => 60.0,
+            Self::High => 80.0,
+            Self::Critical => 100.0,
+        }
+    }
+
+    /// Returns true if this level requires intervention.
+    #[must_use]
+    pub fn requires_intervention(&self) -> bool {
+        matches!(self, Self::High | Self::Critical)
+    }
+
+    /// Returns true if this level is critical.
+    #[must_use]
+    pub fn is_critical(&self) -> bool {
+        matches!(self, Self::Critical)
+    }
+}
+
+impl std::fmt::Display for RiskLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+            Self::Critical => write!(f, "critical"),
+        }
+    }
+}
+
+/// Weights for each risk factor.
+///
+/// Weights should sum to 1.0 for normalized scoring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RiskWeights {
+    /// Weight for iterations since last commit (default: 0.25).
+    pub commit_gap: f64,
+    /// Weight for repeated file edits (default: 0.20).
+    pub file_churn: f64,
+    /// Weight for error repetition (default: 0.20).
+    pub error_repeat: f64,
+    /// Weight for test count stagnation (default: 0.15).
+    pub test_stagnation: f64,
+    /// Weight for mode oscillation (default: 0.10).
+    pub mode_oscillation: f64,
+    /// Weight for clippy warning growth (default: 0.10).
+    pub warning_growth: f64,
+}
+
+impl Default for RiskWeights {
+    fn default() -> Self {
+        Self {
+            commit_gap: 0.25,
+            file_churn: 0.20,
+            error_repeat: 0.20,
+            test_stagnation: 0.15,
+            mode_oscillation: 0.10,
+            warning_growth: 0.10,
+        }
+    }
+}
+
+impl RiskWeights {
+    /// Creates new risk weights with custom values.
+    #[must_use]
+    pub fn new(
+        commit_gap: f64,
+        file_churn: f64,
+        error_repeat: f64,
+        test_stagnation: f64,
+        mode_oscillation: f64,
+        warning_growth: f64,
+    ) -> Self {
+        Self {
+            commit_gap,
+            file_churn,
+            error_repeat,
+            test_stagnation,
+            mode_oscillation,
+            warning_growth,
+        }
+    }
+
+    /// Returns the sum of all weights.
+    #[must_use]
+    pub fn total(&self) -> f64 {
+        self.commit_gap
+            + self.file_churn
+            + self.error_repeat
+            + self.test_stagnation
+            + self.mode_oscillation
+            + self.warning_growth
+    }
+
+    /// Returns normalized weights that sum to 1.0.
+    #[must_use]
+    pub fn normalized(&self) -> Self {
+        let total = self.total();
+        if total == 0.0 {
+            return Self::default();
+        }
+        Self {
+            commit_gap: self.commit_gap / total,
+            file_churn: self.file_churn / total,
+            error_repeat: self.error_repeat / total,
+            test_stagnation: self.test_stagnation / total,
+            mode_oscillation: self.mode_oscillation / total,
+            warning_growth: self.warning_growth / total,
+        }
+    }
+}
+
+/// Thresholds for intervention decisions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InterventionThresholds {
+    /// Score below which risk is considered low (default: 30).
+    pub low_max: f64,
+    /// Score below which risk is considered medium (default: 60).
+    pub medium_max: f64,
+    /// Score below which risk is considered high (default: 80).
+    pub high_max: f64,
+}
+
+impl Default for InterventionThresholds {
+    fn default() -> Self {
+        Self {
+            low_max: 30.0,
+            medium_max: 60.0,
+            high_max: 80.0,
+        }
+    }
+}
+
+impl InterventionThresholds {
+    /// Creates new thresholds with custom values.
+    #[must_use]
+    pub fn new(low_max: f64, medium_max: f64, high_max: f64) -> Self {
+        Self {
+            low_max,
+            medium_max,
+            high_max,
+        }
+    }
+
+    /// Classify a risk score into a risk level.
+    #[must_use]
+    pub fn classify(&self, score: f64) -> RiskLevel {
+        if score < self.low_max {
+            RiskLevel::Low
+        } else if score < self.medium_max {
+            RiskLevel::Medium
+        } else if score < self.high_max {
+            RiskLevel::High
+        } else {
+            RiskLevel::Critical
+        }
+    }
+}
+
+/// Configuration for the stagnation predictor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredictorConfig {
+    /// Weights for risk factors.
+    pub weights: RiskWeights,
+    /// Thresholds for intervention levels.
+    pub thresholds: InterventionThresholds,
+    /// Maximum iterations without commit before full risk (default: 15).
+    pub max_commit_gap: u32,
+    /// Maximum file touches before full risk (default: 5).
+    pub max_file_touches: u32,
+    /// Maximum error repeats before full risk (default: 3).
+    pub max_error_repeats: u32,
+    /// Maximum stagnant iterations for test count (default: 5).
+    pub max_test_stagnation: u32,
+    /// Maximum mode switches before full risk (default: 4).
+    pub max_mode_switches: u32,
+    /// History length for tracking patterns (default: 10).
+    pub history_length: usize,
+}
+
+impl Default for PredictorConfig {
+    fn default() -> Self {
+        Self {
+            weights: RiskWeights::default(),
+            thresholds: InterventionThresholds::default(),
+            max_commit_gap: 15,
+            max_file_touches: 5,
+            max_error_repeats: 3,
+            max_test_stagnation: 5,
+            max_mode_switches: 4,
+            history_length: 10,
+        }
+    }
+}
+
+impl PredictorConfig {
+    /// Creates a new configuration with default values.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the risk weights.
+    #[must_use]
+    pub fn with_weights(mut self, weights: RiskWeights) -> Self {
+        self.weights = weights;
+        self
+    }
+
+    /// Sets the intervention thresholds.
+    #[must_use]
+    pub fn with_thresholds(mut self, thresholds: InterventionThresholds) -> Self {
+        self.thresholds = thresholds;
+        self
+    }
+
+    /// Sets the maximum commit gap before full risk.
+    #[must_use]
+    pub fn with_max_commit_gap(mut self, gap: u32) -> Self {
+        self.max_commit_gap = gap;
+        self
+    }
+
+    /// Sets the maximum file touches before full risk.
+    #[must_use]
+    pub fn with_max_file_touches(mut self, touches: u32) -> Self {
+        self.max_file_touches = touches;
+        self
+    }
+
+    /// Sets the history length.
+    #[must_use]
+    pub fn with_history_length(mut self, length: usize) -> Self {
+        self.history_length = length;
+        self
+    }
+}
+
+/// Input signals for risk assessment.
+///
+/// These signals are collected from the loop state and used to calculate
+/// the overall stagnation risk.
+#[derive(Debug, Clone, Default)]
+pub struct RiskSignals {
+    /// Number of iterations since the last commit.
+    pub iterations_since_commit: u32,
+    /// File paths and how many times each has been touched.
+    pub file_touch_counts: Vec<(String, u32)>,
+    /// Recent error messages (for repetition detection).
+    pub error_messages: Vec<String>,
+    /// Test count history (recent values, oldest first).
+    pub test_count_history: Vec<u32>,
+    /// Number of mode switches in this session.
+    pub mode_switches: u32,
+    /// Clippy warning count history (recent values, oldest first).
+    pub clippy_warning_history: Vec<u32>,
+}
+
+impl RiskSignals {
+    /// Creates empty risk signals.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the iterations since commit.
+    #[must_use]
+    pub fn with_commit_gap(mut self, gap: u32) -> Self {
+        self.iterations_since_commit = gap;
+        self
+    }
+
+    /// Sets the file touch counts.
+    #[must_use]
+    pub fn with_file_touches(mut self, touches: Vec<(String, u32)>) -> Self {
+        self.file_touch_counts = touches;
+        self
+    }
+
+    /// Sets the error messages.
+    #[must_use]
+    pub fn with_errors(mut self, errors: Vec<String>) -> Self {
+        self.error_messages = errors;
+        self
+    }
+
+    /// Sets the test count history.
+    #[must_use]
+    pub fn with_test_history(mut self, history: Vec<u32>) -> Self {
+        self.test_count_history = history;
+        self
+    }
+
+    /// Sets the mode switch count.
+    #[must_use]
+    pub fn with_mode_switches(mut self, switches: u32) -> Self {
+        self.mode_switches = switches;
+        self
+    }
+
+    /// Sets the clippy warning history.
+    #[must_use]
+    pub fn with_warning_history(mut self, history: Vec<u32>) -> Self {
+        self.clippy_warning_history = history;
+        self
+    }
+}
+
+/// Breakdown of individual risk factor contributions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RiskBreakdown {
+    /// Contribution from commit gap (0-100 scaled by weight).
+    pub commit_gap_contribution: f64,
+    /// Contribution from file churn (0-100 scaled by weight).
+    pub file_churn_contribution: f64,
+    /// Contribution from error repetition (0-100 scaled by weight).
+    pub error_repeat_contribution: f64,
+    /// Contribution from test stagnation (0-100 scaled by weight).
+    pub test_stagnation_contribution: f64,
+    /// Contribution from mode oscillation (0-100 scaled by weight).
+    pub mode_oscillation_contribution: f64,
+    /// Contribution from warning growth (0-100 scaled by weight).
+    pub warning_growth_contribution: f64,
+    /// Total weighted score.
+    pub total: f64,
+}
+
+impl RiskBreakdown {
+    /// Returns the dominant risk factor.
+    #[must_use]
+    pub fn dominant_factor(&self) -> &'static str {
+        let factors = [
+            (self.commit_gap_contribution, "commit_gap"),
+            (self.file_churn_contribution, "file_churn"),
+            (self.error_repeat_contribution, "error_repeat"),
+            (self.test_stagnation_contribution, "test_stagnation"),
+            (self.mode_oscillation_contribution, "mode_oscillation"),
+            (self.warning_growth_contribution, "warning_growth"),
+        ];
+        factors
+            .iter()
+            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(_, name)| *name)
+            .unwrap_or("unknown")
+    }
+
+    /// Returns a human-readable summary.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        format!(
+            "Risk={:.0}: commit_gap={:.0}, file_churn={:.0}, error_repeat={:.0}, test_stagnation={:.0}, mode_oscillation={:.0}, warning_growth={:.0}",
+            self.total,
+            self.commit_gap_contribution,
+            self.file_churn_contribution,
+            self.error_repeat_contribution,
+            self.test_stagnation_contribution,
+            self.mode_oscillation_contribution,
+            self.warning_growth_contribution
+        )
+    }
+}
+
+/// Preventive actions that can be taken to avoid stagnation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PreventiveAction {
+    /// No action needed, continue normally.
+    None,
+    /// Add guidance to the prompt about the risk.
+    InjectGuidance {
+        /// The guidance message to inject.
+        guidance: String,
+    },
+    /// Focus on a single actionable item.
+    FocusTask {
+        /// Description of the focused task.
+        task: String,
+    },
+    /// Suggest running tests to verify progress.
+    RunTests,
+    /// Suggest committing current work.
+    SuggestCommit,
+    /// Switch to a different mode.
+    SwitchMode {
+        /// Target mode to switch to.
+        target: String,
+    },
+    /// Request human review.
+    RequestReview {
+        /// Reason for requesting review.
+        reason: String,
+    },
+}
+
+impl std::fmt::Display for PreventiveAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::InjectGuidance { guidance } => write!(f, "inject_guidance: {}", guidance),
+            Self::FocusTask { task } => write!(f, "focus_task: {}", task),
+            Self::RunTests => write!(f, "run_tests"),
+            Self::SuggestCommit => write!(f, "suggest_commit"),
+            Self::SwitchMode { target } => write!(f, "switch_mode: {}", target),
+            Self::RequestReview { reason } => write!(f, "request_review: {}", reason),
+        }
+    }
+}
+
+/// Stagnation predictor with risk assessment and pattern detection.
+#[derive(Debug, Clone)]
+pub struct StagnationPredictor {
+    /// Configuration for the predictor.
+    config: PredictorConfig,
+    /// History of recent predictions for accuracy tracking.
+    prediction_history: Vec<(RiskScore, bool)>,
+}
+
+impl StagnationPredictor {
+    /// Creates a new predictor with the given configuration.
+    #[must_use]
+    pub fn new(config: PredictorConfig) -> Self {
+        Self {
+            config,
+            prediction_history: Vec::new(),
+        }
+    }
+
+    /// Creates a new predictor with default configuration.
+    #[must_use]
+    pub fn with_defaults() -> Self {
+        Self::new(PredictorConfig::default())
+    }
+
+    /// Returns a reference to the configuration.
+    #[must_use]
+    pub fn config(&self) -> &PredictorConfig {
+        &self.config
+    }
+
+    /// Calculate the overall risk score from signals.
+    ///
+    /// Returns a score from 0-100 where higher values indicate greater risk.
+    ///
+    /// # Arguments
+    ///
+    /// * `signals` - The current risk signals to evaluate.
+    ///
+    /// # Returns
+    ///
+    /// A risk score from 0.0 to 100.0.
+    #[must_use]
+    pub fn risk_score(&self, signals: &RiskSignals) -> RiskScore {
+        self.risk_breakdown(signals).total
+    }
+
+    /// Calculate detailed risk breakdown with individual factor contributions.
+    ///
+    /// # Arguments
+    ///
+    /// * `signals` - The current risk signals to evaluate.
+    ///
+    /// # Returns
+    ///
+    /// A `RiskBreakdown` with individual factor contributions.
+    #[must_use]
+    pub fn risk_breakdown(&self, signals: &RiskSignals) -> RiskBreakdown {
+        let weights = self.config.weights.normalized();
+
+        // Calculate individual factor scores (0-100 each)
+        let commit_gap_raw = self.score_commit_gap(signals.iterations_since_commit);
+        let file_churn_raw = self.score_file_churn(&signals.file_touch_counts);
+        let error_repeat_raw = self.score_error_repetition(&signals.error_messages);
+        let test_stagnation_raw = self.score_test_stagnation(&signals.test_count_history);
+        let mode_oscillation_raw = self.score_mode_oscillation(signals.mode_switches);
+        let warning_growth_raw = self.score_warning_growth(&signals.clippy_warning_history);
+
+        // Apply weights
+        let commit_gap_contribution = commit_gap_raw * weights.commit_gap * 100.0;
+        let file_churn_contribution = file_churn_raw * weights.file_churn * 100.0;
+        let error_repeat_contribution = error_repeat_raw * weights.error_repeat * 100.0;
+        let test_stagnation_contribution = test_stagnation_raw * weights.test_stagnation * 100.0;
+        let mode_oscillation_contribution = mode_oscillation_raw * weights.mode_oscillation * 100.0;
+        let warning_growth_contribution = warning_growth_raw * weights.warning_growth * 100.0;
+
+        let total = commit_gap_contribution
+            + file_churn_contribution
+            + error_repeat_contribution
+            + test_stagnation_contribution
+            + mode_oscillation_contribution
+            + warning_growth_contribution;
+
+        RiskBreakdown {
+            commit_gap_contribution,
+            file_churn_contribution,
+            error_repeat_contribution,
+            test_stagnation_contribution,
+            mode_oscillation_contribution,
+            warning_growth_contribution,
+            total: total.min(100.0),
+        }
+    }
+
+    /// Classify a risk score into a risk level.
+    #[must_use]
+    pub fn risk_level(&self, score: RiskScore) -> RiskLevel {
+        self.config.thresholds.classify(score)
+    }
+
+    /// Evaluate signals and return the risk level directly.
+    #[must_use]
+    pub fn evaluate(&self, signals: &RiskSignals) -> RiskLevel {
+        let score = self.risk_score(signals);
+        self.risk_level(score)
+    }
+
+    // =========================================================================
+    // Phase 6.2: Pattern Detection Methods
+    // =========================================================================
+
+    /// Detect repeated file touches pattern.
+    ///
+    /// Returns 0.0 if no files are repeatedly touched, up to 1.0 if many
+    /// files are being touched repeatedly without progress.
+    #[must_use]
+    pub fn repeated_file_touches(&self, touches: &[(String, u32)]) -> f64 {
+        self.score_file_churn(touches)
+    }
+
+    /// Detect test count stagnation.
+    ///
+    /// Returns the number of iterations the test count has remained unchanged.
+    ///
+    /// # Arguments
+    ///
+    /// * `history` - Test count history (oldest first).
+    ///
+    /// # Returns
+    ///
+    /// Number of iterations with unchanged test count.
+    #[must_use]
+    pub fn test_count_stagnant_for(&self, history: &[u32]) -> u32 {
+        if history.len() < 2 {
+            return 0;
+        }
+
+        let last = *history.last().unwrap_or(&0);
+        let mut stagnant_count = 0u32;
+
+        for count in history.iter().rev().skip(1) {
+            if *count == last {
+                stagnant_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        stagnant_count
+    }
+
+    /// Calculate error repetition rate.
+    ///
+    /// Returns 0.0 if all errors are unique, up to 1.0 if all errors are identical.
+    ///
+    /// # Arguments
+    ///
+    /// * `errors` - Recent error messages.
+    ///
+    /// # Returns
+    ///
+    /// Repetition rate from 0.0 to 1.0.
+    #[must_use]
+    pub fn error_repetition_rate(&self, errors: &[String]) -> f64 {
+        self.score_error_repetition(errors)
+    }
+
+    /// Detect recent mode switches.
+    ///
+    /// Returns true if there have been mode switches in the recent history.
+    #[must_use]
+    pub fn recent_mode_switch(&self, mode_switches: u32, threshold: u32) -> bool {
+        mode_switches >= threshold
+    }
+
+    // =========================================================================
+    // Phase 6.3: Preventive Actions
+    // =========================================================================
+
+    /// Determine the appropriate preventive action based on signals and score.
+    ///
+    /// # Arguments
+    ///
+    /// * `signals` - The current risk signals.
+    /// * `score` - The calculated risk score.
+    ///
+    /// # Returns
+    ///
+    /// The recommended preventive action.
+    #[must_use]
+    pub fn preventive_action(&self, signals: &RiskSignals, score: RiskScore) -> PreventiveAction {
+        let level = self.risk_level(score);
+        let breakdown = self.risk_breakdown(signals);
+
+        match level {
+            RiskLevel::Low => PreventiveAction::None,
+            RiskLevel::Medium => self.medium_risk_action(&breakdown, signals),
+            RiskLevel::High => self.high_risk_action(&breakdown, signals),
+            RiskLevel::Critical => self.critical_risk_action(&breakdown, signals),
+        }
+    }
+
+    /// Generate unstick guidance based on the dominant risk factor.
+    ///
+    /// # Arguments
+    ///
+    /// * `breakdown` - The risk breakdown showing factor contributions.
+    ///
+    /// # Returns
+    ///
+    /// Guidance text to help unstick the loop.
+    #[must_use]
+    pub fn generate_unstick_guidance(&self, breakdown: &RiskBreakdown) -> String {
+        let dominant = breakdown.dominant_factor();
+
+        match dominant {
+            "commit_gap" => {
+                "Consider committing your current progress, even if incomplete. \
+                Small, incremental commits are better than large, delayed ones. \
+                If there are blocking issues, document them and commit what works."
+                    .to_string()
+            }
+            "file_churn" => {
+                "You're editing the same files repeatedly. This often indicates \
+                an unclear goal or approach. Step back and clarify: what exactly \
+                needs to change? Write a brief plan before making more edits."
+                    .to_string()
+            }
+            "error_repeat" => {
+                "The same error keeps occurring. Don't keep trying the same fix. \
+                Instead: 1) Read the full error carefully, 2) Search for similar \
+                issues, 3) Try a completely different approach."
+                    .to_string()
+            }
+            "test_stagnation" => {
+                "No new tests have been added recently. Tests help verify progress \
+                and catch regressions. Write a test for the current functionality \
+                before moving on."
+                    .to_string()
+            }
+            "mode_oscillation" => {
+                "Frequent mode switches suggest uncertainty about the approach. \
+                Pick one mode and commit to it for at least 5 iterations. If in \
+                build mode, focus on implementation. If in debug mode, focus on \
+                fixing the specific issue."
+                    .to_string()
+            }
+            "warning_growth" => {
+                "Clippy warnings are accumulating. Address them now rather than \
+                later. Run 'cargo clippy --fix' for auto-fixable issues, then \
+                manually address the rest."
+                    .to_string()
+            }
+            _ => {
+                "Progress has stalled. Consider: 1) What's the smallest possible \
+                next step? 2) Is there a test you can write? 3) Should you commit \
+                what you have so far?"
+                    .to_string()
+            }
+        }
+    }
+
+    /// Identify a single actionable item from the current signals.
+    ///
+    /// # Arguments
+    ///
+    /// * `signals` - The current risk signals.
+    /// * `breakdown` - The risk breakdown.
+    ///
+    /// # Returns
+    ///
+    /// A single, focused task description.
+    #[must_use]
+    pub fn identify_single_actionable_item(
+        &self,
+        signals: &RiskSignals,
+        breakdown: &RiskBreakdown,
+    ) -> String {
+        let dominant = breakdown.dominant_factor();
+
+        match dominant {
+            "commit_gap" => "Make a commit with your current changes".to_string(),
+            "file_churn" => {
+                if let Some((file, count)) = signals
+                    .file_touch_counts
+                    .iter()
+                    .max_by_key(|(_, c)| c)
+                {
+                    format!("Stop editing {} (touched {} times) and verify it works", file, count)
+                } else {
+                    "Verify your changes work before editing more files".to_string()
+                }
+            }
+            "error_repeat" => {
+                if let Some(error) = signals.error_messages.first() {
+                    let short_error = if error.len() > 50 {
+                        format!("{}...", &error[..50])
+                    } else {
+                        error.clone()
+                    };
+                    format!("Fix this error with a different approach: {}", short_error)
+                } else {
+                    "Try a different approach to fix the recurring error".to_string()
+                }
+            }
+            "test_stagnation" => "Write one test for your current functionality".to_string(),
+            "mode_oscillation" => "Stay in current mode for 5 more iterations".to_string(),
+            "warning_growth" => "Fix the highest-priority clippy warning".to_string(),
+            _ => "Complete the smallest possible unit of work".to_string(),
+        }
+    }
+
+    /// Record a prediction for accuracy tracking.
+    ///
+    /// # Arguments
+    ///
+    /// * `score` - The predicted risk score.
+    /// * `actually_stagnated` - Whether stagnation actually occurred.
+    pub fn record_prediction(&mut self, score: RiskScore, actually_stagnated: bool) {
+        self.prediction_history.push((score, actually_stagnated));
+
+        // Keep history bounded
+        if self.prediction_history.len() > self.config.history_length * 10 {
+            self.prediction_history.drain(0..self.config.history_length);
+        }
+    }
+
+    /// Calculate prediction accuracy.
+    ///
+    /// # Returns
+    ///
+    /// Accuracy as a value from 0.0 to 1.0, or None if no predictions recorded.
+    #[must_use]
+    pub fn prediction_accuracy(&self) -> Option<f64> {
+        if self.prediction_history.is_empty() {
+            return None;
+        }
+
+        let high_threshold = self.config.thresholds.medium_max;
+        let correct = self
+            .prediction_history
+            .iter()
+            .filter(|(score, stagnated)| {
+                let predicted_stagnation = *score >= high_threshold;
+                predicted_stagnation == *stagnated
+            })
+            .count();
+
+        Some(correct as f64 / self.prediction_history.len() as f64)
+    }
+
+    /// Returns a summary of the predictor state.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        let accuracy = self
+            .prediction_accuracy()
+            .map(|a| format!("{:.0}%", a * 100.0))
+            .unwrap_or_else(|| "N/A".to_string());
+
+        format!(
+            "Predictor: {} predictions, accuracy={}",
+            self.prediction_history.len(),
+            accuracy
+        )
+    }
+
+    // =========================================================================
+    // Private: Individual Factor Scoring (0.0 to 1.0)
+    // =========================================================================
+
+    fn score_commit_gap(&self, iterations: u32) -> f64 {
+        let max = self.config.max_commit_gap as f64;
+        (iterations as f64 / max).min(1.0)
+    }
+
+    fn score_file_churn(&self, touches: &[(String, u32)]) -> f64 {
+        if touches.is_empty() {
+            return 0.0;
+        }
+
+        let max_touches = self.config.max_file_touches as f64;
+        let high_churn_files = touches
+            .iter()
+            .filter(|(_, count)| *count >= self.config.max_file_touches)
+            .count();
+
+        let avg_churn = touches.iter().map(|(_, c)| *c as f64).sum::<f64>() / touches.len() as f64;
+
+        // Combine: high churn file count + average churn
+        let churn_ratio = (high_churn_files as f64 / touches.len() as f64) * 0.5
+            + (avg_churn / max_touches).min(1.0) * 0.5;
+
+        churn_ratio.min(1.0)
+    }
+
+    fn score_error_repetition(&self, errors: &[String]) -> f64 {
+        if errors.len() < 2 {
+            return 0.0;
+        }
+
+        // Count error frequencies
+        let mut counts: HashMap<&str, u32> = HashMap::new();
+        for error in errors {
+            // Normalize: take first 100 chars to group similar errors
+            let key = if error.len() > 100 {
+                &error[..100]
+            } else {
+                error.as_str()
+            };
+            *counts.entry(key).or_insert(0) += 1;
+        }
+
+        // Find max repetition
+        let max_repeat = *counts.values().max().unwrap_or(&0);
+        let max_allowed = self.config.max_error_repeats as f64;
+
+        (max_repeat as f64 / max_allowed).min(1.0)
+    }
+
+    fn score_test_stagnation(&self, history: &[u32]) -> f64 {
+        let stagnant_count = self.test_count_stagnant_for(history);
+        let max_stagnation = self.config.max_test_stagnation as f64;
+
+        (stagnant_count as f64 / max_stagnation).min(1.0)
+    }
+
+    fn score_mode_oscillation(&self, switches: u32) -> f64 {
+        let max_switches = self.config.max_mode_switches as f64;
+        (switches as f64 / max_switches).min(1.0)
+    }
+
+    fn score_warning_growth(&self, history: &[u32]) -> f64 {
+        if history.len() < 2 {
+            return 0.0;
+        }
+
+        // Calculate trend: positive = warnings increasing
+        let first = history.first().copied().unwrap_or(0) as f64;
+        let last = history.last().copied().unwrap_or(0) as f64;
+
+        if first == 0.0 {
+            // Started with no warnings, any increase is concerning
+            return (last / 10.0).min(1.0);
+        }
+
+        let growth_rate = (last - first) / first;
+
+        // Clamp to 0-1: 0% growth = 0.0, 100%+ growth = 1.0
+        growth_rate.clamp(0.0, 1.0)
+    }
+
+    // =========================================================================
+    // Private: Action Selection
+    // =========================================================================
+
+    fn medium_risk_action(
+        &self,
+        breakdown: &RiskBreakdown,
+        _signals: &RiskSignals,
+    ) -> PreventiveAction {
+        // At medium risk, inject guidance based on dominant factor
+        let guidance = self.generate_unstick_guidance(breakdown);
+        PreventiveAction::InjectGuidance { guidance }
+    }
+
+    fn high_risk_action(
+        &self,
+        breakdown: &RiskBreakdown,
+        signals: &RiskSignals,
+    ) -> PreventiveAction {
+        let dominant = breakdown.dominant_factor();
+
+        match dominant {
+            "commit_gap" => PreventiveAction::SuggestCommit,
+            "test_stagnation" => PreventiveAction::RunTests,
+            "mode_oscillation" => PreventiveAction::SwitchMode {
+                target: "debug".to_string(),
+            },
+            _ => {
+                let task = self.identify_single_actionable_item(signals, breakdown);
+                PreventiveAction::FocusTask { task }
+            }
+        }
+    }
+
+    fn critical_risk_action(
+        &self,
+        breakdown: &RiskBreakdown,
+        _signals: &RiskSignals,
+    ) -> PreventiveAction {
+        PreventiveAction::RequestReview {
+            reason: format!(
+                "Critical stagnation risk (score={:.0}, dominant_factor={}). \
+                Multiple intervention attempts have not resolved the issue.",
+                breakdown.total,
+                breakdown.dominant_factor()
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // Phase 6.1: Risk Model Tests
+    // =========================================================================
+
+    #[test]
+    fn test_risk_level_classification() {
+        let thresholds = InterventionThresholds::default();
+
+        assert_eq!(thresholds.classify(0.0), RiskLevel::Low);
+        assert_eq!(thresholds.classify(29.9), RiskLevel::Low);
+        assert_eq!(thresholds.classify(30.0), RiskLevel::Medium);
+        assert_eq!(thresholds.classify(59.9), RiskLevel::Medium);
+        assert_eq!(thresholds.classify(60.0), RiskLevel::High);
+        assert_eq!(thresholds.classify(79.9), RiskLevel::High);
+        assert_eq!(thresholds.classify(80.0), RiskLevel::Critical);
+        assert_eq!(thresholds.classify(100.0), RiskLevel::Critical);
+    }
+
+    #[test]
+    fn test_risk_level_properties() {
+        assert!(!RiskLevel::Low.requires_intervention());
+        assert!(!RiskLevel::Medium.requires_intervention());
+        assert!(RiskLevel::High.requires_intervention());
+        assert!(RiskLevel::Critical.requires_intervention());
+
+        assert!(!RiskLevel::Low.is_critical());
+        assert!(!RiskLevel::High.is_critical());
+        assert!(RiskLevel::Critical.is_critical());
+    }
+
+    #[test]
+    fn test_risk_weights_normalization() {
+        let weights = RiskWeights::new(0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
+        let normalized = weights.normalized();
+
+        let total = normalized.commit_gap
+            + normalized.file_churn
+            + normalized.error_repeat
+            + normalized.test_stagnation
+            + normalized.mode_oscillation
+            + normalized.warning_growth;
+
+        assert!((total - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_risk_weights_default_sums_to_one() {
+        let weights = RiskWeights::default();
+        let total = weights.total();
+
+        assert!((total - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_predictor_low_risk_signals() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        let signals = RiskSignals::new()
+            .with_commit_gap(2)
+            .with_file_touches(vec![("main.rs".into(), 1)])
+            .with_errors(vec!["error 1".into(), "error 2".into()])
+            .with_test_history(vec![10, 11, 12])
+            .with_mode_switches(0)
+            .with_warning_history(vec![0, 0, 0]);
+
+        let score = predictor.risk_score(&signals);
+        let level = predictor.risk_level(score);
+
+        assert!(score < 30.0, "Score {} should be low", score);
+        assert_eq!(level, RiskLevel::Low);
+    }
+
+    #[test]
+    fn test_predictor_high_risk_signals() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        let signals = RiskSignals::new()
+            .with_commit_gap(12)
+            .with_file_touches(vec![
+                ("main.rs".into(), 6),
+                ("lib.rs".into(), 5),
+            ])
+            .with_errors(vec![
+                "same error".into(),
+                "same error".into(),
+                "same error".into(),
+            ])
+            .with_test_history(vec![10, 10, 10, 10, 10])
+            .with_mode_switches(3)
+            .with_warning_history(vec![5, 8, 12]);
+
+        let score = predictor.risk_score(&signals);
+        let level = predictor.risk_level(score);
+
+        assert!(score >= 60.0, "Score {} should be high", score);
+        assert!(level.requires_intervention());
+    }
+
+    #[test]
+    fn test_risk_breakdown_dominant_factor() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        // High commit gap, low everything else
+        let signals = RiskSignals::new()
+            .with_commit_gap(15)
+            .with_file_touches(vec![])
+            .with_errors(vec![])
+            .with_test_history(vec![10, 11, 12])
+            .with_mode_switches(0)
+            .with_warning_history(vec![]);
+
+        let breakdown = predictor.risk_breakdown(&signals);
+        assert_eq!(breakdown.dominant_factor(), "commit_gap");
+    }
+
+    #[test]
+    fn test_risk_breakdown_summary() {
+        let predictor = StagnationPredictor::with_defaults();
+        let signals = RiskSignals::new().with_commit_gap(10);
+
+        let breakdown = predictor.risk_breakdown(&signals);
+        let summary = breakdown.summary();
+
+        assert!(summary.contains("Risk="));
+        assert!(summary.contains("commit_gap="));
+    }
+
+    #[test]
+    fn test_predictor_config_builder() {
+        let config = PredictorConfig::new()
+            .with_max_commit_gap(20)
+            .with_max_file_touches(10)
+            .with_history_length(20);
+
+        assert_eq!(config.max_commit_gap, 20);
+        assert_eq!(config.max_file_touches, 10);
+        assert_eq!(config.history_length, 20);
+    }
+
+    // =========================================================================
+    // Phase 6.2: Pattern Detection Tests
+    // =========================================================================
+
+    #[test]
+    fn test_repeated_file_touches() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        let low_churn = vec![("a.rs".into(), 1), ("b.rs".into(), 2)];
+        assert!(predictor.repeated_file_touches(&low_churn) < 0.5);
+
+        let high_churn = vec![("a.rs".into(), 10), ("b.rs".into(), 8)];
+        assert!(predictor.repeated_file_touches(&high_churn) > 0.5);
+    }
+
+    #[test]
+    fn test_test_count_stagnant_for() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        // Increasing: no stagnation
+        let increasing = vec![10, 11, 12, 13];
+        assert_eq!(predictor.test_count_stagnant_for(&increasing), 0);
+
+        // Stagnant: 3 iterations at same count
+        let stagnant = vec![10, 12, 15, 15, 15];
+        assert_eq!(predictor.test_count_stagnant_for(&stagnant), 2);
+
+        // All same: all stagnant
+        let all_same = vec![10, 10, 10, 10, 10];
+        assert_eq!(predictor.test_count_stagnant_for(&all_same), 4);
+    }
+
+    #[test]
+    fn test_error_repetition_rate() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        // Unique errors: low rate
+        let unique = vec!["error 1".into(), "error 2".into(), "error 3".into()];
+        assert!(predictor.error_repetition_rate(&unique) < 0.5);
+
+        // Repeated errors: high rate
+        let repeated = vec![
+            "same error".into(),
+            "same error".into(),
+            "same error".into(),
+        ];
+        assert_eq!(predictor.error_repetition_rate(&repeated), 1.0);
+    }
+
+    #[test]
+    fn test_recent_mode_switch() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        assert!(!predictor.recent_mode_switch(0, 2));
+        assert!(!predictor.recent_mode_switch(1, 2));
+        assert!(predictor.recent_mode_switch(2, 2));
+        assert!(predictor.recent_mode_switch(5, 2));
+    }
+
+    // =========================================================================
+    // Phase 6.3: Preventive Action Tests
+    // =========================================================================
+
+    #[test]
+    fn test_preventive_action_low_risk() {
+        let predictor = StagnationPredictor::with_defaults();
+        let signals = RiskSignals::new().with_commit_gap(1);
+        let score = predictor.risk_score(&signals);
+        let action = predictor.preventive_action(&signals, score);
+
+        assert_eq!(action, PreventiveAction::None);
+    }
+
+    #[test]
+    fn test_preventive_action_medium_risk() {
+        let predictor = StagnationPredictor::with_defaults();
+        let signals = RiskSignals::new()
+            .with_commit_gap(8)
+            .with_file_touches(vec![("a.rs".into(), 3)])
+            .with_errors(vec!["err".into(), "err".into()]);
+
+        let _score = predictor.risk_score(&signals);
+        // Ensure we're in medium range (use explicit value for testing)
+        let adjusted_score = 40.0;
+        let action = predictor.preventive_action(&signals, adjusted_score);
+
+        match action {
+            PreventiveAction::InjectGuidance { .. } => (),
+            other => panic!("Expected InjectGuidance, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_preventive_action_high_risk_commit() {
+        let predictor = StagnationPredictor::with_defaults();
+        // Signals dominated by commit gap
+        let signals = RiskSignals::new().with_commit_gap(15);
+
+        let breakdown = predictor.risk_breakdown(&signals);
+        let action = predictor.high_risk_action(&breakdown, &signals);
+
+        assert_eq!(action, PreventiveAction::SuggestCommit);
+    }
+
+    #[test]
+    fn test_preventive_action_critical() {
+        let predictor = StagnationPredictor::with_defaults();
+        let signals = RiskSignals::new().with_commit_gap(15);
+        let action = predictor.preventive_action(&signals, 85.0);
+
+        match action {
+            PreventiveAction::RequestReview { reason } => {
+                assert!(reason.contains("Critical"));
+            }
+            other => panic!("Expected RequestReview, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_generate_unstick_guidance() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        let breakdown = RiskBreakdown {
+            commit_gap_contribution: 50.0,
+            file_churn_contribution: 10.0,
+            error_repeat_contribution: 10.0,
+            test_stagnation_contribution: 10.0,
+            mode_oscillation_contribution: 5.0,
+            warning_growth_contribution: 5.0,
+            total: 90.0,
+        };
+
+        let guidance = predictor.generate_unstick_guidance(&breakdown);
+        assert!(guidance.contains("commit"));
+    }
+
+    #[test]
+    fn test_identify_single_actionable_item() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        let signals = RiskSignals::new()
+            .with_file_touches(vec![("main.rs".into(), 10)]);
+
+        let breakdown = RiskBreakdown {
+            commit_gap_contribution: 10.0,
+            file_churn_contribution: 50.0,
+            error_repeat_contribution: 10.0,
+            test_stagnation_contribution: 10.0,
+            mode_oscillation_contribution: 5.0,
+            warning_growth_contribution: 5.0,
+            total: 90.0,
+        };
+
+        let item = predictor.identify_single_actionable_item(&signals, &breakdown);
+        assert!(item.contains("main.rs"));
+        assert!(item.contains("10 times"));
+    }
+
+    #[test]
+    fn test_prediction_accuracy_tracking() {
+        let mut predictor = StagnationPredictor::with_defaults();
+
+        // No predictions yet
+        assert!(predictor.prediction_accuracy().is_none());
+
+        // Record some predictions
+        predictor.record_prediction(70.0, true); // High risk, stagnated - correct
+        predictor.record_prediction(20.0, false); // Low risk, no stagnation - correct
+        predictor.record_prediction(80.0, false); // High risk, no stagnation - wrong
+
+        let accuracy = predictor.prediction_accuracy().unwrap();
+        // 2 out of 3 correct
+        assert!((accuracy - 0.6666).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_predictor_summary() {
+        let mut predictor = StagnationPredictor::with_defaults();
+        predictor.record_prediction(50.0, true);
+        predictor.record_prediction(50.0, false);
+
+        let summary = predictor.summary();
+        assert!(summary.contains("2 predictions"));
+        assert!(summary.contains("accuracy="));
+    }
+
+    #[test]
+    fn test_preventive_action_display() {
+        let action = PreventiveAction::SuggestCommit;
+        assert_eq!(action.to_string(), "suggest_commit");
+
+        let action = PreventiveAction::InjectGuidance {
+            guidance: "test".into(),
+        };
+        assert!(action.to_string().contains("inject_guidance"));
+
+        let action = PreventiveAction::FocusTask {
+            task: "do something".into(),
+        };
+        assert!(action.to_string().contains("focus_task"));
+    }
+
+    #[test]
+    fn test_risk_signals_builder() {
+        let signals = RiskSignals::new()
+            .with_commit_gap(5)
+            .with_file_touches(vec![("a.rs".into(), 2)])
+            .with_errors(vec!["err".into()])
+            .with_test_history(vec![10, 11])
+            .with_mode_switches(1)
+            .with_warning_history(vec![0, 1]);
+
+        assert_eq!(signals.iterations_since_commit, 5);
+        assert_eq!(signals.file_touch_counts.len(), 1);
+        assert_eq!(signals.error_messages.len(), 1);
+        assert_eq!(signals.test_count_history.len(), 2);
+        assert_eq!(signals.mode_switches, 1);
+        assert_eq!(signals.clippy_warning_history.len(), 2);
+    }
+
+    #[test]
+    fn test_risk_level_display() {
+        assert_eq!(RiskLevel::Low.to_string(), "low");
+        assert_eq!(RiskLevel::Medium.to_string(), "medium");
+        assert_eq!(RiskLevel::High.to_string(), "high");
+        assert_eq!(RiskLevel::Critical.to_string(), "critical");
+    }
+
+    #[test]
+    fn test_risk_level_score_ranges() {
+        assert_eq!(RiskLevel::Low.min_score(), 0.0);
+        assert_eq!(RiskLevel::Low.max_score(), 30.0);
+        assert_eq!(RiskLevel::Medium.min_score(), 30.0);
+        assert_eq!(RiskLevel::Medium.max_score(), 60.0);
+        assert_eq!(RiskLevel::High.min_score(), 60.0);
+        assert_eq!(RiskLevel::High.max_score(), 80.0);
+        assert_eq!(RiskLevel::Critical.min_score(), 80.0);
+        assert_eq!(RiskLevel::Critical.max_score(), 100.0);
+    }
+
+    #[test]
+    fn test_empty_signals_low_risk() {
+        let predictor = StagnationPredictor::with_defaults();
+        let signals = RiskSignals::new();
+
+        let score = predictor.risk_score(&signals);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_warning_growth_scoring() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        // No growth
+        let no_growth = vec![5, 5, 5];
+        assert_eq!(predictor.score_warning_growth(&no_growth), 0.0);
+
+        // 100% growth (5 -> 10)
+        let double_growth = vec![5, 7, 10];
+        assert!((predictor.score_warning_growth(&double_growth) - 1.0).abs() < 0.01);
+
+        // 50% growth (10 -> 15)
+        let half_growth = vec![10, 12, 15];
+        assert!((predictor.score_warning_growth(&half_growth) - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_max_score_capped() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        // Extreme signals that would exceed 100
+        let signals = RiskSignals::new()
+            .with_commit_gap(100)
+            .with_file_touches(vec![("a.rs".into(), 100)])
+            .with_errors(vec!["err".into(); 100])
+            .with_test_history(vec![10; 20])
+            .with_mode_switches(100)
+            .with_warning_history(vec![1, 100]);
+
+        let score = predictor.risk_score(&signals);
+        assert!(score <= 100.0, "Score {} should be capped at 100", score);
+    }
+}
