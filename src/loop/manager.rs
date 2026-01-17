@@ -1860,20 +1860,17 @@ impl LoopManager {
             LoopMode::Plan => "plan",
         };
 
+        // Maximum prompt length (Claude Code has limits on stdin size)
+        // Keep prompts concise to avoid "Prompt is too long" errors
+        const MAX_PROMPT_LENGTH: usize = 12000; // ~12KB is safe
+
         // Try to build dynamic prompt first, fall back to static file if needed
         let prompt = match self.prompt_assembler.build_prompt(mode_name) {
             Ok(dynamic_prompt) => {
-                debug!("Using dynamic prompt for mode: {}", mode_name);
-                // Add task context from tracker for backward compatibility
-                let task_context = self.task_tracker.get_context_summary();
-                if task_context.is_empty() {
-                    dynamic_prompt
-                } else {
-                    format!(
-                        "## Task Tracker Context\n\n{}\n\n---\n\n{}",
-                        task_context, dynamic_prompt
-                    )
-                }
+                debug!("Using dynamic prompt for mode: {} ({} chars)", mode_name, dynamic_prompt.len());
+                // Dynamic prompt already includes task context via {{TASK_CONTEXT}} marker
+                // No need to duplicate with task_tracker.get_context_summary()
+                dynamic_prompt
             }
             Err(e) => {
                 // Fall back to static prompt file
@@ -1896,7 +1893,7 @@ impl LoopManager {
                     std::fs::read_to_string(&prompt_path)?
                 };
 
-                // Add task context to the prompt
+                // Add task context to static prompt (static prompts don't have {{TASK_CONTEXT}})
                 let task_context = self.task_tracker.get_context_summary();
                 if task_context.is_empty() {
                     base_prompt
@@ -1907,6 +1904,28 @@ impl LoopManager {
                     )
                 }
             }
+        };
+
+        // Truncate prompt if it exceeds the limit
+        let prompt = if prompt.len() > MAX_PROMPT_LENGTH {
+            warn!(
+                "Prompt exceeds {} chars ({} chars), truncating to avoid Claude Code limits",
+                MAX_PROMPT_LENGTH,
+                prompt.len()
+            );
+            // Truncate from the middle, keeping beginning (instructions) and end (current context)
+            let keep_start = MAX_PROMPT_LENGTH * 2 / 3;
+            let keep_end = MAX_PROMPT_LENGTH / 3;
+            let start = &prompt[..keep_start];
+            let end = &prompt[prompt.len() - keep_end..];
+            format!(
+                "{}\n\n... [truncated {} chars] ...\n\n{}",
+                start,
+                prompt.len() - MAX_PROMPT_LENGTH,
+                end
+            )
+        } else {
+            prompt
         };
 
         debug!(
