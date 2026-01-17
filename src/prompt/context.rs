@@ -45,6 +45,8 @@ pub struct PromptContext {
     pub attempt_summaries: Vec<AttemptSummary>,
     /// Detected anti-patterns.
     pub anti_patterns: Vec<AntiPattern>,
+    /// Code intelligence context from narsil-mcp.
+    pub code_intelligence: CodeIntelligenceContext,
 }
 
 impl PromptContext {
@@ -163,6 +165,24 @@ impl PromptContext {
     #[must_use]
     pub fn with_anti_patterns(mut self, patterns: Vec<AntiPattern>) -> Self {
         self.anti_patterns.extend(patterns);
+        self
+    }
+
+    /// Set the code intelligence context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::context::{PromptContext, CodeIntelligenceContext, CallGraphNode};
+    ///
+    /// let intel = CodeIntelligenceContext::new()
+    ///     .with_call_graph(vec![CallGraphNode::new("foo")]);
+    /// let context = PromptContext::new().with_code_intelligence(intel);
+    /// assert!(context.code_intelligence.has_data());
+    /// ```
+    #[must_use]
+    pub fn with_code_intelligence(mut self, intel: CodeIntelligenceContext) -> Self {
+        self.code_intelligence = intel;
         self
     }
 
@@ -1137,6 +1157,378 @@ impl std::fmt::Display for AntiPatternSeverity {
     }
 }
 
+// ============================================================================
+// Code Intelligence Types
+// ============================================================================
+
+/// Context for code intelligence data from narsil-mcp.
+///
+/// Aggregates call graph, reference, and dependency information to enrich prompts
+/// with code context that helps make better implementation decisions.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::context::{CodeIntelligenceContext, CallGraphNode};
+///
+/// let intel = CodeIntelligenceContext::new()
+///     .with_call_graph(vec![CallGraphNode::new("process_request")])
+///     .mark_available();
+///
+/// assert!(intel.is_available);
+/// assert!(intel.has_data());
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CodeIntelligenceContext {
+    /// Call graph information for relevant functions.
+    pub call_graph: Vec<CallGraphNode>,
+    /// Symbol references found in the codebase.
+    pub references: Vec<SymbolReference>,
+    /// Module dependency information.
+    pub dependencies: Vec<ModuleDependency>,
+    /// Whether narsil-mcp is available and intelligence data is valid.
+    pub is_available: bool,
+}
+
+impl CodeIntelligenceContext {
+    /// Create a new empty code intelligence context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::context::CodeIntelligenceContext;
+    ///
+    /// let intel = CodeIntelligenceContext::new();
+    /// assert!(!intel.is_available);
+    /// ```
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add call graph nodes.
+    #[must_use]
+    pub fn with_call_graph(mut self, nodes: Vec<CallGraphNode>) -> Self {
+        self.call_graph = nodes;
+        self
+    }
+
+    /// Add symbol references.
+    #[must_use]
+    pub fn with_references(mut self, refs: Vec<SymbolReference>) -> Self {
+        self.references = refs;
+        self
+    }
+
+    /// Add module dependencies.
+    #[must_use]
+    pub fn with_dependencies(mut self, deps: Vec<ModuleDependency>) -> Self {
+        self.dependencies = deps;
+        self
+    }
+
+    /// Mark the context as available (narsil-mcp connected successfully).
+    #[must_use]
+    pub fn mark_available(mut self) -> Self {
+        self.is_available = true;
+        self
+    }
+
+    /// Check if any intelligence data is present.
+    #[must_use]
+    pub fn has_data(&self) -> bool {
+        !self.call_graph.is_empty() || !self.references.is_empty() || !self.dependencies.is_empty()
+    }
+
+    /// Get the count of functions in the call graph.
+    #[must_use]
+    pub fn relevant_functions_count(&self) -> usize {
+        self.call_graph.len()
+    }
+
+    /// Get hotspot functions (highly connected).
+    #[must_use]
+    pub fn hotspots(&self) -> Vec<&CallGraphNode> {
+        self.call_graph.iter().filter(|n| n.is_hotspot()).collect()
+    }
+
+    /// Get definition references only.
+    #[must_use]
+    pub fn definitions(&self) -> Vec<&SymbolReference> {
+        self.references.iter().filter(|r| r.is_definition()).collect()
+    }
+}
+
+/// A node in the call graph representing a function and its connections.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::context::CallGraphNode;
+///
+/// let node = CallGraphNode::new("process_request")
+///     .with_file("src/handler.rs")
+///     .with_callers(vec!["main".to_string()])
+///     .with_callees(vec!["validate".to_string()]);
+///
+/// assert_eq!(node.connection_count(), 2);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallGraphNode {
+    /// Name of the function.
+    pub function_name: String,
+    /// File containing the function.
+    pub file: Option<String>,
+    /// Line number of the function definition.
+    pub line: Option<u32>,
+    /// Functions that call this function.
+    pub callers: Vec<String>,
+    /// Functions called by this function.
+    pub callees: Vec<String>,
+}
+
+impl CallGraphNode {
+    /// Create a new call graph node.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::context::CallGraphNode;
+    ///
+    /// let node = CallGraphNode::new("my_function");
+    /// assert_eq!(node.function_name, "my_function");
+    /// ```
+    #[must_use]
+    pub fn new(function_name: impl Into<String>) -> Self {
+        Self {
+            function_name: function_name.into(),
+            file: None,
+            line: None,
+            callers: Vec::new(),
+            callees: Vec::new(),
+        }
+    }
+
+    /// Set the file path.
+    #[must_use]
+    pub fn with_file(mut self, file: impl Into<String>) -> Self {
+        self.file = Some(file.into());
+        self
+    }
+
+    /// Set the line number.
+    #[must_use]
+    pub fn with_line(mut self, line: u32) -> Self {
+        self.line = Some(line);
+        self
+    }
+
+    /// Set the callers.
+    #[must_use]
+    pub fn with_callers(mut self, callers: Vec<String>) -> Self {
+        self.callers = callers;
+        self
+    }
+
+    /// Set the callees.
+    #[must_use]
+    pub fn with_callees(mut self, callees: Vec<String>) -> Self {
+        self.callees = callees;
+        self
+    }
+
+    /// Get total number of connections (callers + callees).
+    #[must_use]
+    pub fn connection_count(&self) -> usize {
+        self.callers.len() + self.callees.len()
+    }
+
+    /// Check if this function is a hotspot (>= 5 connections).
+    #[must_use]
+    pub fn is_hotspot(&self) -> bool {
+        self.connection_count() >= 5
+    }
+}
+
+/// A reference to a symbol in the codebase.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::context::{SymbolReference, ReferenceKind};
+///
+/// let reference = SymbolReference::new("MyStruct", "src/lib.rs", 42)
+///     .with_kind(ReferenceKind::Definition);
+///
+/// assert!(reference.is_definition());
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SymbolReference {
+    /// Name of the symbol.
+    pub symbol: String,
+    /// File containing the reference.
+    pub file: String,
+    /// Line number.
+    pub line: u32,
+    /// Column number.
+    pub column: Option<u32>,
+    /// Kind of reference.
+    pub kind: ReferenceKind,
+    /// Context around the reference (code snippet).
+    pub context: Option<String>,
+}
+
+impl SymbolReference {
+    /// Create a new symbol reference.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::context::SymbolReference;
+    ///
+    /// let reference = SymbolReference::new("foo", "lib.rs", 10);
+    /// assert_eq!(reference.symbol, "foo");
+    /// ```
+    #[must_use]
+    pub fn new(symbol: impl Into<String>, file: impl Into<String>, line: u32) -> Self {
+        Self {
+            symbol: symbol.into(),
+            file: file.into(),
+            line,
+            column: None,
+            kind: ReferenceKind::Unknown,
+            context: None,
+        }
+    }
+
+    /// Set the column.
+    #[must_use]
+    pub fn with_column(mut self, column: u32) -> Self {
+        self.column = Some(column);
+        self
+    }
+
+    /// Set the reference kind.
+    #[must_use]
+    pub fn with_kind(mut self, kind: ReferenceKind) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    /// Set the context snippet.
+    #[must_use]
+    pub fn with_context(mut self, context: impl Into<String>) -> Self {
+        self.context = Some(context.into());
+        self
+    }
+
+    /// Check if this is a definition.
+    #[must_use]
+    pub fn is_definition(&self) -> bool {
+        self.kind == ReferenceKind::Definition
+    }
+}
+
+/// Kind of symbol reference.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::context::ReferenceKind;
+///
+/// assert_eq!(ReferenceKind::Definition.to_string(), "definition");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ReferenceKind {
+    /// Symbol definition.
+    Definition,
+    /// Symbol usage/read.
+    Usage,
+    /// Function call.
+    Call,
+    /// Import statement.
+    Import,
+    /// Unknown reference type.
+    #[default]
+    Unknown,
+}
+
+impl std::fmt::Display for ReferenceKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReferenceKind::Definition => write!(f, "definition"),
+            ReferenceKind::Usage => write!(f, "usage"),
+            ReferenceKind::Call => write!(f, "call"),
+            ReferenceKind::Import => write!(f, "import"),
+            ReferenceKind::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+/// Module dependency information.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::context::ModuleDependency;
+///
+/// let dep = ModuleDependency::new("src/lib.rs")
+///     .with_imports(vec!["std::io".to_string()])
+///     .with_imported_by(vec!["src/main.rs".to_string()]);
+///
+/// assert_eq!(dep.total_connections(), 2);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModuleDependency {
+    /// Path to the module.
+    pub module_path: String,
+    /// Modules this module imports.
+    pub imports: Vec<String>,
+    /// Modules that import this module.
+    pub imported_by: Vec<String>,
+}
+
+impl ModuleDependency {
+    /// Create a new module dependency.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::context::ModuleDependency;
+    ///
+    /// let dep = ModuleDependency::new("src/lib.rs");
+    /// assert_eq!(dep.module_path, "src/lib.rs");
+    /// ```
+    #[must_use]
+    pub fn new(module_path: impl Into<String>) -> Self {
+        Self {
+            module_path: module_path.into(),
+            imports: Vec::new(),
+            imported_by: Vec::new(),
+        }
+    }
+
+    /// Set imports.
+    #[must_use]
+    pub fn with_imports(mut self, imports: Vec<String>) -> Self {
+        self.imports = imports;
+        self
+    }
+
+    /// Set imported_by.
+    #[must_use]
+    pub fn with_imported_by(mut self, imported_by: Vec<String>) -> Self {
+        self.imported_by = imported_by;
+        self
+    }
+
+    /// Get total number of connections.
+    #[must_use]
+    pub fn total_connections(&self) -> usize {
+        self.imports.len() + self.imported_by.len()
+    }
+}
+
 /// Aggregates errors by code, merging duplicates.
 ///
 /// # Example
@@ -1649,7 +2041,13 @@ mod tests {
                 "test_delta": 0
             },
             "attempt_summaries": [],
-            "anti_patterns": []
+            "anti_patterns": [],
+            "code_intelligence": {
+                "call_graph": [],
+                "references": [],
+                "dependencies": [],
+                "is_available": false
+            }
         }"#;
 
         let context: PromptContext = serde_json::from_str(json).unwrap();
@@ -1683,5 +2081,257 @@ mod tests {
 
         assert_eq!(restored.pattern_type, AntiPatternType::TaskOscillation);
         assert_eq!(restored.persistence_count, 5);
+    }
+
+    // ==========================================================================
+    // CodeIntelligenceContext tests
+    // ==========================================================================
+
+    #[test]
+    fn test_code_intelligence_context_new() {
+        let intel = CodeIntelligenceContext::new();
+        assert!(intel.call_graph.is_empty());
+        assert!(intel.references.is_empty());
+        assert!(intel.dependencies.is_empty());
+        assert!(!intel.is_available);
+    }
+
+    #[test]
+    fn test_code_intelligence_context_with_call_graph() {
+        let nodes = vec![
+            CallGraphNode::new("process_request")
+                .with_callers(vec!["handle_http".to_string()])
+                .with_callees(vec!["validate_input".to_string(), "execute".to_string()]),
+        ];
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(nodes)
+            .mark_available();
+
+        assert_eq!(intel.call_graph.len(), 1);
+        assert_eq!(intel.call_graph[0].function_name, "process_request");
+        assert!(intel.is_available);
+    }
+
+    #[test]
+    fn test_code_intelligence_context_with_references() {
+        let refs = vec![
+            SymbolReference::new("MyStruct", "src/lib.rs", 42)
+                .with_kind(ReferenceKind::Definition),
+            SymbolReference::new("MyStruct", "src/main.rs", 10)
+                .with_kind(ReferenceKind::Usage),
+        ];
+        let intel = CodeIntelligenceContext::new().with_references(refs);
+
+        assert_eq!(intel.references.len(), 2);
+        assert_eq!(intel.references[0].symbol, "MyStruct");
+    }
+
+    #[test]
+    fn test_code_intelligence_context_with_dependencies() {
+        let deps = vec![
+            ModuleDependency::new("src/lib.rs")
+                .with_imports(vec!["std::io".to_string(), "crate::util".to_string()])
+                .with_imported_by(vec!["src/main.rs".to_string()]),
+        ];
+        let intel = CodeIntelligenceContext::new().with_dependencies(deps);
+
+        assert_eq!(intel.dependencies.len(), 1);
+        assert_eq!(intel.dependencies[0].imports.len(), 2);
+    }
+
+    #[test]
+    fn test_code_intelligence_context_has_data() {
+        let empty = CodeIntelligenceContext::new();
+        assert!(!empty.has_data());
+
+        let with_graph = CodeIntelligenceContext::new()
+            .with_call_graph(vec![CallGraphNode::new("foo")]);
+        assert!(with_graph.has_data());
+    }
+
+    #[test]
+    fn test_code_intelligence_context_relevant_functions_count() {
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![
+                CallGraphNode::new("foo"),
+                CallGraphNode::new("bar"),
+            ]);
+        assert_eq!(intel.relevant_functions_count(), 2);
+    }
+
+    // ==========================================================================
+    // CallGraphNode tests
+    // ==========================================================================
+
+    #[test]
+    fn test_call_graph_node_new() {
+        let node = CallGraphNode::new("process_data");
+        assert_eq!(node.function_name, "process_data");
+        assert!(node.callers.is_empty());
+        assert!(node.callees.is_empty());
+        assert!(node.file.is_none());
+    }
+
+    #[test]
+    fn test_call_graph_node_builders() {
+        let node = CallGraphNode::new("process_data")
+            .with_file("src/processor.rs")
+            .with_line(42)
+            .with_callers(vec!["main".to_string(), "handle_request".to_string()])
+            .with_callees(vec!["validate".to_string()]);
+
+        assert_eq!(node.file, Some("src/processor.rs".to_string()));
+        assert_eq!(node.line, Some(42));
+        assert_eq!(node.callers.len(), 2);
+        assert_eq!(node.callees.len(), 1);
+    }
+
+    #[test]
+    fn test_call_graph_node_connection_count() {
+        let node = CallGraphNode::new("foo")
+            .with_callers(vec!["a".to_string(), "b".to_string()])
+            .with_callees(vec!["c".to_string()]);
+
+        assert_eq!(node.connection_count(), 3);
+    }
+
+    #[test]
+    fn test_call_graph_node_is_hotspot() {
+        let low_connections = CallGraphNode::new("foo")
+            .with_callers(vec!["a".to_string()]);
+        assert!(!low_connections.is_hotspot());
+
+        let high_connections = CallGraphNode::new("bar")
+            .with_callers(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()])
+            .with_callees(vec!["x".into()]);
+        assert!(high_connections.is_hotspot());
+    }
+
+    // ==========================================================================
+    // SymbolReference tests
+    // ==========================================================================
+
+    #[test]
+    fn test_symbol_reference_new() {
+        let reference = SymbolReference::new("MyStruct", "src/lib.rs", 42);
+        assert_eq!(reference.symbol, "MyStruct");
+        assert_eq!(reference.file, "src/lib.rs");
+        assert_eq!(reference.line, 42);
+        assert_eq!(reference.kind, ReferenceKind::Unknown);
+    }
+
+    #[test]
+    fn test_symbol_reference_builders() {
+        let reference = SymbolReference::new("foo", "src/lib.rs", 10)
+            .with_column(5)
+            .with_kind(ReferenceKind::Call)
+            .with_context("let result = foo();");
+
+        assert_eq!(reference.column, Some(5));
+        assert_eq!(reference.kind, ReferenceKind::Call);
+        assert_eq!(reference.context, Some("let result = foo();".to_string()));
+    }
+
+    #[test]
+    fn test_symbol_reference_is_definition() {
+        let def = SymbolReference::new("foo", "lib.rs", 1)
+            .with_kind(ReferenceKind::Definition);
+        assert!(def.is_definition());
+
+        let usage = SymbolReference::new("foo", "main.rs", 10)
+            .with_kind(ReferenceKind::Usage);
+        assert!(!usage.is_definition());
+    }
+
+    // ==========================================================================
+    // ReferenceKind tests
+    // ==========================================================================
+
+    #[test]
+    fn test_reference_kind_display() {
+        assert_eq!(ReferenceKind::Definition.to_string(), "definition");
+        assert_eq!(ReferenceKind::Usage.to_string(), "usage");
+        assert_eq!(ReferenceKind::Call.to_string(), "call");
+        assert_eq!(ReferenceKind::Import.to_string(), "import");
+        assert_eq!(ReferenceKind::Unknown.to_string(), "unknown");
+    }
+
+    // ==========================================================================
+    // ModuleDependency tests
+    // ==========================================================================
+
+    #[test]
+    fn test_module_dependency_new() {
+        let dep = ModuleDependency::new("src/lib.rs");
+        assert_eq!(dep.module_path, "src/lib.rs");
+        assert!(dep.imports.is_empty());
+        assert!(dep.imported_by.is_empty());
+    }
+
+    #[test]
+    fn test_module_dependency_builders() {
+        let dep = ModuleDependency::new("src/lib.rs")
+            .with_imports(vec!["std::io".to_string(), "crate::util".to_string()])
+            .with_imported_by(vec!["src/main.rs".to_string()]);
+
+        assert_eq!(dep.imports.len(), 2);
+        assert_eq!(dep.imported_by.len(), 1);
+    }
+
+    #[test]
+    fn test_module_dependency_total_connections() {
+        let dep = ModuleDependency::new("mod.rs")
+            .with_imports(vec!["a".into(), "b".into()])
+            .with_imported_by(vec!["c".into()]);
+
+        assert_eq!(dep.total_connections(), 3);
+    }
+
+    // ==========================================================================
+    // PromptContext with CodeIntelligence tests
+    // ==========================================================================
+
+    #[test]
+    fn test_prompt_context_with_code_intelligence() {
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![CallGraphNode::new("foo")])
+            .mark_available();
+
+        let context = PromptContext::new().with_code_intelligence(intel);
+
+        assert!(context.code_intelligence.is_available);
+        assert!(context.code_intelligence.has_data());
+    }
+
+    // ==========================================================================
+    // Serialization tests for CodeIntelligence types
+    // ==========================================================================
+
+    #[test]
+    fn test_call_graph_node_serialize_roundtrip() {
+        let node = CallGraphNode::new("process")
+            .with_file("src/lib.rs")
+            .with_callers(vec!["main".to_string()]);
+
+        let json = serde_json::to_string(&node).unwrap();
+        let restored: CallGraphNode = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.function_name, "process");
+        assert_eq!(restored.callers.len(), 1);
+    }
+
+    #[test]
+    fn test_code_intelligence_context_serialize_roundtrip() {
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![CallGraphNode::new("foo")])
+            .with_references(vec![SymbolReference::new("Bar", "lib.rs", 10)])
+            .mark_available();
+
+        let json = serde_json::to_string(&intel).unwrap();
+        let restored: CodeIntelligenceContext = serde_json::from_str(&json).unwrap();
+
+        assert!(restored.is_available);
+        assert_eq!(restored.call_graph.len(), 1);
+        assert_eq!(restored.references.len(), 1);
     }
 }

@@ -15,8 +15,9 @@
 //! ```
 
 use crate::prompt::context::{
-    AntiPattern, AntiPatternSeverity, AttemptOutcome, AttemptSummary, CurrentTaskContext,
-    ErrorContext, PromptContext, QualityGateStatus, SessionStats,
+    AntiPattern, AntiPatternSeverity, AttemptOutcome, AttemptSummary, CallGraphNode,
+    CodeIntelligenceContext, CurrentTaskContext, ErrorContext, PromptContext, QualityGateStatus,
+    SessionStats,
 };
 use crate::prompt::templates::{PromptTemplates, TemplateMarker};
 use std::collections::HashMap;
@@ -544,6 +545,150 @@ impl SectionBuilder {
         lines.push(String::new());
         lines.join("\n")
     }
+
+    /// Build the code intelligence section from narsil-mcp data.
+    ///
+    /// Shows call graph, references, and dependency information to provide
+    /// context for implementation decisions.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::builder::SectionBuilder;
+    /// use ralph::prompt::context::{CodeIntelligenceContext, CallGraphNode};
+    ///
+    /// let intel = CodeIntelligenceContext::new()
+    ///     .with_call_graph(vec![CallGraphNode::new("process")])
+    ///     .mark_available();
+    ///
+    /// let section = SectionBuilder::build_intelligence_section(&intel);
+    /// assert!(section.contains("## Code Intelligence"));
+    /// ```
+    #[must_use]
+    pub fn build_intelligence_section(intel: &CodeIntelligenceContext) -> String {
+        // Don't show if not available or no data
+        if !intel.is_available || !intel.has_data() {
+            return String::new();
+        }
+
+        let mut lines = vec!["## Code Intelligence".to_string(), String::new()];
+
+        // Call graph section
+        if !intel.call_graph.is_empty() {
+            lines.push("### Relevant Functions".to_string());
+            lines.push(String::new());
+
+            // Show hotspots first with special formatting
+            let hotspots: Vec<_> = intel.call_graph.iter().filter(|n| n.is_hotspot()).collect();
+            if !hotspots.is_empty() {
+                lines.push("**🔥 Hotspots (highly connected):**".to_string());
+                for node in hotspots.iter().take(3) {
+                    Self::format_call_graph_node(node, &mut lines, true);
+                }
+                lines.push(String::new());
+            }
+
+            // Show other functions
+            let regular: Vec<_> = intel.call_graph.iter().filter(|n| !n.is_hotspot()).collect();
+            if !regular.is_empty() {
+                lines.push("**Functions:**".to_string());
+                for node in regular.iter().take(5) {
+                    Self::format_call_graph_node(node, &mut lines, false);
+                }
+            }
+
+            if intel.call_graph.len() > 8 {
+                lines.push(format!("... and {} more functions", intel.call_graph.len() - 8));
+            }
+            lines.push(String::new());
+        }
+
+        // References section
+        if !intel.references.is_empty() {
+            lines.push("### Symbol References".to_string());
+            lines.push(String::new());
+
+            // Group by symbol
+            let mut symbols_seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            for reference in intel.references.iter().take(10) {
+                if symbols_seen.insert(&reference.symbol) {
+                    let location = format!("{}:{}", reference.file, reference.line);
+                    let kind_str = format!(" ({})", reference.kind);
+                    lines.push(format!("- `{}` at `{}`{}", reference.symbol, location, kind_str));
+                }
+            }
+
+            if intel.references.len() > 10 {
+                lines.push(format!("... and {} more references", intel.references.len() - 10));
+            }
+            lines.push(String::new());
+        }
+
+        // Dependencies section
+        if !intel.dependencies.is_empty() {
+            lines.push("### Dependencies".to_string());
+            lines.push(String::new());
+
+            for dep in intel.dependencies.iter().take(5) {
+                lines.push(format!("**`{}`**", dep.module_path));
+                if !dep.imports.is_empty() {
+                    let imports_preview: Vec<_> = dep.imports.iter().take(5).collect();
+                    let imports_str = imports_preview.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                    if dep.imports.len() > 5 {
+                        lines.push(format!("  - Imports: {} ... (+{} more)", imports_str, dep.imports.len() - 5));
+                    } else {
+                        lines.push(format!("  - Imports: {}", imports_str));
+                    }
+                }
+                if !dep.imported_by.is_empty() {
+                    let importers_preview: Vec<_> = dep.imported_by.iter().take(3).collect();
+                    let importers_str = importers_preview.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                    if dep.imported_by.len() > 3 {
+                        lines.push(format!("  - Used by: {} ... (+{} more)", importers_str, dep.imported_by.len() - 3));
+                    } else {
+                        lines.push(format!("  - Used by: {}", importers_str));
+                    }
+                }
+            }
+            lines.push(String::new());
+        }
+
+        lines.join("\n")
+    }
+
+    /// Format a call graph node for display.
+    fn format_call_graph_node(node: &CallGraphNode, lines: &mut Vec<String>, is_hotspot: bool) {
+        let location = match (&node.file, node.line) {
+            (Some(f), Some(l)) => format!(" (`{}:{}`)", f, l),
+            (Some(f), None) => format!(" (`{}`)", f),
+            _ => String::new(),
+        };
+
+        let prefix = if is_hotspot { "  🔥 " } else { "  - " };
+        lines.push(format!("{}`{}`{}", prefix, node.function_name, location));
+
+        // Show callers (limited)
+        if !node.callers.is_empty() {
+            let callers_preview: Vec<_> = node.callers.iter().take(5).collect();
+            let callers_str = callers_preview.iter().map(|s| format!("`{}`", s)).collect::<Vec<_>>().join(", ");
+            if node.callers.len() > 5 {
+                lines.push(format!("    ← Called by: {} ... (+{} more)", callers_str, node.callers.len() - 5));
+            } else {
+                lines.push(format!("    ← Called by: {}", callers_str));
+            }
+        }
+
+        // Show callees (limited)
+        if !node.callees.is_empty() {
+            let callees_preview: Vec<_> = node.callees.iter().take(5).collect();
+            let callees_str = callees_preview.iter().map(|s| format!("`{}`", s)).collect::<Vec<_>>().join(", ");
+            if node.callees.len() > 5 {
+                lines.push(format!("    → Calls: {} ... (+{} more)", callees_str, node.callees.len() - 5));
+            } else {
+                lines.push(format!("    → Calls: {}", callees_str));
+            }
+        }
+    }
 }
 
 /// Dynamic prompt builder that assembles complete prompts from templates and context.
@@ -627,6 +772,11 @@ impl DynamicPromptBuilder {
             SectionBuilder::build_antipattern_section(&context.anti_patterns);
         substitutions.insert(TemplateMarker::AntiPatterns, antipattern_section);
 
+        // Code intelligence section
+        let intelligence_section =
+            SectionBuilder::build_intelligence_section(&context.code_intelligence);
+        substitutions.insert(TemplateMarker::CodeIntelligence, intelligence_section);
+
         // Historical guidance placeholder (populated by history module)
         substitutions.insert(TemplateMarker::HistoricalGuidance, String::new());
 
@@ -689,6 +839,10 @@ impl DynamicPromptBuilder {
         substitutions.insert(
             TemplateMarker::AntiPatterns,
             SectionBuilder::build_antipattern_section(&context.anti_patterns),
+        );
+        substitutions.insert(
+            TemplateMarker::CodeIntelligence,
+            SectionBuilder::build_intelligence_section(&context.code_intelligence),
         );
         substitutions.insert(TemplateMarker::HistoricalGuidance, String::new());
         substitutions.insert(TemplateMarker::CustomSection, String::new());
@@ -1230,5 +1384,129 @@ mod tests {
 
         let result = builder.build_with_custom("build", &context, &custom);
         assert!(result.is_ok());
+    }
+
+    // ==========================================================================
+    // SectionBuilder::build_intelligence_section tests
+    // ==========================================================================
+
+    #[test]
+    fn test_build_intelligence_section_empty() {
+        let intel = CodeIntelligenceContext::new();
+        let section = SectionBuilder::build_intelligence_section(&intel);
+        assert!(section.is_empty());
+    }
+
+    #[test]
+    fn test_build_intelligence_section_unavailable() {
+        // Even with data, if not marked available, should be empty
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![CallGraphNode::new("foo")]);
+        let section = SectionBuilder::build_intelligence_section(&intel);
+        assert!(section.is_empty());
+    }
+
+    #[test]
+    fn test_build_intelligence_section_with_call_graph() {
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![
+                CallGraphNode::new("process_request")
+                    .with_file("src/handler.rs")
+                    .with_callers(vec!["main".to_string(), "handle_http".to_string()])
+                    .with_callees(vec!["validate".to_string()]),
+            ])
+            .mark_available();
+
+        let section = SectionBuilder::build_intelligence_section(&intel);
+
+        assert!(section.contains("## Code Intelligence"));
+        assert!(section.contains("process_request"));
+        assert!(section.contains("main"));
+        assert!(section.contains("validate"));
+    }
+
+    #[test]
+    fn test_build_intelligence_section_with_references() {
+        let intel = CodeIntelligenceContext::new()
+            .with_references(vec![
+                SymbolReference::new("MyStruct", "src/lib.rs", 42)
+                    .with_kind(ReferenceKind::Definition),
+                SymbolReference::new("MyStruct", "src/main.rs", 10)
+                    .with_kind(ReferenceKind::Usage),
+            ])
+            .mark_available();
+
+        let section = SectionBuilder::build_intelligence_section(&intel);
+
+        assert!(section.contains("## Code Intelligence"));
+        assert!(section.contains("MyStruct"));
+        assert!(section.contains("src/lib.rs:42"));
+    }
+
+    #[test]
+    fn test_build_intelligence_section_with_dependencies() {
+        let intel = CodeIntelligenceContext::new()
+            .with_dependencies(vec![
+                ModuleDependency::new("src/lib.rs")
+                    .with_imports(vec!["std::io".to_string(), "crate::util".to_string()])
+                    .with_imported_by(vec!["src/main.rs".to_string()]),
+            ])
+            .mark_available();
+
+        let section = SectionBuilder::build_intelligence_section(&intel);
+
+        assert!(section.contains("## Code Intelligence"));
+        assert!(section.contains("Dependencies"));
+        assert!(section.contains("src/lib.rs"));
+    }
+
+    #[test]
+    fn test_build_intelligence_section_hotspots() {
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![
+                CallGraphNode::new("hotspot_func")
+                    .with_callers(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()])
+                    .with_callees(vec!["x".into()]),
+            ])
+            .mark_available();
+
+        let section = SectionBuilder::build_intelligence_section(&intel);
+
+        assert!(section.contains("hotspot") || section.contains("Hotspot"));
+    }
+
+    #[test]
+    fn test_build_intelligence_section_truncates_long_lists() {
+        let callers: Vec<String> = (0..20).map(|i| format!("caller_{}", i)).collect();
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![
+                CallGraphNode::new("popular_func")
+                    .with_callers(callers),
+            ])
+            .mark_available();
+
+        let section = SectionBuilder::build_intelligence_section(&intel);
+
+        // Should truncate long lists
+        assert!(section.contains("...") || section.contains("more"));
+    }
+
+    // ==========================================================================
+    // DynamicPromptBuilder with code intelligence tests
+    // ==========================================================================
+
+    #[test]
+    fn test_dynamic_prompt_builder_with_code_intelligence() {
+        let builder = DynamicPromptBuilder::default();
+        let intel = CodeIntelligenceContext::new()
+            .with_call_graph(vec![CallGraphNode::new("test_func")])
+            .mark_available();
+        let context = PromptContext::new().with_code_intelligence(intel);
+
+        let result = builder.build("build", &context);
+        assert!(result.is_ok());
+
+        let prompt = result.unwrap();
+        assert!(prompt.contains("test_func") || prompt.contains("Code Intelligence"));
     }
 }

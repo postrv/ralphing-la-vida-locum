@@ -44,6 +44,8 @@ pub enum TemplateMarker {
     AntiPatterns,
     /// Historical guidance injection point.
     HistoricalGuidance,
+    /// Code intelligence data injection point.
+    CodeIntelligence,
     /// Custom section injection point.
     CustomSection,
 }
@@ -68,6 +70,7 @@ impl TemplateMarker {
             TemplateMarker::AttemptHistory => "{{ATTEMPT_HISTORY}}",
             TemplateMarker::AntiPatterns => "{{ANTI_PATTERNS}}",
             TemplateMarker::HistoricalGuidance => "{{HISTORICAL_GUIDANCE}}",
+            TemplateMarker::CodeIntelligence => "{{CODE_INTELLIGENCE}}",
             TemplateMarker::CustomSection => "{{CUSTOM_SECTION}}",
         }
     }
@@ -83,6 +86,7 @@ impl TemplateMarker {
             TemplateMarker::AttemptHistory,
             TemplateMarker::AntiPatterns,
             TemplateMarker::HistoricalGuidance,
+            TemplateMarker::CodeIntelligence,
             TemplateMarker::CustomSection,
         ]
     }
@@ -110,6 +114,7 @@ impl TemplateMarker {
             "{{ATTEMPT_HISTORY}}" => Some(TemplateMarker::AttemptHistory),
             "{{ANTI_PATTERNS}}" => Some(TemplateMarker::AntiPatterns),
             "{{HISTORICAL_GUIDANCE}}" => Some(TemplateMarker::HistoricalGuidance),
+            "{{CODE_INTELLIGENCE}}" => Some(TemplateMarker::CodeIntelligence),
             "{{CUSTOM_SECTION}}" => Some(TemplateMarker::CustomSection),
             _ => None,
         }
@@ -481,6 +486,8 @@ const DEFAULT_BUILD_TEMPLATE: &str = r#"# Build Phase - Production Standard
 
 {{ANTI_PATTERNS}}
 
+{{CODE_INTELLIGENCE}}
+
 ## Phase 1: PLAN
 - Read IMPLEMENTATION_PLAN.md
 - Select highest-priority incomplete task
@@ -705,7 +712,9 @@ mod tests {
         assert!(all.contains(&TemplateMarker::ErrorContext));
         assert!(all.contains(&TemplateMarker::QualityStatus));
         assert!(all.contains(&TemplateMarker::SessionStats));
-        assert_eq!(all.len(), 8);
+        assert!(all.contains(&TemplateMarker::CodeIntelligence));
+        assert!(all.contains(&TemplateMarker::CustomSection));
+        assert_eq!(all.len(), 9);
     }
 
     #[test]
@@ -884,6 +893,7 @@ mod tests {
         assert!(template.has_marker(TemplateMarker::QualityStatus));
         assert!(template.has_marker(TemplateMarker::SessionStats));
         assert!(template.has_marker(TemplateMarker::AntiPatterns));
+        assert!(template.has_marker(TemplateMarker::CodeIntelligence));
     }
 
     #[test]
