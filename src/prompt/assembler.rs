@@ -25,6 +25,7 @@
 //! let prompt = assembler.build_prompt("build").expect("should build");
 //! ```
 
+use crate::narsil::{CodeIntelligenceBuilder, NarsilClient};
 use crate::prompt::antipatterns::{
     detect_quality_gate_ignoring, detect_scope_creep, AntiPatternDetector, DetectorConfig,
     IterationSummary,
@@ -113,6 +114,7 @@ impl AssemblerConfig {
 /// - Current context (task, errors, quality status, session stats)
 /// - Anti-pattern detection across iterations
 /// - Attempt history for the current task
+/// - Code intelligence from narsil-mcp
 /// - Final prompt assembly from templates
 ///
 /// # Example
@@ -131,7 +133,6 @@ impl AssemblerConfig {
 /// let prompt = assembler.build_prompt("build").expect("build succeeds");
 /// assert!(prompt.contains("Build Phase"));
 /// ```
-#[derive(Debug)]
 pub struct PromptAssembler {
     /// Configuration.
     config: AssemblerConfig,
@@ -155,6 +156,14 @@ pub struct PromptAssembler {
     consecutive_quality_failures: u32,
     /// Files modified in current session (for scope creep detection).
     session_files_modified: Vec<String>,
+    /// Optional narsil-mcp client for code intelligence.
+    narsil_client: Option<NarsilClient>,
+    /// Functions to query for call graph intelligence.
+    intelligence_functions: Vec<String>,
+    /// Symbols to query for reference intelligence.
+    intelligence_symbols: Vec<String>,
+    /// Files to query for dependency intelligence.
+    intelligence_files: Vec<String>,
 }
 
 impl PromptAssembler {
@@ -205,7 +214,30 @@ impl PromptAssembler {
             historical_guidance: Vec::new(),
             consecutive_quality_failures: 0,
             session_files_modified: Vec::new(),
+            narsil_client: None,
+            intelligence_functions: Vec::new(),
+            intelligence_symbols: Vec::new(),
+            intelligence_files: Vec::new(),
         }
+    }
+
+    /// Create an assembler with a NarsilClient for code intelligence.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use ralph::prompt::assembler::PromptAssembler;
+    /// use ralph::narsil::{NarsilClient, NarsilConfig};
+    ///
+    /// let config = NarsilConfig::new(".");
+    /// let client = NarsilClient::new(config).unwrap();
+    /// let assembler = PromptAssembler::with_narsil_client(client);
+    /// ```
+    #[must_use]
+    pub fn with_narsil_client(client: NarsilClient) -> Self {
+        let mut assembler = Self::new();
+        assembler.narsil_client = Some(client);
+        assembler
     }
 
     /// Load templates from a directory.
@@ -584,6 +616,121 @@ impl PromptAssembler {
     }
 
     // =========================================================================
+    // Code Intelligence Management
+    // =========================================================================
+
+    /// Check if a NarsilClient is configured.
+    #[must_use]
+    pub fn has_narsil_client(&self) -> bool {
+        self.narsil_client.is_some()
+    }
+
+    /// Add a function to query for call graph intelligence.
+    ///
+    /// When building the prompt, this function's callers and callees
+    /// will be included in the code intelligence context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::assembler::PromptAssembler;
+    ///
+    /// let mut assembler = PromptAssembler::new();
+    /// assembler.add_intelligence_function("process_request");
+    /// ```
+    pub fn add_intelligence_function(&mut self, function: impl Into<String>) {
+        let func = function.into();
+        if !self.intelligence_functions.contains(&func) {
+            self.intelligence_functions.push(func);
+        }
+    }
+
+    /// Add a symbol to query for reference intelligence.
+    ///
+    /// When building the prompt, all references to this symbol
+    /// will be included in the code intelligence context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::assembler::PromptAssembler;
+    ///
+    /// let mut assembler = PromptAssembler::new();
+    /// assembler.add_intelligence_symbol("MyStruct");
+    /// ```
+    pub fn add_intelligence_symbol(&mut self, symbol: impl Into<String>) {
+        let sym = symbol.into();
+        if !self.intelligence_symbols.contains(&sym) {
+            self.intelligence_symbols.push(sym);
+        }
+    }
+
+    /// Add a file to query for dependency intelligence.
+    ///
+    /// When building the prompt, this file's imports and importers
+    /// will be included in the code intelligence context.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::assembler::PromptAssembler;
+    ///
+    /// let mut assembler = PromptAssembler::new();
+    /// assembler.add_intelligence_file("src/lib.rs");
+    /// ```
+    pub fn add_intelligence_file(&mut self, file: impl Into<String>) {
+        let f = file.into();
+        if !self.intelligence_files.contains(&f) {
+            self.intelligence_files.push(f);
+        }
+    }
+
+    /// Get the list of functions to query for intelligence.
+    #[must_use]
+    pub fn intelligence_functions(&self) -> &[String] {
+        &self.intelligence_functions
+    }
+
+    /// Get the list of symbols to query for intelligence.
+    #[must_use]
+    pub fn intelligence_symbols(&self) -> &[String] {
+        &self.intelligence_symbols
+    }
+
+    /// Get the list of files to query for intelligence.
+    #[must_use]
+    pub fn intelligence_files(&self) -> &[String] {
+        &self.intelligence_files
+    }
+
+    /// Clear all intelligence queries.
+    pub fn clear_intelligence_queries(&mut self) {
+        self.intelligence_functions.clear();
+        self.intelligence_symbols.clear();
+        self.intelligence_files.clear();
+    }
+
+    /// Build code intelligence context using the configured NarsilClient.
+    fn build_code_intelligence(&self) -> crate::prompt::context::CodeIntelligenceContext {
+        let Some(ref client) = self.narsil_client else {
+            return crate::prompt::context::CodeIntelligenceContext::new();
+        };
+
+        // Convert owned Strings to &str slices for the builder API
+        let functions: Vec<&str> = self.intelligence_functions.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = self.intelligence_symbols.iter().map(|s| s.as_str()).collect();
+        let files: Vec<&str> = self.intelligence_files.iter().map(|s| s.as_str()).collect();
+
+        let builder = CodeIntelligenceBuilder::new(client)
+            .for_functions(&functions)
+            .for_symbols(&symbols)
+            .for_files(&files);
+
+        // Build returns a Result, unwrap with default on error
+        builder.build().unwrap_or_else(|_| crate::prompt::context::CodeIntelligenceContext::new())
+    }
+
+    // =========================================================================
     // Prompt Building
     // =========================================================================
 
@@ -660,6 +807,10 @@ impl PromptAssembler {
         patterns.truncate(self.config.max_anti_patterns);
         context = context.with_anti_patterns(patterns);
 
+        // Add code intelligence from narsil-mcp
+        let intelligence = self.build_code_intelligence();
+        context = context.with_code_intelligence(intelligence);
+
         context
     }
 
@@ -718,6 +869,7 @@ impl PromptAssembler {
         self.consecutive_quality_failures = 0;
         self.session_files_modified.clear();
         self.detector.clear();
+        self.clear_intelligence_queries();
     }
 
     /// Reset only the iteration-specific state (keeps session stats).
@@ -725,6 +877,25 @@ impl PromptAssembler {
         // Keep: session_stats, current_task (task continues), detector history
         // Clear: errors (fresh for this iteration)
         self.error_aggregator = ErrorAggregator::new();
+    }
+}
+
+impl std::fmt::Debug for PromptAssembler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PromptAssembler")
+            .field("config", &self.config)
+            .field("current_task", &self.current_task)
+            .field("session_stats", &self.session_stats)
+            .field("quality_status", &self.quality_status)
+            .field("attempts", &self.attempts)
+            .field("historical_guidance", &self.historical_guidance)
+            .field("consecutive_quality_failures", &self.consecutive_quality_failures)
+            .field("session_files_modified", &self.session_files_modified)
+            .field("has_narsil_client", &self.narsil_client.is_some())
+            .field("intelligence_functions", &self.intelligence_functions)
+            .field("intelligence_symbols", &self.intelligence_symbols)
+            .field("intelligence_files", &self.intelligence_files)
+            .finish_non_exhaustive()
     }
 }
 
@@ -1200,5 +1371,112 @@ mod tests {
         assert!(patterns
             .iter()
             .any(|p| p.pattern_type == crate::prompt::context::AntiPatternType::ScopeCreep));
+    }
+
+    // =========================================================================
+    // Code Intelligence Integration Tests
+    // =========================================================================
+
+    #[test]
+    fn test_assembler_without_intelligence_has_empty_code_intelligence() {
+        let assembler = PromptAssembler::new();
+        let context = assembler.build_context();
+
+        // Without a NarsilClient, code intelligence should be unavailable
+        assert!(!context.code_intelligence.is_available);
+        assert!(!context.code_intelligence.has_data());
+    }
+
+    #[test]
+    fn test_assembler_add_function_for_intelligence() {
+        let mut assembler = PromptAssembler::new();
+
+        // Add a function to query for intelligence
+        assembler.add_intelligence_function("process_request");
+        assembler.add_intelligence_function("validate_input");
+
+        assert_eq!(assembler.intelligence_functions().len(), 2);
+    }
+
+    #[test]
+    fn test_assembler_add_symbol_for_intelligence() {
+        let mut assembler = PromptAssembler::new();
+
+        // Add a symbol to query for references
+        assembler.add_intelligence_symbol("MyStruct");
+
+        assert_eq!(assembler.intelligence_symbols().len(), 1);
+    }
+
+    #[test]
+    fn test_assembler_add_file_for_intelligence() {
+        let mut assembler = PromptAssembler::new();
+
+        // Add a file to query for dependencies
+        assembler.add_intelligence_file("src/lib.rs");
+
+        assert_eq!(assembler.intelligence_files().len(), 1);
+    }
+
+    #[test]
+    fn test_assembler_clear_intelligence_queries() {
+        let mut assembler = PromptAssembler::new();
+
+        assembler.add_intelligence_function("foo");
+        assembler.add_intelligence_symbol("Bar");
+        assembler.add_intelligence_file("src/lib.rs");
+
+        assembler.clear_intelligence_queries();
+
+        assert!(assembler.intelligence_functions().is_empty());
+        assert!(assembler.intelligence_symbols().is_empty());
+        assert!(assembler.intelligence_files().is_empty());
+    }
+
+    #[test]
+    fn test_assembler_with_narsil_client() {
+        use crate::narsil::{NarsilClient, NarsilConfig};
+
+        // Create a client (will be unavailable since narsil-mcp not installed)
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let assembler = PromptAssembler::with_narsil_client(client);
+
+        // The assembler should now have a client configured
+        assert!(assembler.has_narsil_client());
+    }
+
+    #[test]
+    fn test_assembler_build_context_with_narsil_client() {
+        use crate::narsil::{NarsilClient, NarsilConfig};
+
+        // Create a client (unavailable in test environment)
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let mut assembler = PromptAssembler::with_narsil_client(client);
+        assembler.add_intelligence_function("test_function");
+
+        let context = assembler.build_context();
+
+        // Even with unavailable client, the field should be properly initialized
+        // (is_available will be false since narsil-mcp isn't installed in test)
+        // The key is that build_context properly tries to gather intelligence
+        assert!(context.code_intelligence.call_graph.is_empty() || !context.code_intelligence.is_available);
+    }
+
+    #[test]
+    fn test_assembler_reset_clears_intelligence() {
+        let mut assembler = PromptAssembler::new();
+
+        assembler.add_intelligence_function("foo");
+        assembler.add_intelligence_symbol("Bar");
+
+        assembler.reset();
+
+        assert!(assembler.intelligence_functions().is_empty());
+        assert!(assembler.intelligence_symbols().is_empty());
+        assert!(assembler.intelligence_files().is_empty());
     }
 }

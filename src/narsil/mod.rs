@@ -29,11 +29,13 @@
 //! ```
 
 mod client;
+mod intelligence;
 
 pub use client::{
     Dependency, NarsilClient, NarsilConfig, NarsilError, Reference, SecurityFinding,
     SecuritySeverity, ToolResponse,
 };
+pub use intelligence::CodeIntelligenceBuilder;
 
 #[cfg(test)]
 mod tests {
