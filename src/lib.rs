@@ -10,6 +10,7 @@
 //! - [`checkpoint`] - Checkpoint and rollback system for quality regression prevention
 //! - [`config`] - Configuration loading and validation
 //! - [`error`] - Custom error types and handling
+//! - [`narsil`] - narsil-mcp integration for code intelligence
 //! - [`prompt`] - Dynamic prompt generation and context management
 //! - [`quality`] - Quality gate enforcement and remediation
 //! - [`testing`] - Testing infrastructure (traits, mocks, fixtures)
@@ -38,6 +39,7 @@
 pub mod checkpoint;
 pub mod config;
 pub mod error;
+pub mod narsil;
 pub mod prompt;
 pub mod quality;
 pub mod testing;
@@ -70,6 +72,12 @@ pub use checkpoint::{
     manager::{CheckpointManager, CheckpointManagerConfig},
     rollback::{RollbackManager, RollbackResult},
     Checkpoint, CheckpointId, QualityMetrics, RegressionThresholds,
+};
+
+// Re-export narsil types
+pub use narsil::{
+    Dependency, NarsilClient, NarsilConfig, NarsilError, Reference, SecurityFinding,
+    SecuritySeverity, ToolResponse,
 };
 
 // TestFixture is only available in test builds
