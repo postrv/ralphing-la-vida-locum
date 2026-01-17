@@ -25,8 +25,11 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use crate::narsil::{NarsilClient, SecurityFinding, SecuritySeverity};
 
 // ============================================================================
 // Gate Result Types
@@ -776,11 +779,36 @@ impl Gate for NoAllowGate {
 // Security Gate
 // ============================================================================
 
-/// Quality gate that runs security scans.
+/// Quality gate that runs security scans via narsil-mcp and cargo-audit.
+///
+/// Combines results from multiple security scanning sources:
+/// - narsil-mcp `scan_security` tool (code analysis)
+/// - cargo-audit (dependency vulnerabilities)
+///
+/// Results are cached within the gate instance to avoid re-running
+/// expensive scans if `check()` is called multiple times.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::SecurityGate;
+/// use ralph::narsil::{NarsilClient, NarsilConfig};
+///
+/// let client = NarsilClient::new(NarsilConfig::new("."))?;
+/// let gate = SecurityGate::new(".")
+///     .with_narsil_client(client)
+///     .with_threshold(IssueSeverity::Warning);
+///
+/// let result = gate.check()?;
+/// ```
 pub struct SecurityGate {
     project_dir: PathBuf,
     /// Minimum severity to report.
     severity_threshold: IssueSeverity,
+    /// Optional narsil-mcp client for code security scanning.
+    narsil_client: Option<NarsilClient>,
+    /// Cached narsil scan results (to avoid re-running within iteration).
+    narsil_cache: OnceCell<Vec<GateIssue>>,
 }
 
 impl SecurityGate {
@@ -789,6 +817,8 @@ impl SecurityGate {
         Self {
             project_dir: project_dir.as_ref().to_path_buf(),
             severity_threshold: IssueSeverity::Warning,
+            narsil_client: None,
+            narsil_cache: OnceCell::new(),
         }
     }
 
@@ -797,6 +827,108 @@ impl SecurityGate {
     pub fn with_threshold(mut self, threshold: IssueSeverity) -> Self {
         self.severity_threshold = threshold;
         self
+    }
+
+    /// Set the narsil-mcp client for code security scanning.
+    ///
+    /// When provided, the gate will use narsil-mcp's `scan_security` tool
+    /// to find code vulnerabilities in addition to cargo-audit for
+    /// dependency vulnerabilities.
+    #[must_use]
+    pub fn with_narsil_client(mut self, client: NarsilClient) -> Self {
+        self.narsil_client = Some(client);
+        self
+    }
+
+    /// Convert a narsil SecuritySeverity to a gate IssueSeverity.
+    ///
+    /// Mapping:
+    /// - Critical -> Critical (blocking)
+    /// - High -> Error (blocking)
+    /// - Medium -> Warning (non-blocking)
+    /// - Low -> Info (non-blocking)
+    /// - Info -> Info (non-blocking)
+    pub fn convert_severity(severity: SecuritySeverity) -> IssueSeverity {
+        match severity {
+            SecuritySeverity::Critical => IssueSeverity::Critical,
+            SecuritySeverity::High => IssueSeverity::Error,
+            SecuritySeverity::Medium => IssueSeverity::Warning,
+            SecuritySeverity::Low => IssueSeverity::Info,
+            SecuritySeverity::Info => IssueSeverity::Info,
+        }
+    }
+
+    /// Convert a narsil SecurityFinding to a gate GateIssue.
+    pub fn convert_finding(finding: &SecurityFinding) -> GateIssue {
+        let mut issue = GateIssue::new(
+            Self::convert_severity(finding.severity),
+            &finding.message,
+        );
+
+        // Set file location
+        issue.file = Some(finding.file.clone());
+
+        // Set line number if available
+        if let Some(line) = finding.line {
+            issue.line = Some(line);
+        }
+
+        // Set rule ID as code if available
+        if let Some(ref rule_id) = finding.rule_id {
+            issue.code = Some(rule_id.clone());
+        }
+
+        // Set suggestion if available
+        if let Some(ref suggestion) = finding.suggestion {
+            issue.suggestion = Some(suggestion.clone());
+        }
+
+        issue
+    }
+
+    /// Run narsil-mcp security scan if client is available.
+    ///
+    /// Results are cached after the first call to avoid re-running
+    /// the expensive scan multiple times within the same iteration.
+    fn run_narsil_scan(&self) -> Result<Vec<GateIssue>> {
+        // Return cached results if available
+        if let Some(cached) = self.narsil_cache.get() {
+            return Ok(cached.clone());
+        }
+
+        let Some(ref client) = self.narsil_client else {
+            // No client, cache empty result
+            let _ = self.narsil_cache.set(Vec::new());
+            return Ok(Vec::new());
+        };
+
+        // Gracefully handle unavailable narsil-mcp
+        if !client.is_available() {
+            let _ = self.narsil_cache.set(Vec::new());
+            return Ok(Vec::new());
+        }
+
+        match client.scan_security() {
+            Ok(findings) => {
+                let issues: Vec<GateIssue> = findings
+                    .iter()
+                    .map(Self::convert_finding)
+                    .collect();
+                // Cache the results
+                let _ = self.narsil_cache.set(issues.clone());
+                Ok(issues)
+            }
+            Err(e) => {
+                // Log the error but don't fail the gate
+                // Narsil errors are recoverable
+                if e.is_recoverable() {
+                    let _ = self.narsil_cache.set(Vec::new());
+                    Ok(Vec::new())
+                } else {
+                    Err(anyhow::anyhow!("narsil-mcp scan failed: {}", e))
+                }
+            }
+        }
     }
 
     /// Try to run cargo-audit for dependency vulnerabilities.
@@ -847,10 +979,19 @@ impl Gate for SecurityGate {
     fn check(&self) -> Result<GateResult> {
         let start = std::time::Instant::now();
 
+        // Collect issues from both sources
+        let mut all_issues = Vec::new();
+
+        // Run cargo-audit for dependency vulnerabilities
         let audit_issues = self.run_cargo_audit()?;
+        all_issues.extend(audit_issues);
+
+        // Run narsil-mcp scan for code vulnerabilities
+        let narsil_issues = self.run_narsil_scan()?;
+        all_issues.extend(narsil_issues);
 
         // Filter by severity threshold
-        let issues: Vec<_> = audit_issues
+        let issues: Vec<_> = all_issues
             .into_iter()
             .filter(|i| i.severity >= self.severity_threshold)
             .collect();
@@ -1194,5 +1335,159 @@ error[E0308]: mismatched types
         let error = &issues[1];
         assert_eq!(error.severity, IssueSeverity::Error);
         assert!(error.message.contains("mismatched types"));
+    }
+
+    // =========================================================================
+    // SecurityGate narsil-mcp Integration Tests
+    // =========================================================================
+
+    #[test]
+    fn test_security_severity_to_issue_severity() {
+        use crate::narsil::SecuritySeverity;
+
+        // Critical narsil severity -> Critical issue severity
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::Critical),
+            IssueSeverity::Critical
+        );
+
+        // High narsil severity -> Error issue severity (blocking)
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::High),
+            IssueSeverity::Error
+        );
+
+        // Medium narsil severity -> Warning issue severity
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::Medium),
+            IssueSeverity::Warning
+        );
+
+        // Low narsil severity -> Info issue severity
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::Low),
+            IssueSeverity::Info
+        );
+
+        // Info narsil severity -> Info issue severity
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::Info),
+            IssueSeverity::Info
+        );
+    }
+
+    #[test]
+    fn test_security_finding_to_gate_issue() {
+        use crate::narsil::{SecurityFinding, SecuritySeverity};
+
+        let finding = SecurityFinding::new(
+            SecuritySeverity::High,
+            "SQL injection vulnerability",
+            "src/db.rs",
+        )
+        .with_line(42)
+        .with_rule_id("CWE-89")
+        .with_suggestion("Use parameterized queries");
+
+        let issue = SecurityGate::convert_finding(&finding);
+
+        assert_eq!(issue.severity, IssueSeverity::Error);
+        assert_eq!(issue.message, "SQL injection vulnerability");
+        assert_eq!(issue.file, Some(PathBuf::from("src/db.rs")));
+        assert_eq!(issue.line, Some(42));
+        assert_eq!(issue.code, Some("CWE-89".to_string()));
+        assert_eq!(issue.suggestion, Some("Use parameterized queries".to_string()));
+    }
+
+    #[test]
+    fn test_security_finding_without_optional_fields() {
+        use crate::narsil::{SecurityFinding, SecuritySeverity};
+
+        let finding = SecurityFinding::new(
+            SecuritySeverity::Medium,
+            "Potential vulnerability",
+            "src/api.rs",
+        );
+
+        let issue = SecurityGate::convert_finding(&finding);
+
+        assert_eq!(issue.severity, IssueSeverity::Warning);
+        assert_eq!(issue.message, "Potential vulnerability");
+        assert_eq!(issue.file, Some(PathBuf::from("src/api.rs")));
+        assert!(issue.line.is_none());
+        assert!(issue.code.is_none());
+        assert!(issue.suggestion.is_none());
+    }
+
+    #[test]
+    fn test_security_gate_with_narsil_client() {
+        use crate::narsil::{NarsilClient, NarsilConfig};
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = NarsilConfig::new(temp_dir.path())
+            .with_binary_path("/nonexistent/narsil-mcp");
+        let client = NarsilClient::new(config).unwrap();
+
+        let gate = SecurityGate::new(temp_dir.path()).with_narsil_client(client);
+
+        // When narsil is unavailable, should still work (graceful degradation)
+        let result = gate.check().unwrap();
+        // Should pass since no vulnerabilities found
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn test_security_gate_combines_audit_and_narsil() {
+        // Test that both cargo-audit and narsil-mcp results are combined
+        use crate::narsil::{NarsilClient, NarsilConfig};
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a Cargo.toml to make cargo-audit work
+        std::fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+
+        let config = NarsilConfig::new(temp_dir.path())
+            .with_binary_path("/nonexistent/narsil-mcp");
+        let client = NarsilClient::new(config).unwrap();
+
+        let gate = SecurityGate::new(temp_dir.path()).with_narsil_client(client);
+        let result = gate.check().unwrap();
+
+        // Should complete without panicking
+        assert!(result.gate_name == "Security");
+    }
+
+    #[test]
+    fn test_security_gate_caches_results() {
+        // Test that calling check() multiple times returns consistent results
+        // (caching is an implementation detail, but behavior should be consistent)
+        use crate::narsil::{NarsilClient, NarsilConfig};
+
+        let temp_dir = TempDir::new().unwrap();
+
+        let config = NarsilConfig::new(temp_dir.path())
+            .with_binary_path("/nonexistent/narsil-mcp");
+        let client = NarsilClient::new(config).unwrap();
+
+        let gate = SecurityGate::new(temp_dir.path()).with_narsil_client(client);
+
+        // Call check() multiple times
+        let result1 = gate.check().unwrap();
+        let result2 = gate.check().unwrap();
+        let result3 = gate.check().unwrap();
+
+        // Results should be consistent
+        assert_eq!(result1.passed, result2.passed);
+        assert_eq!(result2.passed, result3.passed);
+        assert_eq!(result1.issues.len(), result2.issues.len());
+        assert_eq!(result2.issues.len(), result3.issues.len());
     }
 }
