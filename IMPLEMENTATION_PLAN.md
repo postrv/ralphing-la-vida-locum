@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Continue Sprint 11b** - Constraint Verification
+2. **Review completed sprints** - All sprints 1-13 complete
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 11b - Constraint Verification
+**Current task:** Sprint 11 Complete - All CCG-Aware Prompt features implemented
 
 ---
 
@@ -42,7 +42,7 @@
 | 8 | Language-Specific Prompts | Complete |
 | 9 | Multi-Language CLI & Settings | Complete |
 | 10 | Polyglot & Advanced Features | Complete |
-| **11** | **CCG-Aware Prompts** | **In Progress** |
+| **11** | **CCG-Aware Prompts** | **Complete** |
 | 12-13 | Retry & Stagnation Prevention | Complete |
 
 ---
@@ -143,7 +143,7 @@
 
 ---
 
-## Sprint 11: CCG-Aware Prompts (Priority: P2) - IN PROGRESS
+## Sprint 11: CCG-Aware Prompts (Priority: P2) - COMPLETE
 
 ### 11a. Constraint Loading & Injection ✓ COMPLETE
 - [x] Create `ConstraintLoader` to load constraints from `.ccg/constraints.json`
@@ -153,11 +153,13 @@
 - Files: `src/narsil/constraint_loader.rs`, `src/prompt/assembler.rs`, `src/prompt/builder.rs`
 - Acceptance: 21 constraint-related tests pass, constraints from project config appear in prompts
 
-### 11b. Constraint Verification (NEXT)
-- [ ] Create `ConstraintVerifier` to check code against constraints
-- [ ] Integrate with narsil-mcp for complexity and call graph analysis
-- [ ] Add compliance results to prompt context
-- [ ] Show violations in prompt output
+### 11b. Constraint Verification ✓ COMPLETE
+- [x] Create `ConstraintVerifier` to check code against constraints
+- [x] Integrate with narsil-mcp for complexity and call graph analysis
+- [x] Add compliance results to prompt context
+- [x] Show violations in prompt output
+- Files: `src/narsil/constraint_verifier.rs`, `src/prompt/context.rs`, `src/prompt/builder.rs`
+- Acceptance: 36 verifier tests pass, violations appear in prompt output
 
 ---
 
