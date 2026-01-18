@@ -7,9 +7,11 @@
 //!
 //! - [`language`] - Language enum and representation for multi-language support
 //! - [`language_detector`] - Automatic language detection for projects
+//! - [`templates`] - Template registry for language-specific prompts and configuration
 
 pub mod language;
 pub mod language_detector;
+pub mod templates;
 
 use anyhow::{Context, Result};
 use colored::Colorize;

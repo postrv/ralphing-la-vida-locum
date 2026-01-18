@@ -91,6 +91,7 @@ pub use analytics::{
 // Re-export bootstrap types
 pub use bootstrap::language::{Language, ParseLanguageError};
 pub use bootstrap::language_detector::{DetectedLanguage, LanguageDetector};
+pub use bootstrap::templates::{TemplateKind, TemplateRegistry};
 
 // TestFixture is only available in test builds
 #[cfg(test)]
