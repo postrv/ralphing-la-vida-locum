@@ -22,15 +22,108 @@ use std::path::PathBuf;
 use language::Language;
 use language_detector::{DetectedLanguage, LanguageDetector};
 
-/// Bootstrap manager
+/// Bootstrap manager for setting up the automation suite in a project.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::bootstrap::Bootstrap;
+/// use ralph::bootstrap::language::Language;
+///
+/// // Auto-detect languages
+/// let bootstrap = Bootstrap::new(PathBuf::from("."));
+/// bootstrap.run(false, false)?;
+///
+/// // Override languages
+/// let bootstrap = Bootstrap::new(PathBuf::from("."))
+///     .with_languages(vec![Language::Rust, Language::Python]);
+/// bootstrap.run(false, false)?;
+/// ```
 pub struct Bootstrap {
     project_dir: PathBuf,
+    /// Optional language override. If None, auto-detect. If Some and non-empty, use these.
+    language_override: Option<Vec<Language>>,
 }
 
 impl Bootstrap {
-    /// Create a new bootstrap manager
+    /// Create a new bootstrap manager.
+    ///
+    /// By default, languages are auto-detected. Use [`with_languages`](Self::with_languages)
+    /// to override.
+    #[must_use]
     pub fn new(project_dir: PathBuf) -> Self {
-        Self { project_dir }
+        Self {
+            project_dir,
+            language_override: None,
+        }
+    }
+
+    /// Set specific languages to use instead of auto-detection.
+    ///
+    /// This is useful when:
+    /// - The project uses languages that aren't auto-detected
+    /// - You want to force a specific language configuration
+    /// - Setting up a polyglot project with explicit language list
+    ///
+    /// # Arguments
+    ///
+    /// * `languages` - Languages to use. If empty, falls back to auto-detection.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::bootstrap::Bootstrap;
+    /// use ralph::bootstrap::language::Language;
+    ///
+    /// // Single language override
+    /// let bootstrap = Bootstrap::new(PathBuf::from("."))
+    ///     .with_languages(vec![Language::Rust]);
+    ///
+    /// // Polyglot project with multiple languages
+    /// let bootstrap = Bootstrap::new(PathBuf::from("."))
+    ///     .with_languages(vec![Language::TypeScript, Language::Python, Language::Go]);
+    /// ```
+    #[must_use]
+    pub fn with_languages(mut self, languages: Vec<Language>) -> Self {
+        self.language_override = Some(languages);
+        self
+    }
+
+    /// Get the effective languages for this project.
+    ///
+    /// Returns languages in this priority order:
+    /// 1. Explicit override (if non-empty)
+    /// 2. Auto-detected languages
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::bootstrap::Bootstrap;
+    /// use ralph::bootstrap::language::Language;
+    ///
+    /// // With override
+    /// let bootstrap = Bootstrap::new(PathBuf::from("."))
+    ///     .with_languages(vec![Language::Rust]);
+    /// assert_eq!(bootstrap.effective_languages(), vec![Language::Rust]);
+    ///
+    /// // Without override, auto-detects
+    /// let bootstrap = Bootstrap::new(PathBuf::from("."));
+    /// let languages = bootstrap.effective_languages(); // auto-detected
+    /// ```
+    #[must_use]
+    pub fn effective_languages(&self) -> Vec<Language> {
+        // If we have a non-empty override, use it
+        if let Some(ref languages) = self.language_override {
+            if !languages.is_empty() {
+                return languages.clone();
+            }
+        }
+
+        // Fall back to auto-detection
+        self.detect_languages()
+            .into_iter()
+            .map(|d| d.language)
+            .collect()
     }
 
     /// Detect programming languages used in the project.
@@ -702,5 +795,104 @@ mod tests {
         let detected = bootstrap.detect_languages();
         let ts = detected.iter().find(|d| d.language == crate::bootstrap::language::Language::TypeScript);
         assert!(ts.is_some(), "Should detect TypeScript");
+    }
+
+    // ============================================================
+    // Language Override Tests (Sprint 9a)
+    // ============================================================
+
+    #[test]
+    fn test_bootstrap_with_language_override() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a Python project
+        std::fs::write(temp.path().join("main.py"), "print('hello')").unwrap();
+
+        // But override to use Rust
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![Language::Rust]);
+
+        let languages = bootstrap.effective_languages();
+        assert_eq!(languages.len(), 1);
+        assert_eq!(languages[0], Language::Rust);
+    }
+
+    #[test]
+    fn test_bootstrap_with_multiple_language_overrides() {
+        let temp = TempDir::new().unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![Language::Rust, Language::Python, Language::TypeScript]);
+
+        let languages = bootstrap.effective_languages();
+        assert_eq!(languages.len(), 3);
+        assert!(languages.contains(&Language::Rust));
+        assert!(languages.contains(&Language::Python));
+        assert!(languages.contains(&Language::TypeScript));
+    }
+
+    #[test]
+    fn test_bootstrap_effective_languages_without_override() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a Go project
+        std::fs::write(temp.path().join("go.mod"), "module test").unwrap();
+        std::fs::write(temp.path().join("main.go"), "package main").unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+
+        // Without override, should auto-detect Go
+        let languages = bootstrap.effective_languages();
+        assert!(!languages.is_empty());
+        assert!(languages.contains(&Language::Go));
+    }
+
+    #[test]
+    fn test_bootstrap_language_override_empty_vec_uses_detection() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a Rust project
+        std::fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
+        std::fs::create_dir(temp.path().join("src")).unwrap();
+        std::fs::write(temp.path().join("src/main.rs"), "fn main() {}").unwrap();
+
+        // Empty override should fall back to detection
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![]);
+
+        let languages = bootstrap.effective_languages();
+        // Should detect Rust since override is empty
+        assert!(languages.contains(&Language::Rust));
+    }
+
+    #[test]
+    fn test_bootstrap_run_with_language_override() {
+        let temp = TempDir::new().unwrap();
+
+        // Override to use Python even though no Python files exist
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![Language::Python]);
+
+        // Should succeed with override
+        let result = bootstrap.run(false, false);
+        assert!(result.is_ok(), "Bootstrap with language override should succeed");
+
+        // Verify effective languages
+        let languages = bootstrap.effective_languages();
+        assert_eq!(languages, vec![Language::Python]);
+    }
+
+    #[test]
+    fn test_bootstrap_builder_pattern_chaining() {
+        let temp = TempDir::new().unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![Language::TypeScript, Language::JavaScript]);
+
+        // Builder pattern should preserve the language override
+        let languages = bootstrap.effective_languages();
+        assert_eq!(languages.len(), 2);
+        assert!(languages.contains(&Language::TypeScript));
+        assert!(languages.contains(&Language::JavaScript));
     }
 }

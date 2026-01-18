@@ -15,7 +15,7 @@
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 9a - CLI Language Override
+**Current task:** Sprint 9b-9d - Language Settings Templates
 
 ---
 
@@ -120,10 +120,12 @@
 
 ## Sprint 9: Multi-Language CLI & Settings (Priority: P1)
 
-### 9a. CLI Language Override
-- [ ] Add `--language` flag to bootstrap command
-- [ ] Support multiple `--language` flags for polyglot
-- [ ] Add `--detect-only` flag
+### 9a. CLI Language Override ✓ COMPLETE
+- [x] Add `--language` flag to bootstrap command
+- [x] Support multiple `--language` flags for polyglot
+- [x] Add `--detect-only` flag
+- Files: `src/main.rs`, `src/bootstrap/mod.rs`
+- Acceptance: CLI tests pass, language override works with aliases (ts, py, etc.)
 
 ### 9b-9d. Language Settings Templates
 - [ ] Create `templates/{language}/settings.json` with safe permissions
