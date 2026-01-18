@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Start Sprint 7b** - Implement Python quality gates (RuffGate, PytestGate, MypyGate, BanditGate)
+2. **Start Sprint 7e** - Implement Gate Auto-Detection
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 7b - Python Quality Gates
+**Current task:** Sprint 7e - Gate Auto-Detection
 
 ---
 
@@ -79,11 +79,11 @@
 - Files: `src/quality/gates/typescript.rs`
 - Acceptance: TS/JS projects get appropriate gates
 
-### 7d. Go Quality Gates
-- [ ] Implement `GoVetGate`
-- [ ] Implement `GolangciLintGate`
-- [ ] Implement `GoTestGate`
-- [ ] Implement `GovulncheckGate`
+### 7d. Go Quality Gates ✓ COMPLETE
+- [x] Implement `GoVetGate`
+- [x] Implement `GolangciLintGate`
+- [x] Implement `GoTestGate`
+- [x] Implement `GovulncheckGate`
 - Files: `src/quality/gates/go.rs`
 - Acceptance: Go projects get appropriate gates
 

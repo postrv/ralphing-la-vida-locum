@@ -41,6 +41,7 @@
 //! }
 //! ```
 
+pub mod go;
 pub mod python;
 pub mod rust;
 pub mod typescript;
@@ -389,7 +390,7 @@ pub fn gates_for_language(lang: Language) -> Vec<Box<dyn QualityGate>> {
         Language::Rust => rust::rust_gates(),
         Language::Python => python::python_gates(),
         Language::TypeScript | Language::JavaScript => typescript::typescript_gates(),
-        // Future: Language::Go => go::go_quality_gates(),
+        Language::Go => go::go_gates(),
         _ => Vec::new(),
     }
 }
@@ -1753,6 +1754,50 @@ edition = "2021"
     #[test]
     fn test_typescript_quality_gates_have_remediation() {
         let gates = gates_for_language(Language::TypeScript);
+        for gate in &gates {
+            let issues = vec![GateIssue::new(IssueSeverity::Error, "test error")];
+            let remediation = gate.remediation(&issues);
+            assert!(
+                !remediation.is_empty(),
+                "Gate {} should provide remediation",
+                gate.name()
+            );
+        }
+    }
+
+    // =========================================================================
+    // Go QualityGate tests
+    // =========================================================================
+
+    #[test]
+    fn test_gates_for_language_go_not_empty() {
+        let gates = gates_for_language(Language::Go);
+        assert!(!gates.is_empty(), "Go should have quality gates");
+    }
+
+    #[test]
+    fn test_gates_for_language_go_has_expected_gates() {
+        let gates = gates_for_language(Language::Go);
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+
+        assert!(names.contains(&"go-vet"), "Should have go-vet gate");
+        assert!(names.contains(&"golangci-lint"), "Should have golangci-lint gate");
+        assert!(names.contains(&"go-test"), "Should have go-test gate");
+        assert!(names.contains(&"govulncheck"), "Should have govulncheck gate");
+    }
+
+    #[test]
+    fn test_go_quality_gates_are_send_sync() {
+        let gates = gates_for_language(Language::Go);
+        fn assert_send_sync<T: Send + Sync>(_: &T) {}
+        for gate in &gates {
+            assert_send_sync(gate);
+        }
+    }
+
+    #[test]
+    fn test_go_quality_gates_have_remediation() {
+        let gates = gates_for_language(Language::Go);
         for gate in &gates {
             let issues = vec![GateIssue::new(IssueSeverity::Error, "test error")];
             let remediation = gate.remediation(&issues);
