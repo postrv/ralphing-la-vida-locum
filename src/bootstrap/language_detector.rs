@@ -72,6 +72,12 @@ pub struct LanguageDetector {
 }
 
 impl LanguageDetector {
+    /// Default threshold for polyglot detection (10%).
+    ///
+    /// A language must have at least this confidence level to be considered
+    /// a significant part of a polyglot project.
+    pub const DEFAULT_POLYGLOT_THRESHOLD: f32 = 0.10;
+
     /// Create a new language detector for the given project directory.
     ///
     /// # Example
@@ -179,6 +185,89 @@ impl LanguageDetector {
             .into_iter()
             .find(|d| d.primary)
             .map(|d| d.language)
+    }
+
+    /// Check if this is a polyglot project (multiple significant languages).
+    ///
+    /// A project is considered polyglot if it has two or more languages with
+    /// confidence scores at or above the default threshold (10%).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let detector = LanguageDetector::new(".");
+    /// if detector.is_polyglot() {
+    ///     println!("This is a polyglot project!");
+    /// }
+    /// ```
+    #[must_use]
+    pub fn is_polyglot(&self) -> bool {
+        self.is_polyglot_with_threshold(Self::DEFAULT_POLYGLOT_THRESHOLD)
+    }
+
+    /// Check if this is a polyglot project with a custom threshold.
+    ///
+    /// A project is considered polyglot if it has two or more languages with
+    /// confidence scores at or above the given threshold.
+    ///
+    /// # Arguments
+    ///
+    /// * `threshold` - Minimum confidence (0.0 to 1.0) for a language to count
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let detector = LanguageDetector::new(".");
+    /// // Check with 20% threshold
+    /// if detector.is_polyglot_with_threshold(0.20) {
+    ///     println!("This project has multiple major languages!");
+    /// }
+    /// ```
+    #[must_use]
+    pub fn is_polyglot_with_threshold(&self, threshold: f32) -> bool {
+        self.polyglot_languages_with_threshold(threshold).len() >= 2
+    }
+
+    /// Get all languages that meet the polyglot threshold.
+    ///
+    /// Returns languages with confidence at or above the default threshold (10%),
+    /// sorted by confidence (highest first).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let detector = LanguageDetector::new(".");
+    /// for lang in detector.polyglot_languages() {
+    ///     println!("{}: {:.0}%", lang.language, lang.confidence * 100.0);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn polyglot_languages(&self) -> Vec<DetectedLanguage> {
+        self.polyglot_languages_with_threshold(Self::DEFAULT_POLYGLOT_THRESHOLD)
+    }
+
+    /// Get all languages above a custom confidence threshold.
+    ///
+    /// Returns languages with confidence at or above the given threshold,
+    /// sorted by confidence (highest first).
+    ///
+    /// # Arguments
+    ///
+    /// * `threshold` - Minimum confidence (0.0 to 1.0) for inclusion
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let detector = LanguageDetector::new(".");
+    /// // Get languages with at least 5% presence
+    /// let languages = detector.polyglot_languages_with_threshold(0.05);
+    /// ```
+    #[must_use]
+    pub fn polyglot_languages_with_threshold(&self, threshold: f32) -> Vec<DetectedLanguage> {
+        self.detect()
+            .into_iter()
+            .filter(|d| d.confidence >= threshold)
+            .collect()
     }
 
     /// Check if a manifest file exists, supporting glob patterns.
@@ -736,5 +825,190 @@ mod tests {
         for lang in &detected[1..] {
             assert!(!lang.primary, "Only first language should be primary");
         }
+    }
+
+    // ============================================================
+    // Polyglot detection tests (Sprint 10)
+    // ============================================================
+
+    #[test]
+    fn test_is_polyglot_returns_false_for_single_language() {
+        let temp = TempDir::new().unwrap();
+
+        // Pure Rust project
+        fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
+        for i in 0..10 {
+            fs::write(temp.path().join(format!("file{}.rs", i)), "").unwrap();
+        }
+
+        let detector = LanguageDetector::new(temp.path());
+        assert!(
+            !detector.is_polyglot(),
+            "Single-language project should not be polyglot"
+        );
+    }
+
+    #[test]
+    fn test_is_polyglot_returns_true_for_significant_secondary_language() {
+        let temp = TempDir::new().unwrap();
+
+        // Python backend with significant TypeScript frontend (both >10%)
+        fs::write(temp.path().join("pyproject.toml"), "[project]").unwrap();
+        for i in 0..5 {
+            fs::write(temp.path().join(format!("backend{}.py", i)), "").unwrap();
+        }
+
+        fs::write(temp.path().join("package.json"), "{}").unwrap();
+        fs::write(temp.path().join("tsconfig.json"), "{}").unwrap();
+        for i in 0..5 {
+            fs::write(temp.path().join(format!("frontend{}.ts", i)), "").unwrap();
+        }
+
+        let detector = LanguageDetector::new(temp.path());
+        assert!(
+            detector.is_polyglot(),
+            "Project with 2+ languages >10% should be polyglot"
+        );
+    }
+
+    #[test]
+    fn test_is_polyglot_returns_false_when_secondary_below_threshold() {
+        let temp = TempDir::new().unwrap();
+
+        // Rust project with tiny Python script (<10%)
+        fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
+        for i in 0..50 {
+            fs::write(temp.path().join(format!("file{}.rs", i)), "").unwrap();
+        }
+        // Just 1 Python file among 150 (100 from manifest + 50 files)
+        fs::write(temp.path().join("script.py"), "").unwrap();
+
+        let detector = LanguageDetector::new(temp.path());
+        assert!(
+            !detector.is_polyglot(),
+            "Single significant language with minor secondary should not be polyglot"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_languages_returns_all_above_threshold() {
+        let temp = TempDir::new().unwrap();
+
+        // Three significant languages
+        fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
+        for i in 0..3 {
+            fs::write(temp.path().join(format!("rust{}.rs", i)), "").unwrap();
+        }
+
+        fs::write(temp.path().join("pyproject.toml"), "[project]").unwrap();
+        for i in 0..3 {
+            fs::write(temp.path().join(format!("python{}.py", i)), "").unwrap();
+        }
+
+        fs::write(temp.path().join("package.json"), "{}").unwrap();
+        for i in 0..3 {
+            fs::write(temp.path().join(format!("script{}.js", i)), "").unwrap();
+        }
+
+        let detector = LanguageDetector::new(temp.path());
+        let polyglot = detector.polyglot_languages();
+
+        assert!(
+            polyglot.len() >= 2,
+            "Should have at least 2 polyglot languages, got {}",
+            polyglot.len()
+        );
+
+        // All returned should have >10% confidence
+        for lang in &polyglot {
+            assert!(
+                lang.confidence >= 0.10,
+                "Polyglot language {} should have >=10% confidence, has {}",
+                lang.language,
+                lang.confidence
+            );
+        }
+    }
+
+    #[test]
+    fn test_polyglot_languages_with_custom_threshold() {
+        let temp = TempDir::new().unwrap();
+
+        // Balanced project: both languages have manifests for significant weight
+        // Rust: Cargo.toml (100) + 10 files = 110
+        // Python: pyproject.toml (100) + 5 files = 105
+        // Total: 215
+        // Rust: 110/215 ≈ 51%, Python: 105/215 ≈ 49%
+        fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
+        for i in 0..10 {
+            fs::write(temp.path().join(format!("rust{}.rs", i)), "").unwrap();
+        }
+        fs::write(temp.path().join("pyproject.toml"), "[project]").unwrap();
+        for i in 0..5 {
+            fs::write(temp.path().join(format!("python{}.py", i)), "").unwrap();
+        }
+
+        let detector = LanguageDetector::new(temp.path());
+
+        // With 5% threshold, Python should be included
+        let lenient = detector.polyglot_languages_with_threshold(0.05);
+        let python_in_lenient = lenient.iter().any(|l| l.language == Language::Python);
+        assert!(
+            python_in_lenient,
+            "Python should be included with 5% threshold"
+        );
+
+        // With 55% threshold, neither should pass (both are ~50%)
+        let strict = detector.polyglot_languages_with_threshold(0.55);
+        assert!(
+            strict.is_empty(),
+            "No language should pass 55% threshold in balanced project"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_languages_returns_empty_for_empty_project() {
+        let temp = TempDir::new().unwrap();
+        let detector = LanguageDetector::new(temp.path());
+        let polyglot = detector.polyglot_languages();
+        assert!(polyglot.is_empty(), "Empty project should have no polyglot languages");
+    }
+
+    #[test]
+    fn test_is_polyglot_with_custom_threshold() {
+        let temp = TempDir::new().unwrap();
+
+        // Create balanced project with both manifests
+        // Rust: Cargo.toml (100) + 5 files = 105
+        // Python: pyproject.toml (100) + 5 files = 105
+        // Total: 210, each ~50%
+        fs::write(temp.path().join("Cargo.toml"), "[package]").unwrap();
+        for i in 0..5 {
+            fs::write(temp.path().join(format!("rust{}.rs", i)), "").unwrap();
+        }
+        fs::write(temp.path().join("pyproject.toml"), "[project]").unwrap();
+        for i in 0..5 {
+            fs::write(temp.path().join(format!("python{}.py", i)), "").unwrap();
+        }
+
+        let detector = LanguageDetector::new(temp.path());
+
+        // Should be polyglot at default 10% threshold (both >10%)
+        assert!(detector.is_polyglot_with_threshold(0.10));
+
+        // Should still be polyglot at 40% threshold (both ~50%)
+        assert!(detector.is_polyglot_with_threshold(0.40));
+
+        // Should NOT be polyglot at 60% threshold (neither is >60%)
+        assert!(!detector.is_polyglot_with_threshold(0.60));
+    }
+
+    #[test]
+    fn test_default_polyglot_threshold_constant() {
+        // Verify the constant is 0.10 (10%)
+        assert!(
+            (LanguageDetector::DEFAULT_POLYGLOT_THRESHOLD - 0.10).abs() < f32::EPSILON,
+            "Default polyglot threshold should be 10%"
+        );
     }
 }
