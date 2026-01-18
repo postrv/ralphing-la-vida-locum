@@ -52,7 +52,7 @@ md5 = "0.7"
 uuid = { version = "1.11", features = ["v4"] }
 
 # Terminal
-colored = "2.2"
+colored = "3.1"
 indicatif = "0.18"
 
 # Error handling
