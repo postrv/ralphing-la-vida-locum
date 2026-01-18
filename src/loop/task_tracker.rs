@@ -69,6 +69,9 @@ pub struct TaskId {
     title: String,
     /// Original header text for display
     original: String,
+    /// Sprint subsection identifier (e.g., "7a", "6b") for sprint-scoped tasks
+    #[serde(default)]
+    subsection: Option<String>,
 }
 
 impl TaskId {
@@ -103,17 +106,29 @@ impl TaskId {
         // Strip leading hashes and whitespace
         let stripped = header.trim_start_matches('#').trim();
 
-        // Pattern: "N. [Phase X.Y: ]Title"
+        // Pattern: "Na. Title" (sprint subsection) or "N. [Phase X.Y: ]Title"
         let parts: Vec<&str> = stripped.splitn(2, ". ").collect();
         if parts.len() != 2 {
             bail!("Invalid task header format: expected 'N. Title', got: {}", header);
         }
 
-        let number: u32 = parts[0]
-            .parse()
-            .with_context(|| format!("Invalid task number in header: {}", header))?;
-
+        let number_part = parts[0];
         let rest = parts[1];
+
+        // Check for subsection format (e.g., "7a", "10b")
+        let (number, subsection) = if number_part.chars().last().is_some_and(|c| c.is_ascii_lowercase()) {
+            // Extract numeric part and letter suffix
+            let numeric: String = number_part.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let number: u32 = numeric
+                .parse()
+                .with_context(|| format!("Invalid task number in header: {}", header))?;
+            (number, Some(number_part.to_string()))
+        } else {
+            let number: u32 = number_part
+                .parse()
+                .with_context(|| format!("Invalid task number in header: {}", header))?;
+            (number, None)
+        };
 
         // Check for "Phase X.Y: " prefix
         let (phase, title) = if rest.starts_with("Phase ") {
@@ -134,6 +149,7 @@ impl TaskId {
             phase,
             title,
             original: header.to_string(),
+            subsection,
         })
     }
 
@@ -145,7 +161,14 @@ impl TaskId {
             phase: None,
             title: title.to_string(),
             original: format!("### {}. {}", number, title),
+            subsection: None,
         }
+    }
+
+    /// Get the sprint subsection identifier if present (e.g., "7a", "6b").
+    #[must_use]
+    pub fn subsection(&self) -> Option<&str> {
+        self.subsection.as_deref()
     }
 
     /// Get the task number.
@@ -577,6 +600,12 @@ pub struct Task {
     pub block_reason: Option<BlockReason>,
     /// Subtasks/checkboxes (line content, checked status)
     pub checkboxes: Vec<(String, bool)>,
+    /// Sprint number this task belongs to (e.g., 7 for Sprint 7 tasks)
+    #[serde(default)]
+    pub sprint: Option<u32>,
+    /// Whether this task is orphaned (not in current plan)
+    #[serde(default)]
+    pub orphaned: bool,
 }
 
 impl Task {
@@ -590,7 +619,44 @@ impl Task {
             metrics: TaskMetrics::new(),
             block_reason: None,
             checkboxes: Vec::new(),
+            sprint: None,
+            orphaned: false,
         }
+    }
+
+    /// Create a new task with sprint affiliation.
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn new_with_sprint(id: TaskId, sprint: u32) -> Self {
+        Self {
+            id,
+            state: TaskState::NotStarted,
+            transitions: Vec::new(),
+            metrics: TaskMetrics::new(),
+            block_reason: None,
+            checkboxes: Vec::new(),
+            sprint: Some(sprint),
+            orphaned: false,
+        }
+    }
+
+    /// Get the sprint number this task belongs to.
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn sprint(&self) -> Option<u32> {
+        self.sprint
+    }
+
+    /// Check if this task is orphaned (not in current plan).
+    #[must_use]
+    pub fn is_orphaned(&self) -> bool {
+        self.orphaned
+    }
+
+    /// Mark this task as orphaned.
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn mark_orphaned(&mut self) {
+        self.orphaned = true;
     }
 
     /// Get the completion percentage based on checkboxes.
@@ -644,6 +710,28 @@ pub struct TaskTracker {
     pub created_at: DateTime<Utc>,
     /// When the tracker was last modified
     pub modified_at: DateTime<Utc>,
+    /// Hash of the plan structure for invalidation detection
+    #[serde(default)]
+    plan_structure_hash: String,
+    /// Current sprint number from "Current Focus" section
+    #[serde(default)]
+    focused_sprint: Option<u32>,
+}
+
+/// Result of validating the tracker against a plan.
+///
+/// Used by the manager to detect when the plan structure has changed
+/// and identify tasks that are no longer in the current plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Public API awaiting manager integration
+pub enum ValidationResult {
+    /// Plan structure matches the tracker
+    Valid,
+    /// Plan structure has changed
+    PlanChanged {
+        /// Tasks in tracker that are not in the current plan
+        orphaned_tasks: Vec<TaskId>,
+    },
 }
 
 /// Custom serialization for HashMap<TaskId, Task> as Vec<Task>
@@ -679,7 +767,143 @@ impl TaskTracker {
             config,
             created_at: now,
             modified_at: now,
+            plan_structure_hash: String::new(),
+            focused_sprint: None,
         }
+    }
+
+    /// Get the hash of the plan structure.
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn plan_hash(&self) -> &str {
+        &self.plan_structure_hash
+    }
+
+    /// Get the current sprint from the "Current Focus" section.
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn current_sprint(&self) -> Option<u32> {
+        self.focused_sprint
+    }
+
+    /// Compute a hash of the plan structure for change detection.
+    fn compute_plan_hash(content: &str) -> String {
+        // Extract only structural elements (task headers and sprint sections)
+        let structural: String = content
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("###") || trimmed.starts_with("## Sprint")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{:x}", md5::compute(structural.as_bytes()))
+    }
+
+    /// Parse the current sprint from the "Current Focus" section.
+    fn parse_current_sprint(content: &str) -> Option<u32> {
+        for line in content.lines() {
+            if line.contains("Current Focus:") && line.contains("Sprint") {
+                // Extract sprint number from patterns like "Sprint 7" or "Sprint 7 ("
+                if let Some(sprint_idx) = line.find("Sprint ") {
+                    let after_sprint = &line[sprint_idx + 7..];
+                    let num_str: String = after_sprint.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    if let Ok(num) = num_str.parse() {
+                        return Some(num);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Parse the sprint number from a section header.
+    fn parse_sprint_from_section(line: &str) -> Option<u32> {
+        // Match "## Sprint N:" patterns
+        if let Some(after_sprint) = line.strip_prefix("## Sprint ") {
+            let num_str: String = after_sprint.chars().take_while(|c| c.is_ascii_digit()).collect();
+            return num_str.parse().ok();
+        }
+        None
+    }
+
+    /// Validate the tracker against a plan to detect structural changes.
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn validate_against_plan(&self, plan: &str) -> ValidationResult {
+        let current_hash = Self::compute_plan_hash(plan);
+        if current_hash == self.plan_structure_hash {
+            ValidationResult::Valid
+        } else {
+            let orphaned = self.find_orphaned_tasks(plan);
+            ValidationResult::PlanChanged { orphaned_tasks: orphaned }
+        }
+    }
+
+    /// Find tasks in the tracker that are not in the current plan.
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn find_orphaned_tasks(&self, plan: &str) -> Vec<TaskId> {
+        use regex::Regex;
+        let header_re = Regex::new(r"^###\s+(\d+[a-z]?)\.\s+(.+)$").unwrap();
+
+        // Collect all task titles from the plan
+        let plan_tasks: std::collections::HashSet<String> = plan
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                if header_re.is_match(trimmed) {
+                    TaskId::parse(trimmed).ok().map(|id| id.title.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Find tasks in tracker not in plan
+        self.tasks
+            .keys()
+            .filter(|id| !plan_tasks.contains(&id.title))
+            .cloned()
+            .collect()
+    }
+
+    /// Mark tasks as orphaned if they are not in the given plan.
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn mark_orphaned_tasks(&mut self, plan: &str) {
+        let orphaned_ids = self.find_orphaned_tasks(plan);
+        for id in orphaned_ids {
+            if let Some(task) = self.tasks.get_mut(&id) {
+                task.mark_orphaned();
+            }
+        }
+        self.modified_at = Utc::now();
+    }
+
+    /// Check if a sprint is complete (all tasks done or blocked).
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn is_sprint_complete(&self, sprint: u32) -> bool {
+        let sprint_tasks: Vec<_> = self.tasks.values()
+            .filter(|t| t.sprint == Some(sprint))
+            .collect();
+
+        if sprint_tasks.is_empty() {
+            return false;
+        }
+
+        sprint_tasks.iter().all(|t| {
+            t.state == TaskState::Complete || t.state == TaskState::Blocked
+        })
+    }
+
+    /// Get all tasks for a specific sprint.
+    #[must_use]
+    #[allow(dead_code)] // Public API awaiting manager integration
+    pub fn tasks_for_sprint(&self, sprint: u32) -> Vec<&Task> {
+        self.tasks.values()
+            .filter(|t| t.sprint == Some(sprint))
+            .collect()
     }
 
     /// Parse tasks from an implementation plan.
@@ -711,19 +935,31 @@ impl TaskTracker {
     pub fn parse_plan(&mut self, content: &str) -> Result<()> {
         use regex::Regex;
 
-        // Task header pattern: ### N. [Phase X.Y: ]Title
-        let header_re = Regex::new(r"^###\s+(\d+)\.\s+(.+)$")
+        // Task header pattern: ### Na. Title or ### N. [Phase X.Y: ]Title
+        let header_re = Regex::new(r"^###\s+(\d+[a-z]?)\.\s+(.+)$")
             .context("Failed to compile header regex")?;
 
         // Checkbox pattern: - [ ] or - [x] followed by text
         let checkbox_re = Regex::new(r"^-\s+\[([ xX])\]\s+(.+)$")
             .context("Failed to compile checkbox regex")?;
 
+        // Parse current sprint from "Current Focus" section
+        self.focused_sprint = Self::parse_current_sprint(content);
+
+        // Compute and store plan hash
+        self.plan_structure_hash = Self::compute_plan_hash(content);
+
         let mut current_task: Option<TaskId> = None;
         let mut current_checkboxes: Vec<(String, bool)> = Vec::new();
+        let mut current_sprint: Option<u32> = None;
 
         for line in content.lines() {
             let trimmed = line.trim();
+
+            // Check for sprint section header
+            if let Some(sprint) = Self::parse_sprint_from_section(trimmed) {
+                current_sprint = Some(sprint);
+            }
 
             // Check for task header
             if header_re.is_match(trimmed) {
@@ -737,9 +973,17 @@ impl TaskTracker {
                 if let Ok(task_id) = TaskId::parse(trimmed) {
                     current_task = Some(task_id.clone());
 
-                    // Insert task if it doesn't exist
-                    if !self.tasks.contains_key(&task_id) {
-                        self.tasks.insert(task_id.clone(), Task::new(task_id));
+                    // Insert or update task with sprint affiliation
+                    if let Some(task) = self.tasks.get_mut(&task_id) {
+                        // Update sprint if not already set
+                        if task.sprint.is_none() && current_sprint.is_some() {
+                            task.sprint = current_sprint;
+                        }
+                    } else {
+                        // Create new task with sprint
+                        let mut task = Task::new(task_id.clone());
+                        task.sprint = current_sprint;
+                        self.tasks.insert(task_id, task);
                     }
                 }
             }
@@ -1249,40 +1493,63 @@ impl TaskTracker {
     /// ```
     #[must_use]
     pub fn select_next_task(&self) -> Option<&TaskId> {
-        // Priority 1: Current task if still workable
+        // Priority 1: Current task if still workable and not orphaned
         if let Some(ref current_id) = self.current_task {
             if let Some(task) = self.tasks.get(current_id) {
-                if task.is_workable() {
-                    return Some(current_id);
+                if task.is_workable() && !task.is_orphaned() {
+                    // Also check sprint boundary
+                    if self.is_task_in_current_sprint(task) {
+                        return Some(current_id);
+                    }
                 }
             }
         }
 
-        // Priority 2: In-progress tasks by number
+        // Priority 2: In-progress tasks from current sprint (not orphaned)
         let mut in_progress: Vec<&TaskId> = self
             .tasks
             .iter()
-            .filter(|(_, t)| t.state == TaskState::InProgress)
+            .filter(|(_, t)| {
+                t.state == TaskState::InProgress
+                    && !t.is_orphaned()
+                    && self.is_task_in_current_sprint(t)
+            })
             .map(|(id, _)| id)
             .collect();
-        in_progress.sort_by_key(|id| id.number());
+        in_progress.sort_by_key(|id| (id.number(), id.subsection().unwrap_or("")));
         if let Some(id) = in_progress.first() {
             return Some(id);
         }
 
-        // Priority 3: Not-started tasks by number
+        // Priority 3: Not-started tasks from current sprint (not orphaned)
         let mut not_started: Vec<&TaskId> = self
             .tasks
             .iter()
-            .filter(|(_, t)| t.state == TaskState::NotStarted)
+            .filter(|(_, t)| {
+                t.state == TaskState::NotStarted
+                    && !t.is_orphaned()
+                    && self.is_task_in_current_sprint(t)
+            })
             .map(|(id, _)| id)
             .collect();
-        not_started.sort_by_key(|id| id.number());
+        not_started.sort_by_key(|id| (id.number(), id.subsection().unwrap_or("")));
         if let Some(id) = not_started.first() {
             return Some(id);
         }
 
         None
+    }
+
+    /// Check if a task belongs to the current sprint or has no sprint assigned.
+    fn is_task_in_current_sprint(&self, task: &Task) -> bool {
+        match (self.focused_sprint, task.sprint) {
+            // If no current sprint set, accept all tasks
+            (None, _) => true,
+            // If task has no sprint assigned, accept it
+            (_, None) => true,
+            // If task sprint matches current sprint, accept it
+            (Some(current), Some(task_sprint)) => current == task_sprint,
+        }
     }
 
     /// Check if a task is stuck based on multiple criteria.
@@ -3624,5 +3891,336 @@ Some overview text.
 
         let l3 = loaded.get_task(&t3).unwrap();
         assert!(matches!(l3.block_reason, Some(BlockReason::DependsOnTask { task_number: 1 })));
+    }
+
+    // ========================================================================
+    // Fix 1: Sprint-Aware Task Selection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_task_id_parse_with_subsection() {
+        // Format: ### 7a. Task Title (sprint task with subsection)
+        let id = TaskId::parse("### 7a. QualityGate Trait Refactor").unwrap();
+        assert_eq!(id.subsection(), Some("7a"));
+        assert_eq!(id.title(), "QualityGate Trait Refactor");
+    }
+
+    #[test]
+    fn test_task_id_parse_numeric_only() {
+        // Format: ### 1. Task Title (simple numeric task)
+        let id = TaskId::parse("### 1. Setup project").unwrap();
+        assert_eq!(id.subsection(), None);
+        assert_eq!(id.number(), 1);
+    }
+
+    #[test]
+    fn test_task_id_subsection_various_formats() {
+        // Test various subsection formats
+        let id_a = TaskId::parse("### 6a. Language Enum").unwrap();
+        assert_eq!(id_a.subsection(), Some("6a"));
+
+        let id_b = TaskId::parse("### 6b. Language Detector").unwrap();
+        assert_eq!(id_b.subsection(), Some("6b"));
+
+        let id_c = TaskId::parse("### 10a. Polyglot Prompt").unwrap();
+        assert_eq!(id_c.subsection(), Some("10a"));
+    }
+
+    #[test]
+    fn test_task_tracker_stores_sprint_affiliation() {
+        let plan = r#"
+## Current Focus: Sprint 7 (Language-Specific Quality Gates)
+
+## Sprint 7: Language-Specific Quality Gates
+
+### 7a. QualityGate Trait Refactor
+- [ ] Create QualityGate trait
+
+### 7b. Python Quality Gates
+- [ ] Implement RuffGate
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let task_a = TaskId::parse("### 7a. QualityGate Trait Refactor").unwrap();
+        let task = tracker.get_task(&task_a).unwrap();
+        assert_eq!(task.sprint(), Some(7));
+    }
+
+    #[test]
+    fn test_task_tracker_parses_current_focus_sprint() {
+        let plan = r#"
+## Current Focus: Sprint 7 (Language-Specific Quality Gates)
+
+### 7a. Task A
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        assert_eq!(tracker.current_sprint(), Some(7));
+    }
+
+    // ========================================================================
+    // Fix 2: Task Tracker Invalidation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_task_tracker_computes_plan_hash() {
+        let plan = "### 1. Task A\n### 2. Task B";
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let hash = tracker.plan_hash();
+        assert!(!hash.is_empty());
+    }
+
+    #[test]
+    fn test_task_tracker_hash_changes_with_structure() {
+        let plan1 = "### 1. Task A\n### 2. Task B";
+        let plan2 = "### 1. Task A\n### 2. Task B\n### 3. Task C";
+
+        let mut tracker1 = TaskTracker::default();
+        tracker1.parse_plan(plan1).unwrap();
+
+        let mut tracker2 = TaskTracker::default();
+        tracker2.parse_plan(plan2).unwrap();
+
+        assert_ne!(tracker1.plan_hash(), tracker2.plan_hash());
+    }
+
+    #[test]
+    fn test_task_tracker_hash_stable_for_same_structure() {
+        let plan = "### 1. Task A\n### 2. Task B";
+
+        let mut tracker1 = TaskTracker::default();
+        tracker1.parse_plan(plan).unwrap();
+
+        let mut tracker2 = TaskTracker::default();
+        tracker2.parse_plan(plan).unwrap();
+
+        assert_eq!(tracker1.plan_hash(), tracker2.plan_hash());
+    }
+
+    #[test]
+    fn test_validate_against_plan_detects_change() {
+        let plan_v1 = "### 1. Task A\n### 2. Task B";
+        let plan_v2 = "### 1. Task A\n### 3. New Task";
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        let result = tracker.validate_against_plan(plan_v2);
+        assert!(matches!(result, ValidationResult::PlanChanged { .. }));
+    }
+
+    #[test]
+    fn test_validate_against_plan_valid_when_unchanged() {
+        let plan = "### 1. Task A\n### 2. Task B";
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let result = tracker.validate_against_plan(plan);
+        assert!(matches!(result, ValidationResult::Valid));
+    }
+
+    // ========================================================================
+    // Fix 3: Orphaned Task Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_find_orphaned_tasks_detects_orphans() {
+        let plan_v1 = "### 1. Task A\n### 2. Task B\n### 3. Enterprise Feature";
+        let plan_v2 = "### 1. Task A\n### 2. Task B"; // Task 3 removed
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        let orphaned = tracker.find_orphaned_tasks(plan_v2);
+        assert_eq!(orphaned.len(), 1);
+        assert_eq!(orphaned[0].title(), "Enterprise Feature");
+    }
+
+    #[test]
+    fn test_find_orphaned_tasks_empty_when_all_present() {
+        let plan = "### 1. Task A\n### 2. Task B";
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let orphaned = tracker.find_orphaned_tasks(plan);
+        assert!(orphaned.is_empty());
+    }
+
+    #[test]
+    fn test_select_next_task_skips_orphaned() {
+        let plan_v1 = r#"
+## Current Focus: Sprint 7
+
+## Sprint 6: Old Sprint
+### 6a. Old Task
+- [ ] Item
+
+## Sprint 7: Current Sprint
+### 7a. Current Task
+- [ ] Item
+"#;
+        let plan_v2 = r#"
+## Current Focus: Sprint 7
+
+## Sprint 7: Current Sprint
+### 7a. Current Task
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        // Mark orphaned tasks
+        tracker.mark_orphaned_tasks(plan_v2);
+
+        // Select should skip orphaned task 6a
+        let selected = tracker.select_next_task();
+        if let Some(id) = selected {
+            assert_eq!(id.subsection(), Some("7a"));
+        }
+    }
+
+    #[test]
+    fn test_task_marked_as_orphaned() {
+        let plan_v1 = "### 1. Old Task\n### 2. Current Task";
+        let plan_v2 = "### 2. Current Task"; // Task 1 removed
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        tracker.mark_orphaned_tasks(plan_v2);
+
+        let old_task = TaskId::parse("### 1. Old Task").unwrap();
+        let task = tracker.get_task(&old_task).unwrap();
+        assert!(task.is_orphaned());
+    }
+
+    // ========================================================================
+    // Fix 4: Sprint Completion Gate Tests
+    // ========================================================================
+
+    #[test]
+    fn test_select_next_task_respects_current_sprint() {
+        let plan = r#"
+## Current Focus: Sprint 7 (Quality Gates)
+
+## Sprint 6: Detection
+### 6a. Language Enum
+- [x] Complete
+
+## Sprint 7: Quality Gates
+### 7a. QualityGate Trait
+- [ ] Incomplete
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // Even though Sprint 6 task exists, Sprint 7 is current focus
+        let selected = tracker.select_next_task();
+        if let Some(id) = selected {
+            let task = tracker.get_task(id).unwrap();
+            assert_eq!(task.sprint(), Some(7));
+        }
+    }
+
+    #[test]
+    fn test_is_sprint_complete_true_when_all_done() {
+        let plan = r#"
+## Current Focus: Sprint 7
+
+## Sprint 7: Quality Gates
+### 7a. Task A
+- [x] Done
+
+### 7b. Task B
+- [x] Done
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // Mark all tasks complete
+        let task_a = TaskId::parse("### 7a. Task A").unwrap();
+        let task_b = TaskId::parse("### 7b. Task B").unwrap();
+        tracker.start_task(&task_a).unwrap();
+        tracker.complete_task(&task_a).unwrap();
+        tracker.start_task(&task_b).unwrap();
+        tracker.complete_task(&task_b).unwrap();
+
+        assert!(tracker.is_sprint_complete(7));
+    }
+
+    #[test]
+    fn test_is_sprint_complete_false_when_incomplete() {
+        let plan = r#"
+## Current Focus: Sprint 7
+
+## Sprint 7: Quality Gates
+### 7a. Task A
+- [ ] Not done
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        assert!(!tracker.is_sprint_complete(7));
+    }
+
+    #[test]
+    fn test_sprint_tasks_returns_only_sprint_tasks() {
+        let plan = r#"
+## Sprint 6: Detection
+### 6a. Detect Languages
+- [ ] Item
+
+## Sprint 7: Quality Gates
+### 7a. QualityGate Trait
+- [ ] Item
+
+### 7b. Python Gates
+- [ ] Item
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let sprint_7_tasks = tracker.tasks_for_sprint(7);
+        assert_eq!(sprint_7_tasks.len(), 2);
+        for task in sprint_7_tasks {
+            assert_eq!(task.sprint(), Some(7));
+        }
+    }
+
+    #[test]
+    fn test_select_next_task_within_sprint_boundary() {
+        let plan = r#"
+## Current Focus: Sprint 7
+
+## Sprint 6: Detection (Complete)
+### 6a. Old Task
+- [x] Done
+
+## Sprint 7: Quality Gates
+### 7a. Current Task
+- [ ] Not done
+
+## Sprint 8: Future Sprint
+### 8a. Future Task
+- [ ] Not done
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // Should select from Sprint 7, not Sprint 8
+        let selected = tracker.select_next_task();
+        assert!(selected.is_some());
+
+        let id = selected.unwrap();
+        let task = tracker.get_task(id).unwrap();
+        assert_eq!(task.sprint(), Some(7));
+        assert_ne!(task.sprint(), Some(8)); // Must not jump to future sprint
     }
 }
