@@ -1319,6 +1319,76 @@ fn unused_function() {}
     }
 
     #[test]
+    fn test_no_allow_gate_skips_raw_string_literals() {
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        // This simulates test code that writes #[allow] as test data inside raw string literals
+        // The gate should NOT flag these as violations
+        let file_path = src_dir.join("lib.rs");
+        std::fs::write(
+            &file_path,
+            r##"
+fn clean_function() {
+    // This file tests raw string handling
+}
+
+#[test]
+fn test_example() {
+    let test_content = r#"
+#[allow(dead_code)]
+fn unused_function() {}
+"#;
+    assert!(!test_content.is_empty());
+}
+"##,
+        )
+        .unwrap();
+
+        let gate = NoAllowGate::new(temp_dir.path());
+        let result = gate.check().unwrap();
+
+        // The #[allow(dead_code)] inside the raw string should be skipped
+        assert!(result.passed, "Gate should pass - #[allow] inside raw strings should be skipped");
+        assert!(result.issues.is_empty(), "No issues should be reported for #[allow] inside raw strings");
+    }
+
+    #[test]
+    fn test_no_allow_gate_handles_multiline_raw_strings() {
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        // Test multiline raw strings spanning multiple lines
+        let file_path = src_dir.join("lib.rs");
+        std::fs::write(
+            &file_path,
+            r###"
+fn main() {}
+
+const TEST_CODE: &str = r#"
+// Test fixture with allow annotation
+#[allow(unused_variables)]
+fn test_fn() {
+    let x = 5;
+}
+"#;
+
+// This real annotation SHOULD be detected
+// (but it's commented out so it won't be)
+// #[allow(dead_code)]
+"###,
+        )
+        .unwrap();
+
+        let gate = NoAllowGate::new(temp_dir.path());
+        let result = gate.check().unwrap();
+
+        assert!(result.passed, "Gate should pass - all #[allow] are inside raw strings or comments");
+    }
+
+    #[test]
     fn test_no_todo_gate_detects_todos() {
         let temp_dir = TempDir::new().unwrap();
         let src_dir = temp_dir.path().join("src");
