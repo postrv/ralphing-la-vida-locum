@@ -437,15 +437,30 @@ src/
 │   └── rollback.rs      # RollbackManager: automatic regression rollback
 │
 ├── loop/                # Autonomous execution loop
-│   ├── manager.rs       # LoopManager: orchestrates iterations
+│   ├── manager/         # LoopManager (split module)
+│   │   ├── mod.rs       # Core orchestration logic
+│   │   ├── checkpoint.rs    # Checkpoint and archive methods
+│   │   ├── iteration.rs     # Claude iteration execution
+│   │   └── prompt_handling.rs  # Prompt building and plan handling
+│   ├── task_tracker/    # Task-level state machine (split module)
+│   │   ├── mod.rs       # TaskTracker core logic
+│   │   ├── state.rs     # TaskState enum and transitions
+│   │   ├── parsing.rs   # Markdown parsing utilities
+│   │   └── persistence.rs   # JSON serialization
 │   ├── state.rs         # LoopState, LoopMode state machine
 │   ├── progress.rs      # Semantic progress detection
 │   ├── retry.rs         # Intelligent retry with failure classification
-│   ├── task_tracker.rs  # Task-level state machine (NotStarted→Complete)
 │   └── operations.rs    # Real implementations of testable traits
 │
 ├── prompt/              # Dynamic prompt generation
-│   ├── builder.rs       # PromptBuilder: fluent API
+│   ├── builder/         # PromptBuilder (split module)
+│   │   ├── mod.rs       # Core builder and fluent API
+│   │   ├── assembly.rs  # Section assembly logic
+│   │   └── sections/    # Section builders
+│   │       ├── mod.rs
+│   │       ├── context.rs   # Context sections
+│   │       ├── task.rs      # Task sections
+│   │       └── intelligence.rs  # Code intelligence sections
 │   ├── assembler.rs     # PromptAssembler: context-aware assembly
 │   ├── context.rs       # PromptContext: quality state, history
 │   ├── templates.rs     # Phase-specific prompt templates
