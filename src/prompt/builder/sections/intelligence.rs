@@ -76,11 +76,7 @@ fn format_call_graph_node(node: &CallGraphNode, lines: &mut Vec<String>, is_hots
         _ => String::new(),
     };
 
-    let prefix = if is_hotspot {
-        "  \u{1f525} "
-    } else {
-        "  - "
-    };
+    let prefix = if is_hotspot { "  \u{1f525} " } else { "  - " };
     lines.push(format!("{}`{}`{}", prefix, node.function_name, location));
 
     // Show callers (limited)
@@ -167,10 +163,7 @@ pub fn build_call_graph_section(call_graph: &[CallGraphNode]) -> String {
     }
 
     if call_graph.len() > 8 {
-        lines.push(format!(
-            "... and {} more functions",
-            call_graph.len() - 8
-        ));
+        lines.push(format!("... and {} more functions", call_graph.len() - 8));
     }
     lines.push(String::new());
 
@@ -216,10 +209,7 @@ pub fn build_references_section(references: &[SymbolReference]) -> String {
     }
 
     if references.len() > 10 {
-        lines.push(format!(
-            "... and {} more references",
-            references.len() - 10
-        ));
+        lines.push(format!("... and {} more references", references.len() - 10));
     }
     lines.push(String::new());
 

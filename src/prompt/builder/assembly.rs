@@ -88,8 +88,7 @@ impl DynamicPromptBuilder {
         let attempt_section = SectionBuilder::build_attempt_section(&context.attempt_summaries);
         substitutions.insert(TemplateMarker::AttemptHistory, attempt_section);
 
-        let antipattern_section =
-            SectionBuilder::build_antipattern_section(&context.anti_patterns);
+        let antipattern_section = SectionBuilder::build_antipattern_section(&context.anti_patterns);
         substitutions.insert(TemplateMarker::AntiPatterns, antipattern_section);
 
         // Code intelligence section

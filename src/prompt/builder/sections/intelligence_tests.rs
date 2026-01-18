@@ -42,8 +42,7 @@ fn test_build_intelligence_section_with_call_graph() {
 fn test_build_intelligence_section_with_references() {
     let intel = CodeIntelligenceContext::new()
         .with_references(vec![
-            SymbolReference::new("MyStruct", "src/lib.rs", 42)
-                .with_kind(ReferenceKind::Definition),
+            SymbolReference::new("MyStruct", "src/lib.rs", 42).with_kind(ReferenceKind::Definition),
             SymbolReference::new("MyStruct", "src/main.rs", 10).with_kind(ReferenceKind::Usage),
         ])
         .mark_available();
@@ -179,10 +178,12 @@ fn test_build_intelligence_section_combined_all_sections() {
             .with_file("src/a.rs")
             .with_line(10)
             .with_callers(vec!["main".to_string()])])
-        .with_references(vec![SymbolReference::new("MyType", "src/types.rs", 25)
-            .with_kind(ReferenceKind::Definition)])
-        .with_dependencies(vec![ModuleDependency::new("src/lib.rs")
-            .with_imports(vec!["std::io".to_string()])])
+        .with_references(vec![
+            SymbolReference::new("MyType", "src/types.rs", 25).with_kind(ReferenceKind::Definition)
+        ])
+        .with_dependencies(vec![
+            ModuleDependency::new("src/lib.rs").with_imports(vec!["std::io".to_string()])
+        ])
         .mark_available();
 
     let section = build_intelligence_section(&intel);
@@ -204,8 +205,13 @@ fn test_build_intelligence_section_combined_all_sections() {
 #[test]
 fn test_build_intelligence_section_hotspots_shown_first() {
     // Hotspots (>= 5 connections) should appear before regular functions
-    let hotspot = CallGraphNode::new("hotspot_func")
-        .with_callers(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()]);
+    let hotspot = CallGraphNode::new("hotspot_func").with_callers(vec![
+        "a".into(),
+        "b".into(),
+        "c".into(),
+        "d".into(),
+        "e".into(),
+    ]);
     let regular = CallGraphNode::new("regular_func").with_callers(vec!["x".into()]);
 
     let intel = CodeIntelligenceContext::new()
@@ -231,7 +237,11 @@ fn test_build_intelligence_section_call_graph_node_location_format() {
     let node_without_location = CallGraphNode::new("func_bare");
 
     let intel = CodeIntelligenceContext::new()
-        .with_call_graph(vec![node_with_both, node_with_file_only, node_without_location])
+        .with_call_graph(vec![
+            node_with_both,
+            node_with_file_only,
+            node_without_location,
+        ])
         .mark_available();
 
     let section = build_intelligence_section(&intel);
@@ -289,8 +299,13 @@ fn test_build_call_graph_section_with_regular_functions() {
 
 #[test]
 fn test_build_call_graph_section_with_hotspots() {
-    let hotspot = CallGraphNode::new("hot_func")
-        .with_callers(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()]);
+    let hotspot = CallGraphNode::new("hot_func").with_callers(vec![
+        "a".into(),
+        "b".into(),
+        "c".into(),
+        "d".into(),
+        "e".into(),
+    ]);
     let regular = CallGraphNode::new("normal_func");
 
     let section = build_call_graph_section(&[hotspot, regular]);
@@ -587,11 +602,7 @@ fn test_build_violations_section_multiple_violations() {
     let result = ComplianceResult::failed(
         vec![
             ConstraintViolation::new("max-complexity", "func1", "Complexity 15 exceeds max"),
-            ConstraintViolation::new(
-                "max-lines",
-                "func2",
-                "Function has 200 lines, max is 100",
-            ),
+            ConstraintViolation::new("max-lines", "func2", "Function has 200 lines, max is 100"),
         ],
         2,
     );

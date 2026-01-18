@@ -799,8 +799,9 @@ mod tests {
 
     #[test]
     fn test_build_antipattern_section_persistence() {
-        let patterns =
-            vec![AntiPattern::new(AntiPatternType::FileChurn, "Churn detected").with_persistence(5)];
+        let patterns = vec![
+            AntiPattern::new(AntiPatternType::FileChurn, "Churn detected").with_persistence(5),
+        ];
 
         let section = build_antipattern_section(&patterns);
 
