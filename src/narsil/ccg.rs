@@ -417,6 +417,23 @@ pub enum SymbolKind {
     Macro,
 }
 
+impl std::fmt::Display for SymbolKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SymbolKind::Function => write!(f, "fn"),
+            SymbolKind::Method => write!(f, "method"),
+            SymbolKind::Struct => write!(f, "struct"),
+            SymbolKind::Enum => write!(f, "enum"),
+            SymbolKind::Trait => write!(f, "trait"),
+            SymbolKind::Type => write!(f, "type"),
+            SymbolKind::Const => write!(f, "const"),
+            SymbolKind::Static => write!(f, "static"),
+            SymbolKind::Module => write!(f, "mod"),
+            SymbolKind::Macro => write!(f, "macro"),
+        }
+    }
+}
+
 /// An entry point in the codebase.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EntryPoint {
@@ -470,6 +487,20 @@ pub enum EntryPointKind {
     HttpHandler,
     /// CLI command.
     CliCommand,
+}
+
+impl std::fmt::Display for EntryPointKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EntryPointKind::Main => write!(f, "main"),
+            EntryPointKind::Binary => write!(f, "binary"),
+            EntryPointKind::Library => write!(f, "library"),
+            EntryPointKind::Test => write!(f, "test"),
+            EntryPointKind::Benchmark => write!(f, "benchmark"),
+            EntryPointKind::HttpHandler => write!(f, "http_handler"),
+            EntryPointKind::CliCommand => write!(f, "cli_command"),
+        }
+    }
 }
 
 /// A dependency between modules.
