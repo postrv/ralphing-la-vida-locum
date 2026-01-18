@@ -428,6 +428,287 @@ impl Analytics {
             TrendDirection::Stable
         }
     }
+
+    // ========================================================================
+    // Audit Logging Methods
+    // ========================================================================
+
+    /// Get the audit log file path.
+    fn audit_file(&self) -> PathBuf {
+        self.project_dir.join(".ralph/audit.jsonl")
+    }
+
+    /// Log an audit event.
+    ///
+    /// Records a structured audit event to the audit log for compliance
+    /// and debugging purposes.
+    ///
+    /// # Arguments
+    ///
+    /// * `event` - The audit event to log
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the audit log fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::analytics::{Analytics, AuditEvent, AuditAction};
+    ///
+    /// let analytics = Analytics::new(project_dir);
+    /// let event = AuditEvent::new("session-1", AuditAction::SessionStart);
+    /// analytics.log_audit_event(&event)?;
+    /// ```
+    pub fn log_audit_event(&self, event: &AuditEvent) -> Result<()> {
+        self.ensure_dir()?;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.audit_file())?;
+
+        let json = serde_json::to_string(&event)?;
+        writeln!(file, "{}", json)?;
+
+        Ok(())
+    }
+
+    /// Log an API action.
+    ///
+    /// Convenience method for logging loop manager and API operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `action` - The action being performed
+    /// * `details` - Human-readable description
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the audit log fails.
+    pub fn log_api_action(
+        &self,
+        session_id: &str,
+        action: AuditAction,
+        details: &str,
+    ) -> Result<()> {
+        let event = AuditEvent::new(session_id, action).with_details(details);
+        self.log_audit_event(&event)
+    }
+
+    /// Log a campaign execution.
+    ///
+    /// Records the execution of a loop iteration or campaign, including
+    /// the mode, task being worked on, and outcome.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `mode` - The execution mode (e.g., "build", "debug")
+    /// * `task_id` - Optional task identifier
+    /// * `outcome` - The outcome of the execution
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the audit log fails.
+    pub fn log_campaign_execution(
+        &self,
+        session_id: &str,
+        mode: &str,
+        task_id: Option<&str>,
+        outcome: CampaignOutcome,
+    ) -> Result<()> {
+        let severity = match outcome {
+            CampaignOutcome::Success => AuditSeverity::Info,
+            CampaignOutcome::Failure | CampaignOutcome::Stagnated => AuditSeverity::High,
+            CampaignOutcome::Aborted | CampaignOutcome::Timeout => AuditSeverity::Medium,
+        };
+
+        let mut event = AuditEvent::new(session_id, AuditAction::IterationEnd)
+            .with_severity(severity)
+            .with_details(format!("Campaign {} completed with outcome: {}", mode, outcome))
+            .with_metadata("mode", serde_json::json!(mode))
+            .with_metadata("outcome", serde_json::json!(outcome.to_string()));
+
+        if let Some(task) = task_id {
+            event = event.with_task_id(task);
+        }
+
+        self.log_audit_event(&event)
+    }
+
+    /// Log a quality gate decision.
+    ///
+    /// Records the result of running a quality gate, including whether
+    /// it passed or failed and any relevant details.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `gate_name` - Name of the quality gate
+    /// * `passed` - Whether the gate passed
+    /// * `reason` - Optional reason for failure
+    /// * `issues` - Optional list of specific issues
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the audit log fails.
+    pub fn log_quality_decision(
+        &self,
+        session_id: &str,
+        gate_name: &str,
+        passed: bool,
+        reason: Option<&str>,
+        issues: Option<Vec<&str>>,
+    ) -> Result<()> {
+        let action = if passed {
+            AuditAction::QualityGatePass
+        } else {
+            AuditAction::QualityGateFail
+        };
+
+        let severity = if passed {
+            AuditSeverity::Info
+        } else {
+            AuditSeverity::High
+        };
+
+        let mut event = AuditEvent::new(session_id, action)
+            .with_severity(severity)
+            .with_gate_name(gate_name)
+            .with_metadata("passed", serde_json::json!(passed));
+
+        if let Some(r) = reason {
+            event = event.with_details(r);
+        }
+
+        if let Some(i) = issues {
+            event = event.with_metadata("issues", serde_json::json!(i));
+        }
+
+        self.log_audit_event(&event)
+    }
+
+    /// Get audit events from the log.
+    ///
+    /// Retrieves audit events with optional filtering by session and action.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - Optional session ID to filter by
+    /// * `action` - Optional action type to filter by
+    /// * `limit` - Maximum number of events to return
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the audit log fails.
+    pub fn get_audit_events(
+        &self,
+        session_id: Option<&str>,
+        action: Option<AuditAction>,
+        limit: usize,
+    ) -> Result<Vec<AuditEvent>> {
+        let file_path = self.audit_file();
+
+        if !file_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let file = File::open(&file_path).context("Failed to open audit log")?;
+        let reader = BufReader::new(file);
+
+        let mut events: Vec<AuditEvent> = reader
+            .lines()
+            .map_while(Result::ok)
+            .filter_map(|line| serde_json::from_str::<AuditEvent>(&line).ok())
+            .filter(|e| session_id.is_none_or(|sid| e.session_id == sid))
+            .filter(|e| action.is_none_or(|a| e.action == a))
+            .collect();
+
+        // Sort by timestamp (most recent last for chronological order)
+        events.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+        // Truncate to limit
+        events.truncate(limit);
+
+        Ok(events)
+    }
+
+    /// Export audit logs in the specified format.
+    ///
+    /// Exports audit events to a string in the requested format for
+    /// external analysis or compliance reporting.
+    ///
+    /// # Arguments
+    ///
+    /// * `format` - The export format (JSON, JSONL, or CSV)
+    /// * `session_id` - Optional session ID to filter by
+    /// * `limit` - Maximum number of events to export
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the audit log or serialization fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::analytics::{Analytics, AuditExportFormat};
+    ///
+    /// let analytics = Analytics::new(project_dir);
+    /// let json = analytics.export_audit_log(AuditExportFormat::Json, None, 100)?;
+    /// println!("{}", json);
+    /// ```
+    pub fn export_audit_log(
+        &self,
+        format: AuditExportFormat,
+        session_id: Option<&str>,
+        limit: usize,
+    ) -> Result<String> {
+        let events = self.get_audit_events(session_id, None, limit)?;
+
+        match format {
+            AuditExportFormat::Json => {
+                serde_json::to_string_pretty(&events).context("Failed to serialize to JSON")
+            }
+            AuditExportFormat::Jsonl => {
+                let lines: Result<Vec<String>, _> = events
+                    .iter()
+                    .map(serde_json::to_string)
+                    .collect();
+                Ok(lines?.join("\n"))
+            }
+            AuditExportFormat::Csv => {
+                let mut csv = String::new();
+                // Header
+                csv.push_str("timestamp,session_id,action,severity,details,gate_name,task_id\n");
+                // Data rows
+                for event in events {
+                    let row = format!(
+                        "{},{},{},{},{},{},{}\n",
+                        event.timestamp.format("%Y-%m-%dT%H:%M:%S%.3fZ"),
+                        Self::escape_csv(&event.session_id),
+                        event.action,
+                        event.severity,
+                        Self::escape_csv(&event.details.unwrap_or_default()),
+                        Self::escape_csv(&event.gate_name.unwrap_or_default()),
+                        Self::escape_csv(&event.task_id.unwrap_or_default()),
+                    );
+                    csv.push_str(&row);
+                }
+                Ok(csv)
+            }
+        }
+    }
+
+    /// Escape a string for CSV output.
+    fn escape_csv(s: &str) -> String {
+        if s.contains(',') || s.contains('"') || s.contains('\n') {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s.to_string()
+        }
+    }
 }
 
 /// Aggregate statistics across all sessions
@@ -629,6 +910,271 @@ impl Default for QualityTrend {
             test_failures_delta: 0,
             security_delta: 0,
         }
+    }
+}
+
+// ============================================================================
+// Audit Logging
+// ============================================================================
+
+/// Actions that can be audited.
+///
+/// These represent the key operations performed by Ralph that should
+/// be logged for compliance, debugging, and analysis purposes.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::AuditAction;
+///
+/// let action = AuditAction::SessionStart;
+/// assert_eq!(action.to_string(), "session_start");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditAction {
+    /// A new session has started.
+    SessionStart,
+    /// A session has ended.
+    SessionEnd,
+    /// An iteration has started.
+    IterationStart,
+    /// An iteration has ended.
+    IterationEnd,
+    /// A quality gate check was run.
+    QualityGateRun,
+    /// A quality gate passed.
+    QualityGatePass,
+    /// A quality gate failed.
+    QualityGateFail,
+    /// A checkpoint was created.
+    CheckpointCreate,
+    /// A checkpoint was restored.
+    CheckpointRestore,
+    /// A task has started.
+    TaskStart,
+    /// A task completed successfully.
+    TaskComplete,
+    /// A task failed.
+    TaskFail,
+    /// A security scan was performed.
+    SecurityScan,
+    /// A rollback was initiated.
+    RollbackInitiated,
+}
+
+impl std::fmt::Display for AuditAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            AuditAction::SessionStart => "session_start",
+            AuditAction::SessionEnd => "session_end",
+            AuditAction::IterationStart => "iteration_start",
+            AuditAction::IterationEnd => "iteration_end",
+            AuditAction::QualityGateRun => "quality_gate_run",
+            AuditAction::QualityGatePass => "quality_gate_pass",
+            AuditAction::QualityGateFail => "quality_gate_fail",
+            AuditAction::CheckpointCreate => "checkpoint_create",
+            AuditAction::CheckpointRestore => "checkpoint_restore",
+            AuditAction::TaskStart => "task_start",
+            AuditAction::TaskComplete => "task_complete",
+            AuditAction::TaskFail => "task_fail",
+            AuditAction::SecurityScan => "security_scan",
+            AuditAction::RollbackInitiated => "rollback_initiated",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+/// Severity level for audit events.
+///
+/// Severity indicates the importance or urgency of an audit event.
+/// Higher severity events typically require more attention.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::AuditSeverity;
+///
+/// assert!(AuditSeverity::Critical > AuditSeverity::High);
+/// assert!(AuditSeverity::High > AuditSeverity::Medium);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuditSeverity {
+    /// Informational event, no action needed.
+    #[default]
+    Info,
+    /// Low severity event.
+    Low,
+    /// Medium severity event.
+    Medium,
+    /// High severity event, attention recommended.
+    High,
+    /// Critical severity event, immediate attention needed.
+    Critical,
+}
+
+impl std::fmt::Display for AuditSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            AuditSeverity::Info => "info",
+            AuditSeverity::Low => "low",
+            AuditSeverity::Medium => "medium",
+            AuditSeverity::High => "high",
+            AuditSeverity::Critical => "critical",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+/// Outcome of a campaign execution.
+///
+/// Used when logging campaign executions to record the final result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignOutcome {
+    /// The campaign completed successfully.
+    Success,
+    /// The campaign failed.
+    Failure,
+    /// The campaign was aborted.
+    Aborted,
+    /// The campaign timed out.
+    Timeout,
+    /// The campaign stalled without progress.
+    Stagnated,
+}
+
+impl std::fmt::Display for CampaignOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            CampaignOutcome::Success => "success",
+            CampaignOutcome::Failure => "failure",
+            CampaignOutcome::Aborted => "aborted",
+            CampaignOutcome::Timeout => "timeout",
+            CampaignOutcome::Stagnated => "stagnated",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+/// Export format for audit logs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuditExportFormat {
+    /// JSON array format.
+    Json,
+    /// JSON Lines format (one JSON object per line).
+    Jsonl,
+    /// CSV format with headers.
+    Csv,
+}
+
+/// An audit event for compliance and debugging.
+///
+/// Audit events provide a detailed record of all significant actions
+/// performed by Ralph, enabling compliance auditing, debugging, and
+/// analysis of automation runs.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::{AuditEvent, AuditAction, AuditSeverity};
+///
+/// let event = AuditEvent::new("session-123", AuditAction::QualityGatePass)
+///     .with_severity(AuditSeverity::Info)
+///     .with_gate_name("clippy")
+///     .with_details("All warnings resolved");
+///
+/// assert_eq!(event.action, AuditAction::QualityGatePass);
+/// assert_eq!(event.gate_name, Some("clippy".to_string()));
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEvent {
+    /// Timestamp when the event occurred.
+    pub timestamp: DateTime<Utc>,
+    /// Session ID this event belongs to.
+    pub session_id: String,
+    /// The action that was performed.
+    pub action: AuditAction,
+    /// Severity of this event.
+    pub severity: AuditSeverity,
+    /// Human-readable details about the event.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+    /// Name of the quality gate (if applicable).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gate_name: Option<String>,
+    /// Task ID (if applicable).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    /// Additional metadata as key-value pairs.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub metadata: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl AuditEvent {
+    /// Create a new audit event.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session this event belongs to
+    /// * `action` - The action being logged
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::analytics::{AuditEvent, AuditAction};
+    ///
+    /// let event = AuditEvent::new("session-1", AuditAction::SessionStart);
+    /// assert_eq!(event.action, AuditAction::SessionStart);
+    /// ```
+    #[must_use]
+    pub fn new(session_id: impl Into<String>, action: AuditAction) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            session_id: session_id.into(),
+            action,
+            severity: AuditSeverity::default(),
+            details: None,
+            gate_name: None,
+            task_id: None,
+            metadata: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Set the severity level.
+    #[must_use]
+    pub fn with_severity(mut self, severity: AuditSeverity) -> Self {
+        self.severity = severity;
+        self
+    }
+
+    /// Set the details message.
+    #[must_use]
+    pub fn with_details(mut self, details: impl Into<String>) -> Self {
+        self.details = Some(details.into());
+        self
+    }
+
+    /// Set the gate name.
+    #[must_use]
+    pub fn with_gate_name(mut self, name: impl Into<String>) -> Self {
+        self.gate_name = Some(name.into());
+        self
+    }
+
+    /// Set the task ID.
+    #[must_use]
+    pub fn with_task_id(mut self, id: impl Into<String>) -> Self {
+        self.task_id = Some(id.into());
+        self
+    }
+
+    /// Add metadata key-value pair.
+    #[must_use]
+    pub fn with_metadata(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
+        self.metadata.insert(key.into(), value);
+        self
     }
 }
 
@@ -1061,5 +1607,292 @@ mod tests {
         assert_eq!(restored.test_failed, 3);
         assert_eq!(restored.security_issues, 1);
         assert_eq!(restored.task_name, Some("Implement feature".to_string()));
+    }
+
+    // ========================================================================
+    // Audit Logging Tests (TDD - tests written first)
+    // ========================================================================
+
+    #[test]
+    fn test_audit_action_display() {
+        assert_eq!(AuditAction::SessionStart.to_string(), "session_start");
+        assert_eq!(AuditAction::SessionEnd.to_string(), "session_end");
+        assert_eq!(AuditAction::IterationStart.to_string(), "iteration_start");
+        assert_eq!(AuditAction::IterationEnd.to_string(), "iteration_end");
+        assert_eq!(AuditAction::QualityGateRun.to_string(), "quality_gate_run");
+        assert_eq!(AuditAction::QualityGatePass.to_string(), "quality_gate_pass");
+        assert_eq!(AuditAction::QualityGateFail.to_string(), "quality_gate_fail");
+        assert_eq!(AuditAction::CheckpointCreate.to_string(), "checkpoint_create");
+        assert_eq!(AuditAction::CheckpointRestore.to_string(), "checkpoint_restore");
+        assert_eq!(AuditAction::TaskStart.to_string(), "task_start");
+        assert_eq!(AuditAction::TaskComplete.to_string(), "task_complete");
+        assert_eq!(AuditAction::TaskFail.to_string(), "task_fail");
+        assert_eq!(AuditAction::SecurityScan.to_string(), "security_scan");
+        assert_eq!(AuditAction::RollbackInitiated.to_string(), "rollback_initiated");
+    }
+
+    #[test]
+    fn test_audit_severity_ordering() {
+        assert!(AuditSeverity::Critical > AuditSeverity::High);
+        assert!(AuditSeverity::High > AuditSeverity::Medium);
+        assert!(AuditSeverity::Medium > AuditSeverity::Low);
+        assert!(AuditSeverity::Low > AuditSeverity::Info);
+    }
+
+    #[test]
+    fn test_audit_event_new() {
+        let event = AuditEvent::new("session-1", AuditAction::SessionStart)
+            .with_details("Starting build mode session");
+
+        assert_eq!(event.session_id, "session-1");
+        assert_eq!(event.action, AuditAction::SessionStart);
+        assert_eq!(event.details, Some("Starting build mode session".to_string()));
+        assert_eq!(event.severity, AuditSeverity::Info);
+    }
+
+    #[test]
+    fn test_audit_event_builder() {
+        let event = AuditEvent::new("session-1", AuditAction::QualityGateFail)
+            .with_severity(AuditSeverity::High)
+            .with_details("Clippy gate failed with 5 warnings")
+            .with_gate_name("clippy")
+            .with_task_id("task-123")
+            .with_metadata("warnings", serde_json::json!(5));
+
+        assert_eq!(event.action, AuditAction::QualityGateFail);
+        assert_eq!(event.severity, AuditSeverity::High);
+        assert_eq!(event.gate_name, Some("clippy".to_string()));
+        assert_eq!(event.task_id, Some("task-123".to_string()));
+        assert_eq!(event.metadata.get("warnings"), Some(&serde_json::json!(5)));
+    }
+
+    #[test]
+    fn test_audit_event_serialization() {
+        let event = AuditEvent::new("session-1", AuditAction::TaskComplete)
+            .with_severity(AuditSeverity::Info)
+            .with_task_id("task-42")
+            .with_details("Task completed successfully");
+
+        let json = serde_json::to_string(&event).unwrap();
+        let restored: AuditEvent = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.session_id, event.session_id);
+        assert_eq!(restored.action, event.action);
+        assert_eq!(restored.severity, event.severity);
+        assert_eq!(restored.task_id, event.task_id);
+        assert_eq!(restored.details, event.details);
+    }
+
+    #[test]
+    fn test_log_audit_event() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        let event = AuditEvent::new("session-1", AuditAction::SessionStart)
+            .with_details("Build mode started");
+
+        analytics.log_audit_event(&event).unwrap();
+
+        let events = analytics.get_audit_events(None, None, 100).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, AuditAction::SessionStart);
+    }
+
+    #[test]
+    fn test_log_api_action() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_api_action("session-1", AuditAction::IterationStart, "Iteration 1 started")
+            .unwrap();
+
+        let events = analytics.get_audit_events(None, None, 100).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, AuditAction::IterationStart);
+        assert_eq!(events[0].details, Some("Iteration 1 started".to_string()));
+    }
+
+    #[test]
+    fn test_log_campaign_execution() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_campaign_execution(
+                "session-1",
+                "build",
+                Some("task-1"),
+                CampaignOutcome::Success,
+            )
+            .unwrap();
+
+        let events = analytics.get_audit_events(None, None, 100).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, AuditAction::IterationEnd);
+    }
+
+    #[test]
+    fn test_log_quality_decision() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log a passing gate
+        analytics
+            .log_quality_decision("session-1", "clippy", true, None, None)
+            .unwrap();
+
+        // Log a failing gate
+        analytics
+            .log_quality_decision(
+                "session-1",
+                "test",
+                false,
+                Some("3 tests failed"),
+                Some(vec!["test_foo", "test_bar", "test_baz"]),
+            )
+            .unwrap();
+
+        let events = analytics.get_audit_events(None, None, 100).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].action, AuditAction::QualityGatePass);
+        assert_eq!(events[0].gate_name, Some("clippy".to_string()));
+        assert_eq!(events[1].action, AuditAction::QualityGateFail);
+        assert_eq!(events[1].gate_name, Some("test".to_string()));
+    }
+
+    #[test]
+    fn test_get_audit_events_filtered_by_session() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_api_action("session-1", AuditAction::SessionStart, "Session 1")
+            .unwrap();
+        analytics
+            .log_api_action("session-2", AuditAction::SessionStart, "Session 2")
+            .unwrap();
+
+        let events = analytics
+            .get_audit_events(Some("session-1"), None, 100)
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].session_id, "session-1");
+    }
+
+    #[test]
+    fn test_get_audit_events_filtered_by_action() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_api_action("session-1", AuditAction::SessionStart, "Start")
+            .unwrap();
+        analytics
+            .log_quality_decision("session-1", "clippy", true, None, None)
+            .unwrap();
+        analytics
+            .log_quality_decision("session-1", "test", false, Some("Failed"), None)
+            .unwrap();
+
+        let events = analytics
+            .get_audit_events(None, Some(AuditAction::QualityGateFail), 100)
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, AuditAction::QualityGateFail);
+    }
+
+    #[test]
+    fn test_export_audit_log_json() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_api_action("session-1", AuditAction::SessionStart, "Started")
+            .unwrap();
+        analytics
+            .log_quality_decision("session-1", "clippy", true, None, None)
+            .unwrap();
+
+        let json = analytics.export_audit_log(AuditExportFormat::Json, None, 100).unwrap();
+
+        // Should be valid JSON array
+        let parsed: Vec<AuditEvent> = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.len(), 2);
+    }
+
+    #[test]
+    fn test_export_audit_log_csv() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_api_action("session-1", AuditAction::SessionStart, "Started")
+            .unwrap();
+        analytics
+            .log_quality_decision("session-1", "clippy", true, None, None)
+            .unwrap();
+
+        let csv = analytics.export_audit_log(AuditExportFormat::Csv, None, 100).unwrap();
+
+        // Should have header line and two data lines
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 3); // header + 2 events
+        assert!(lines[0].contains("timestamp"));
+        assert!(lines[0].contains("session_id"));
+        assert!(lines[0].contains("action"));
+    }
+
+    #[test]
+    fn test_export_audit_log_jsonl() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_api_action("session-1", AuditAction::SessionStart, "Started")
+            .unwrap();
+        analytics
+            .log_api_action("session-1", AuditAction::SessionEnd, "Ended")
+            .unwrap();
+
+        let jsonl = analytics.export_audit_log(AuditExportFormat::Jsonl, None, 100).unwrap();
+
+        // Each line should be valid JSON
+        let lines: Vec<&str> = jsonl.lines().collect();
+        assert_eq!(lines.len(), 2);
+        for line in lines {
+            serde_json::from_str::<AuditEvent>(line).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_audit_log_respects_limit() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        for i in 0..10 {
+            analytics
+                .log_api_action("session-1", AuditAction::IterationStart, &format!("Iter {}", i))
+                .unwrap();
+        }
+
+        let events = analytics.get_audit_events(None, None, 5).unwrap();
+        assert_eq!(events.len(), 5);
+    }
+
+    #[test]
+    fn test_audit_event_metadata() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        let event = AuditEvent::new("session-1", AuditAction::SecurityScan)
+            .with_metadata("findings_count", serde_json::json!(3))
+            .with_metadata("severity", serde_json::json!("high"));
+
+        analytics.log_audit_event(&event).unwrap();
+
+        let events = analytics.get_audit_events(None, None, 100).unwrap();
+        assert_eq!(events[0].metadata.get("findings_count"), Some(&serde_json::json!(3)));
+        assert_eq!(events[0].metadata.get("severity"), Some(&serde_json::json!("high")));
     }
 }
