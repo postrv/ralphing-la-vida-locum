@@ -1,4 +1,27 @@
-# Build Phase - Production Standard
+# Build Phase - Production Standard (TDD MANDATORY)
+
+## CRITICAL: This is a TDD-First, Production-Quality Codebase
+
+**Every change MUST follow Test-Driven Development:**
+1. Write failing tests FIRST - before ANY implementation code
+2. Tests define the contract - implementation follows
+3. No exceptions, no shortcuts, no "I'll add tests later"
+
+**Production standard means:**
+- Zero warnings, zero dead code, zero TODOs
+- Every public API tested and documented
+- Security scanned before every commit
+
+---
+
+## Phase 0: REINDEX (Start of Task)
+**Before starting any task, refresh narsil-mcp index:**
+```
+reindex
+```
+This ensures code intelligence reflects the current codebase state.
+
+---
 
 ## Phase 1: PLAN
 - Read IMPLEMENTATION_PLAN.md
@@ -14,8 +37,11 @@
   - `export_ccg_architecture` - understand public API surface
 - Identify all types/functions that will be affected
 
-## Phase 2: TEST FIRST (TDD)
-**Before writing ANY implementation code:**
+## Phase 2: TEST FIRST (TDD) - NON-NEGOTIABLE
+
+**YOU MUST WRITE TESTS BEFORE IMPLEMENTATION CODE. NO EXCEPTIONS.**
+
+Before writing ANY implementation code:
 1. Write failing test(s) that define the expected behavior
 2. Run tests to confirm they fail for the right reason
 3. Document the behavioral contract in test comments
@@ -26,6 +52,13 @@
 - Every public type must be exercised in integration tests
 - Edge cases must be tested (empty inputs, errors, boundaries)
 - Use `#[should_panic]` for expected panic paths
+
+**TDD Violation = STOP IMMEDIATELY**
+If you find yourself writing implementation before tests:
+1. STOP
+2. Delete the implementation code
+3. Write the test first
+4. Then write the minimal implementation to pass
 
 ## Phase 3: IMPLEMENT
 - Write minimal code to make tests pass
@@ -65,6 +98,13 @@ All narsil-mcp integration code MUST work when narsil-mcp is unavailable:
 - Update IMPLEMENTATION_PLAN.md marking task complete
 - If ANY check fails: DO NOT COMMIT - fix issues first
 
+## Phase 7: REINDEX (End of Task)
+**After completing a task, refresh narsil-mcp index:**
+```
+reindex
+```
+This ensures the next task starts with accurate code intelligence.
+
 ## Hard Rules (Violations = Immediate Stop)
 
 1. **NEVER modify existing tests to make them pass** - tests define correct behavior
@@ -90,9 +130,13 @@ All narsil-mcp integration code MUST work when narsil-mcp is unavailable:
 ## TDD Cycle Summary
 
 ```
-RED    -> Write failing test
-GREEN  -> Write minimal code to pass
+REINDEX  -> Refresh narsil-mcp index (start of task)
+RED      -> Write failing test FIRST (mandatory)
+GREEN    -> Write minimal code to pass
 REFACTOR -> Clean up, keeping tests green
-REVIEW -> Security + clippy + full test suite
-COMMIT -> Only if ALL gates pass
+REVIEW   -> Security + clippy + full test suite
+COMMIT   -> Only if ALL gates pass
+REINDEX  -> Refresh narsil-mcp index (end of task)
 ```
+
+**Remember: Tests define behavior. Implementation follows. Never the reverse.**

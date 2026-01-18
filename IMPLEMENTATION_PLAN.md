@@ -6,6 +6,20 @@
 
 ---
 
+## CRITICAL: TDD & Production Standards
+
+**All work MUST follow Test-Driven Development (TDD):**
+1. `reindex` - Refresh narsil-mcp index before starting
+2. Write failing tests FIRST - before any implementation
+3. Implement minimal code to make tests pass
+4. Refactor while keeping tests green
+5. Pass all quality gates before commit
+6. `reindex` - Refresh narsil-mcp index after completing
+
+**No shortcuts. No "tests later". Tests define the contract.**
+
+---
+
 ## Current Focus: Sprint 6 (Multi-Language Bootstrap - Detection)
 
 Ralph should work on **Sprint 6: Language Detection** - the foundation for multi-language support.
@@ -307,16 +321,25 @@ Detect patterns that predict stagnation and intervene early.
 
 ---
 
-## Quality Standards
+## Quality Standards (Production-Grade)
 
-Before marking a task complete:
+**Task Lifecycle:**
+1. `reindex` - Start with fresh code intelligence
+2. Write tests FIRST (TDD mandatory)
+3. Implement, refactor, review
+4. Pass all gates, commit
+5. `reindex` - End with updated index
 
-1. **Compilation**: `cargo check` passes with no warnings
-2. **Clippy**: `cargo clippy --all-targets -- -D warnings` passes
-3. **Tests**: `cargo test` passes with all new tests
-4. **Coverage**: New code has test coverage
-5. **Docs**: Public functions have doc comments
-6. **Security**: No new security issues (via narsil-mcp if available)
+**Before marking a task complete:**
+
+1. **TDD**: Tests were written BEFORE implementation
+2. **Compilation**: `cargo check` passes with no warnings
+3. **Clippy**: `cargo clippy --all-targets -- -D warnings` passes
+4. **Tests**: `cargo test` passes with all new tests
+5. **Coverage**: New code has test coverage
+6. **Docs**: Public functions have doc comments
+7. **Security**: No new security issues (via narsil-mcp if available)
+8. **Reindex**: narsil-mcp index refreshed after changes
 
 ---
 
