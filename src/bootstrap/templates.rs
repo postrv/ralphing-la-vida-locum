@@ -243,6 +243,11 @@ impl TemplateRegistry {
             TemplateKind::ClaudeMd,
             include_str!("../templates/python/CLAUDE.md"),
         );
+        self.register(
+            Language::Python,
+            TemplateKind::SettingsJson,
+            include_str!("../templates/python/settings.json"),
+        );
     }
 
     /// Loads TypeScript-specific templates.
@@ -259,6 +264,11 @@ impl TemplateRegistry {
             TemplateKind::ClaudeMd,
             include_str!("../templates/typescript/CLAUDE.md"),
         );
+        self.register(
+            Language::TypeScript,
+            TemplateKind::SettingsJson,
+            include_str!("../templates/typescript/settings.json"),
+        );
     }
 
     /// Loads Go-specific templates.
@@ -274,6 +284,11 @@ impl TemplateRegistry {
             Language::Go,
             TemplateKind::ClaudeMd,
             include_str!("../templates/go/CLAUDE.md"),
+        );
+        self.register(
+            Language::Go,
+            TemplateKind::SettingsJson,
+            include_str!("../templates/go/settings.json"),
         );
     }
 
@@ -962,6 +977,210 @@ mod tests {
             assert!(
                 template.contains("Quality") || template.contains("gate") || template.contains("Gate"),
                 "{:?} build prompt should reference quality gates",
+                lang
+            );
+        }
+    }
+
+    // ============================================================
+    // Language-specific settings.json tests (Sprint 9b-9d)
+    // ============================================================
+
+    #[test]
+    fn test_python_has_specific_settings_json() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::SettingsJson, Language::Python),
+            "Python should have a specific SettingsJson template"
+        );
+    }
+
+    #[test]
+    fn test_python_settings_json_is_valid_json() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Python);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(template);
+        assert!(parsed.is_ok(), "Python settings.json should be valid JSON");
+    }
+
+    #[test]
+    fn test_python_settings_json_contains_python_tools() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Python);
+        assert!(
+            template.contains("python") || template.contains("pytest"),
+            "Python settings.json should reference Python tools"
+        );
+    }
+
+    #[test]
+    fn test_python_settings_json_allows_pytest() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Python);
+        assert!(
+            template.contains("pytest"),
+            "Python settings.json should allow pytest"
+        );
+    }
+
+    #[test]
+    fn test_python_settings_json_allows_ruff() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Python);
+        assert!(
+            template.contains("ruff"),
+            "Python settings.json should allow ruff"
+        );
+    }
+
+    #[test]
+    fn test_typescript_has_specific_settings_json() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::SettingsJson, Language::TypeScript),
+            "TypeScript should have a specific SettingsJson template"
+        );
+    }
+
+    #[test]
+    fn test_typescript_settings_json_is_valid_json() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::TypeScript);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(template);
+        assert!(parsed.is_ok(), "TypeScript settings.json should be valid JSON");
+    }
+
+    #[test]
+    fn test_typescript_settings_json_contains_npm() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::TypeScript);
+        assert!(
+            template.contains("npm") || template.contains("npx"),
+            "TypeScript settings.json should reference npm"
+        );
+    }
+
+    #[test]
+    fn test_typescript_settings_json_allows_tsc() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::TypeScript);
+        assert!(
+            template.contains("tsc") || template.contains("npx tsc"),
+            "TypeScript settings.json should allow tsc"
+        );
+    }
+
+    #[test]
+    fn test_typescript_settings_json_allows_eslint() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::TypeScript);
+        assert!(
+            template.contains("eslint"),
+            "TypeScript settings.json should allow eslint"
+        );
+    }
+
+    #[test]
+    fn test_go_has_specific_settings_json() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::SettingsJson, Language::Go),
+            "Go should have a specific SettingsJson template"
+        );
+    }
+
+    #[test]
+    fn test_go_settings_json_is_valid_json() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Go);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(template);
+        assert!(parsed.is_ok(), "Go settings.json should be valid JSON");
+    }
+
+    #[test]
+    fn test_go_settings_json_contains_go_tools() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Go);
+        assert!(
+            template.contains("\"go ") || template.contains("go test"),
+            "Go settings.json should reference Go tools"
+        );
+    }
+
+    #[test]
+    fn test_go_settings_json_allows_go_test() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Go);
+        assert!(
+            template.contains("go ") || template.contains("Bash(go"),
+            "Go settings.json should allow go commands"
+        );
+    }
+
+    #[test]
+    fn test_go_settings_json_allows_golangci_lint() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::SettingsJson, Language::Go);
+        assert!(
+            template.contains("golangci-lint"),
+            "Go settings.json should allow golangci-lint"
+        );
+    }
+
+    #[test]
+    fn test_all_major_languages_have_settings_json() {
+        let registry = TemplateRegistry::new();
+        let major_languages = [
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+            Language::Go,
+        ];
+
+        for lang in major_languages {
+            assert!(
+                registry.has_language_specific(TemplateKind::SettingsJson, lang),
+                "{:?} should have SettingsJson template",
+                lang
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_settings_json_have_permissions_section() {
+        let registry = TemplateRegistry::new();
+        let languages = [
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+            Language::Go,
+        ];
+
+        for lang in languages {
+            let template = registry.get(TemplateKind::SettingsJson, lang);
+            assert!(
+                template.contains("permissions"),
+                "{:?} settings.json should have permissions section",
+                lang
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_settings_json_deny_dangerous_commands() {
+        let registry = TemplateRegistry::new();
+        let languages = [
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+            Language::Go,
+        ];
+
+        for lang in languages {
+            let template = registry.get(TemplateKind::SettingsJson, lang);
+            assert!(
+                template.contains("rm -rf /") || template.contains("deny"),
+                "{:?} settings.json should deny dangerous commands",
                 lang
             );
         }
