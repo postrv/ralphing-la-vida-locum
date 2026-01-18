@@ -689,6 +689,174 @@ impl SectionBuilder {
             }
         }
     }
+
+    /// Build a CCG (Compact Code Graph) section for prompt enrichment.
+    ///
+    /// Extracts key information from CCG L0 (manifest) and L1 (architecture)
+    /// to provide architectural context in prompts. Keeps output concise.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::builder::SectionBuilder;
+    /// use ralph::prompt::context::CodeIntelligenceContext;
+    /// use ralph::narsil::{CcgManifest, SecuritySummary};
+    ///
+    /// let manifest = CcgManifest::new("my-project", "/path/to/project")
+    ///     .with_counts(50, 200)
+    ///     .with_security_summary(SecuritySummary { critical: 0, high: 0, medium: 1, low: 3 });
+    ///
+    /// let intel = CodeIntelligenceContext::new()
+    ///     .with_ccg_manifest(manifest)
+    ///     .mark_available();
+    ///
+    /// let section = SectionBuilder::build_ccg_section(&intel);
+    /// assert!(section.contains("## Project Overview"));
+    /// ```
+    #[must_use]
+    pub fn build_ccg_section(intel: &CodeIntelligenceContext) -> String {
+        // Don't show if not available or no CCG data
+        if !intel.is_available || !intel.has_ccg_data() {
+            return String::new();
+        }
+
+        let mut lines = Vec::new();
+
+        // L0: Manifest section - basic project info
+        if let Some(manifest) = &intel.ccg_manifest {
+            lines.push("## Project Overview".to_string());
+            lines.push(String::new());
+
+            // Project name and primary language
+            if let Some(lang) = &manifest.primary_language {
+                lines.push(format!("**Project:** {} ({})", manifest.name, lang));
+            } else {
+                lines.push(format!("**Project:** {}", manifest.name));
+            }
+
+            // Symbol count
+            lines.push(format!("**Symbols:** {} across {} files", manifest.symbol_count, manifest.file_count));
+
+            // Security summary (if there are any issues)
+            let sec = &manifest.security_summary;
+            let total = sec.critical + sec.high + sec.medium + sec.low;
+            if total > 0 {
+                lines.push(String::new());
+                lines.push("**Security Summary:**".to_string());
+                if sec.critical > 0 {
+                    lines.push(format!("  🔴 Critical: {}", sec.critical));
+                }
+                if sec.high > 0 {
+                    lines.push(format!("  🟠 High: {}", sec.high));
+                }
+                if sec.medium > 0 {
+                    lines.push(format!("  🟡 Medium: {}", sec.medium));
+                }
+                if sec.low > 0 {
+                    lines.push(format!("  🔵 Low: {}", sec.low));
+                }
+            }
+
+            lines.push(String::new());
+        }
+
+        // L1: Architecture section - module hierarchy and public API
+        if let Some(arch) = &intel.ccg_architecture {
+            // Entry points
+            if !arch.entry_points.is_empty() {
+                lines.push("### Entry Points".to_string());
+                for entry in arch.entry_points.iter().take(5) {
+                    let location = entry.file.display();
+                    if let Some(line) = entry.line {
+                        lines.push(format!("- `{}` ({}) at `{}:{}`", entry.name, entry.kind, location, line));
+                    } else {
+                        lines.push(format!("- `{}` ({}) in `{}`", entry.name, entry.kind, location));
+                    }
+                }
+                if arch.entry_points.len() > 5 {
+                    lines.push(format!("... and {} more entry points", arch.entry_points.len() - 5));
+                }
+                lines.push(String::new());
+            }
+
+            // Public API (limit to 8 symbols to stay concise)
+            if !arch.public_api.is_empty() {
+                lines.push("### Public API".to_string());
+                for symbol in arch.public_api.iter().take(8) {
+                    let kind_str = format!("{}", symbol.kind);
+                    if let Some(sig) = &symbol.signature {
+                        lines.push(format!("- `{}` ({}) - {}", symbol.name, kind_str, sig));
+                    } else {
+                        lines.push(format!("- `{}` ({})", symbol.name, kind_str));
+                    }
+                }
+                if arch.public_api.len() > 8 {
+                    lines.push(format!("... and {} more public symbols", arch.public_api.len() - 8));
+                }
+                lines.push(String::new());
+            }
+
+            // Module structure (limit to 5 modules)
+            if !arch.modules.is_empty() {
+                lines.push("### Module Structure".to_string());
+                for module in arch.modules.iter().take(5) {
+                    let children_count = module.children.len();
+                    if children_count > 0 {
+                        lines.push(format!("- `{}` ({} submodules)", module.name, children_count));
+                    } else {
+                        lines.push(format!("- `{}`", module.name));
+                    }
+                }
+                if arch.modules.len() > 5 {
+                    lines.push(format!("... and {} more modules", arch.modules.len() - 5));
+                }
+                lines.push(String::new());
+            }
+        }
+
+        lines.join("\n")
+    }
+
+    /// Build a combined intelligence section with both call graph and CCG data.
+    ///
+    /// This combines `build_intelligence_section` and `build_ccg_section` into
+    /// a single coherent section, respecting the < 1KB size constraint.
+    #[must_use]
+    pub fn build_combined_intelligence_section(intel: &CodeIntelligenceContext, max_bytes: usize) -> String {
+        if !intel.is_available {
+            return String::new();
+        }
+
+        let mut sections = Vec::new();
+
+        // Add CCG section first (overview)
+        let ccg_section = Self::build_ccg_section(intel);
+        if !ccg_section.is_empty() {
+            sections.push(ccg_section);
+        }
+
+        // Add intelligence section (call graph, refs, deps)
+        let intel_section = Self::build_intelligence_section(intel);
+        if !intel_section.is_empty() {
+            sections.push(intel_section);
+        }
+
+        let combined = sections.join("\n");
+
+        // Enforce size limit
+        if combined.len() > max_bytes {
+            // Truncate with indicator
+            let truncated = &combined[..max_bytes.saturating_sub(50)];
+            // Find last newline to avoid cutting mid-line
+            if let Some(pos) = truncated.rfind('\n') {
+                format!("{}\n\n... (intelligence section truncated to {}B)", &combined[..pos], max_bytes)
+            } else {
+                format!("{}... (truncated)", &combined[..max_bytes.saturating_sub(20)])
+            }
+        } else {
+            combined
+        }
+    }
 }
 
 /// Dynamic prompt builder that assembles complete prompts from templates and context.

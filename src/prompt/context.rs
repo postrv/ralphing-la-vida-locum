@@ -14,6 +14,7 @@
 //! assert_eq!(context.session_stats.iteration_count, 5);
 //! ```
 
+use crate::narsil::{CcgArchitecture, CcgManifest};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -1188,6 +1189,12 @@ pub struct CodeIntelligenceContext {
     pub dependencies: Vec<ModuleDependency>,
     /// Whether narsil-mcp is available and intelligence data is valid.
     pub is_available: bool,
+    /// CCG L0 manifest with repository metadata and security summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ccg_manifest: Option<CcgManifest>,
+    /// CCG L1 architecture with module hierarchy and public API.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ccg_architecture: Option<CcgArchitecture>,
 }
 
 impl CodeIntelligenceContext {
@@ -1237,7 +1244,11 @@ impl CodeIntelligenceContext {
     /// Check if any intelligence data is present.
     #[must_use]
     pub fn has_data(&self) -> bool {
-        !self.call_graph.is_empty() || !self.references.is_empty() || !self.dependencies.is_empty()
+        !self.call_graph.is_empty()
+            || !self.references.is_empty()
+            || !self.dependencies.is_empty()
+            || self.ccg_manifest.is_some()
+            || self.ccg_architecture.is_some()
     }
 
     /// Get the count of functions in the call graph.
@@ -1256,6 +1267,88 @@ impl CodeIntelligenceContext {
     #[must_use]
     pub fn definitions(&self) -> Vec<&SymbolReference> {
         self.references.iter().filter(|r| r.is_definition()).collect()
+    }
+
+    /// Add CCG manifest (L0) data.
+    #[must_use]
+    pub fn with_ccg_manifest(mut self, manifest: CcgManifest) -> Self {
+        self.ccg_manifest = Some(manifest);
+        self
+    }
+
+    /// Add CCG architecture (L1) data.
+    #[must_use]
+    pub fn with_ccg_architecture(mut self, architecture: CcgArchitecture) -> Self {
+        self.ccg_architecture = Some(architecture);
+        self
+    }
+
+    /// Check if CCG data is available.
+    #[must_use]
+    pub fn has_ccg_data(&self) -> bool {
+        self.ccg_manifest.is_some() || self.ccg_architecture.is_some()
+    }
+
+    /// Get security summary from CCG manifest if available.
+    #[must_use]
+    pub fn security_summary(&self) -> Option<&crate::narsil::SecuritySummary> {
+        self.ccg_manifest.as_ref().map(|m| &m.security_summary)
+    }
+
+    /// Get symbol count from CCG manifest if available.
+    #[must_use]
+    pub fn symbol_count(&self) -> Option<u32> {
+        self.ccg_manifest.as_ref().map(|m| m.symbol_count)
+    }
+
+    /// Get public API symbols from CCG architecture if available.
+    #[must_use]
+    pub fn public_api(&self) -> Option<&[crate::narsil::PublicSymbol]> {
+        self.ccg_architecture.as_ref().map(|a| a.public_api.as_slice())
+    }
+
+    /// Get module hierarchy from CCG architecture if available.
+    #[must_use]
+    pub fn modules(&self) -> Option<&[crate::narsil::Module]> {
+        self.ccg_architecture.as_ref().map(|a| a.modules.as_slice())
+    }
+
+    /// Check if there are blocking security issues (critical or high severity).
+    #[must_use]
+    pub fn has_blocking_security_issues(&self) -> bool {
+        self.ccg_manifest
+            .as_ref()
+            .is_some_and(|m| m.security_summary.critical > 0 || m.security_summary.high > 0)
+    }
+
+    /// Estimate the size of intelligence payload in bytes.
+    ///
+    /// Used to enforce the < 1KB constraint on intelligence section.
+    #[must_use]
+    pub fn estimate_payload_size(&self) -> usize {
+        let mut size = 0;
+
+        // Call graph: ~50 bytes per function
+        size += self.call_graph.len() * 50;
+
+        // References: ~40 bytes per reference
+        size += self.references.len() * 40;
+
+        // Dependencies: ~60 bytes per dependency
+        size += self.dependencies.len() * 60;
+
+        // CCG manifest: ~200 bytes if present
+        if self.ccg_manifest.is_some() {
+            size += 200;
+        }
+
+        // CCG architecture: varies by public API size
+        if let Some(arch) = &self.ccg_architecture {
+            size += arch.public_api.len() * 80;
+            size += arch.modules.len() * 40;
+        }
+
+        size
     }
 }
 
@@ -2333,5 +2426,147 @@ mod tests {
         assert!(restored.is_available);
         assert_eq!(restored.call_graph.len(), 1);
         assert_eq!(restored.references.len(), 1);
+    }
+
+    // ==========================================================================
+    // CCG integration tests
+    // ==========================================================================
+
+    #[test]
+    fn test_code_intelligence_context_with_ccg_manifest() {
+        use crate::narsil::{CcgManifest, SecuritySummary};
+
+        let manifest = CcgManifest::new("test-repo", "/path/to/repo")
+            .with_counts(100, 500)
+            .with_security_summary(SecuritySummary {
+                critical: 0,
+                high: 1,
+                medium: 5,
+                low: 10,
+            });
+
+        let intel = CodeIntelligenceContext::new()
+            .with_ccg_manifest(manifest)
+            .mark_available();
+
+        assert!(intel.has_data());
+        assert!(intel.has_ccg_data());
+        assert_eq!(intel.symbol_count(), Some(500));
+        assert!(intel.has_blocking_security_issues()); // high > 0
+    }
+
+    #[test]
+    fn test_code_intelligence_context_with_ccg_architecture() {
+        use crate::narsil::{CcgArchitecture, PublicSymbol, SymbolKind, Module};
+
+        let arch = CcgArchitecture::new()
+            .with_public_symbol(PublicSymbol::new("process_request", SymbolKind::Function))
+            .with_public_symbol(PublicSymbol::new("MyStruct", SymbolKind::Struct))
+            .with_module(Module::new("lib", "src/lib.rs"));
+
+        let intel = CodeIntelligenceContext::new()
+            .with_ccg_architecture(arch)
+            .mark_available();
+
+        assert!(intel.has_data());
+        assert!(intel.has_ccg_data());
+        assert_eq!(intel.public_api().map(|api| api.len()), Some(2));
+        assert_eq!(intel.modules().map(|m| m.len()), Some(1));
+    }
+
+    #[test]
+    fn test_code_intelligence_context_security_summary() {
+        use crate::narsil::{CcgManifest, SecuritySummary};
+
+        // No security issues
+        let safe_manifest = CcgManifest::new("safe-repo", "/path")
+            .with_security_summary(SecuritySummary {
+                critical: 0,
+                high: 0,
+                medium: 2,
+                low: 5,
+            });
+
+        let safe_intel = CodeIntelligenceContext::new()
+            .with_ccg_manifest(safe_manifest);
+
+        assert!(!safe_intel.has_blocking_security_issues());
+
+        // Critical issues
+        let unsafe_manifest = CcgManifest::new("unsafe-repo", "/path")
+            .with_security_summary(SecuritySummary {
+                critical: 1,
+                high: 0,
+                medium: 0,
+                low: 0,
+            });
+
+        let unsafe_intel = CodeIntelligenceContext::new()
+            .with_ccg_manifest(unsafe_manifest);
+
+        assert!(unsafe_intel.has_blocking_security_issues());
+    }
+
+    #[test]
+    fn test_code_intelligence_context_estimate_payload_size() {
+        use crate::narsil::{CcgManifest, CcgArchitecture, PublicSymbol, SymbolKind, Module};
+
+        // Empty context
+        let empty = CodeIntelligenceContext::new();
+        assert_eq!(empty.estimate_payload_size(), 0);
+
+        // With call graph
+        let with_graph = CodeIntelligenceContext::new()
+            .with_call_graph(vec![CallGraphNode::new("foo"), CallGraphNode::new("bar")]);
+        assert_eq!(with_graph.estimate_payload_size(), 100); // 2 * 50
+
+        // With CCG data
+        let with_ccg = CodeIntelligenceContext::new()
+            .with_ccg_manifest(CcgManifest::new("test", "/path"))
+            .with_ccg_architecture(
+                CcgArchitecture::new()
+                    .with_public_symbol(PublicSymbol::new("foo", SymbolKind::Function))
+                    .with_module(Module::new("lib", "src/lib.rs"))
+            );
+
+        // 200 (manifest) + 80 (1 symbol) + 40 (1 module) = 320
+        assert_eq!(with_ccg.estimate_payload_size(), 320);
+    }
+
+    #[test]
+    fn test_code_intelligence_context_has_data_with_ccg() {
+        use crate::narsil::CcgManifest;
+
+        // Only CCG manifest counts as data
+        let intel = CodeIntelligenceContext::new()
+            .with_ccg_manifest(CcgManifest::new("test", "/path"));
+
+        assert!(intel.has_data());
+        assert!(intel.has_ccg_data());
+    }
+
+    #[test]
+    fn test_code_intelligence_context_ccg_serialize_roundtrip() {
+        use crate::narsil::{CcgManifest, SecuritySummary};
+
+        let manifest = CcgManifest::new("test-repo", "/path/to/repo")
+            .with_counts(50, 200)
+            .with_security_summary(SecuritySummary {
+                critical: 0,
+                high: 0,
+                medium: 1,
+                low: 2,
+            });
+
+        let intel = CodeIntelligenceContext::new()
+            .with_ccg_manifest(manifest)
+            .mark_available();
+
+        let json = serde_json::to_string(&intel).unwrap();
+        let restored: CodeIntelligenceContext = serde_json::from_str(&json).unwrap();
+
+        assert!(restored.is_available);
+        assert!(restored.has_ccg_data());
+        assert_eq!(restored.symbol_count(), Some(200));
     }
 }
