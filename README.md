@@ -1,5 +1,7 @@
 # Ralph
 
+[![CI](https://github.com/postrv/ralphing-la-vida-locum/actions/workflows/ci.yml/badge.svg)](https://github.com/postrv/ralphing-la-vida-locum/actions/workflows/ci.yml)
+
 > *"Nobody ever dies wishing they'd worked more."*
 > — Gareth
 
@@ -36,11 +38,18 @@ Ralph is a Rust CLI tool that orchestrates Claude Code for autonomous software d
 - **Antipattern Detection** - Detects repeated file editing, missing tests, task oscillation
 - **Predictive Prevention** - Pattern-based risk scoring to prevent stagnation
 
+### Multi-Language Support
+- **32 Languages** - Rust, Python, TypeScript, Go, Java, C#, C++, Swift, Kotlin, Ruby, and 22 more
+- **Auto-Detection** - Detects project languages from file extensions and manifest files (Cargo.toml, package.json, etc.)
+- **Polyglot Projects** - Full support for multi-language codebases with confidence scoring
+- **Language-Specific Settings** - Generates appropriate `.claude/settings.json` for detected languages
+
 ### Developer Experience
 - **Bootstrap** - Initialize projects with Claude Code configuration, hooks, skills, and templates
 - **Context Builder** - Generate LLM-optimized context bundles respecting gitignore and token limits
 - **Security Hooks** - Pre-validate commands, scan for secrets, enforce allow/deny permissions
 - **Analytics** - Track sessions, iterations, events, and quality trends (test rates, warnings, security findings)
+- **Constraint Verification** - Validate CCG constraints and report compliance issues
 
 ## Installation
 
@@ -117,6 +126,27 @@ Initialize automation suite in a project directory.
 
 ```bash
 ralph --project /path/to/project bootstrap
+```
+
+The bootstrap command auto-detects project languages and generates appropriate configuration:
+```bash
+# Shows detected languages during bootstrap
+ralph --project . bootstrap
+#    → Rust (primary)
+#    → Python
+#    → TypeScript
+```
+
+### `detect`
+Detect programming languages in a project.
+
+```bash
+# Show detected languages
+ralph --project . detect
+
+# Output:
+#    → Rust (primary)      # 85% confidence
+#    → Python              # 72% confidence
 ```
 
 ### `context`
@@ -429,6 +459,7 @@ src/
 ├── narsil/              # narsil-mcp integration
 │   ├── client.rs        # MCP client for tool invocation
 │   ├── ccg.rs           # CCG data structures (CcgManifest, CcgArchitecture)
+│   ├── constraint_verifier.rs  # CCG constraint validation
 │   └── intelligence.rs  # Code intelligence queries
 │
 ├── supervisor/          # Chief Wiggum health monitoring
@@ -441,10 +472,14 @@ src/
 │   ├── fixtures.rs      # Test fixtures and builders
 │   └── assertions.rs    # Custom test assertions
 │
+├── bootstrap/           # Project bootstrapping
+│   ├── mod.rs           # Bootstrap orchestration
+│   ├── language.rs      # Language enum (32 languages)
+│   └── language_detector.rs  # Auto-detection with confidence scoring
+│
 ├── hooks.rs             # Security hooks and validation
 ├── archive.rs           # Documentation archival
 ├── analytics.rs         # Session tracking
-├── bootstrap.rs         # Project initialization
 └── templates/           # Bootstrap templates
 ```
 
@@ -477,7 +512,7 @@ See [docs/LICENSING.md](docs/LICENSING.md) for details.
 
 ## Requirements
 
-- Rust 1.70+
+- Rust 1.85+ (MSRV enforced by CI)
 - Claude Code 2.1.0+ (for skill hot-reload)
 - GitHub CLI (`gh`) for authentication
 - Optional: [narsil-mcp](https://github.com/postrv/narsil-mcp) for code intelligence (use `--features graph` for CCG support)
