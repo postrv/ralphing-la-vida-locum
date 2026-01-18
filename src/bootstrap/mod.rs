@@ -17,6 +17,9 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
+use language::Language;
+use language_detector::{DetectedLanguage, LanguageDetector};
+
 /// Bootstrap manager
 pub struct Bootstrap {
     project_dir: PathBuf,
@@ -28,6 +31,74 @@ impl Bootstrap {
         Self { project_dir }
     }
 
+    /// Detect programming languages used in the project.
+    ///
+    /// Returns a vector of detected languages sorted by confidence (highest first).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let bootstrap = Bootstrap::new(PathBuf::from("."));
+    /// let languages = bootstrap.detect_languages();
+    /// for lang in &languages {
+    ///     println!("{}: {:.0}%", lang.language, lang.confidence * 100.0);
+    /// }
+    /// ```
+    pub fn detect_languages(&self) -> Vec<DetectedLanguage> {
+        let detector = LanguageDetector::new(&self.project_dir);
+        detector.detect()
+    }
+
+    /// Get the primary (most confident) language for this project.
+    ///
+    /// Returns `None` if no source files are detected.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let bootstrap = Bootstrap::new(PathBuf::from("."));
+    /// if let Some(lang) = bootstrap.primary_language() {
+    ///     println!("This is a {} project", lang);
+    /// }
+    /// ```
+    pub fn primary_language(&self) -> Option<Language> {
+        let detector = LanguageDetector::new(&self.project_dir);
+        detector.primary_language()
+    }
+
+    /// Display detected languages with confidence scores.
+    fn display_detected_languages(&self) {
+        let detected = self.detect_languages();
+
+        if detected.is_empty() {
+            println!(
+                "   {} No programming languages detected",
+                "Note:".yellow()
+            );
+            println!("   This is an empty or unrecognized project type");
+            return;
+        }
+
+        println!("\n{} Detected languages:", "Languages:".cyan());
+        for lang in &detected {
+            let marker = if lang.primary { "→" } else { " " };
+            let primary_tag = if lang.primary {
+                " (primary)".green().to_string()
+            } else {
+                String::new()
+            };
+            println!(
+                "   {} {}: {:.0}% confidence ({} files){}",
+                marker,
+                lang.language.to_string().bold(),
+                lang.confidence * 100.0,
+                lang.file_count,
+                primary_tag
+            );
+        }
+        println!();
+    }
+
     /// Run the bootstrap process
     pub fn run(&self, force: bool, install_git_hooks: bool) -> Result<()> {
         println!(
@@ -35,6 +106,9 @@ impl Bootstrap {
             "Info:".blue(),
             self.project_dir.display()
         );
+
+        // Detect and display project languages
+        self.display_detected_languages();
 
         // Create directory structure
         self.create_directories()?;
@@ -531,5 +605,100 @@ mod tests {
         // File should have default content
         let content = std::fs::read_to_string(&claude_md).unwrap();
         assert!(content.contains("Project Memory"));
+    }
+
+    // ============================================================
+    // Language Detection Integration Tests (Sprint 6c)
+    // ============================================================
+
+    #[test]
+    fn test_bootstrap_detects_rust_project() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a Rust project
+        std::fs::write(temp.path().join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        std::fs::create_dir(temp.path().join("src")).unwrap();
+        std::fs::write(temp.path().join("src/main.rs"), "fn main() {}").unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+        let detected = bootstrap.detect_languages();
+
+        assert!(!detected.is_empty(), "Should detect languages");
+        let rust = detected.iter().find(|d| d.language == crate::bootstrap::language::Language::Rust);
+        assert!(rust.is_some(), "Should detect Rust");
+        assert!(rust.unwrap().primary, "Rust should be primary");
+    }
+
+    #[test]
+    fn test_bootstrap_detects_python_project() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a Python project
+        std::fs::write(temp.path().join("pyproject.toml"), "[project]\nname = \"test\"").unwrap();
+        std::fs::write(temp.path().join("main.py"), "print('hello')").unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+        let detected = bootstrap.detect_languages();
+
+        let python = detected.iter().find(|d| d.language == crate::bootstrap::language::Language::Python);
+        assert!(python.is_some(), "Should detect Python");
+        assert!(python.unwrap().primary, "Python should be primary");
+    }
+
+    #[test]
+    fn test_bootstrap_detects_empty_project() {
+        let temp = TempDir::new().unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+        let detected = bootstrap.detect_languages();
+
+        assert!(detected.is_empty(), "Empty project should have no detected languages");
+    }
+
+    #[test]
+    fn test_bootstrap_primary_language() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a Go project
+        std::fs::write(temp.path().join("go.mod"), "module test").unwrap();
+        std::fs::write(temp.path().join("main.go"), "package main\nfunc main() {}").unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+        let primary = bootstrap.primary_language();
+
+        assert!(primary.is_some(), "Should have a primary language");
+        assert_eq!(primary.unwrap(), crate::bootstrap::language::Language::Go);
+    }
+
+    #[test]
+    fn test_bootstrap_primary_language_empty_project() {
+        let temp = TempDir::new().unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+        let primary = bootstrap.primary_language();
+
+        assert!(primary.is_none(), "Empty project should have no primary language");
+    }
+
+    #[test]
+    fn test_bootstrap_run_logs_detected_languages() {
+        let temp = TempDir::new().unwrap();
+
+        // Create a TypeScript project
+        std::fs::write(temp.path().join("package.json"), "{}").unwrap();
+        std::fs::write(temp.path().join("tsconfig.json"), "{}").unwrap();
+        std::fs::create_dir(temp.path().join("src")).unwrap();
+        std::fs::write(temp.path().join("src/index.ts"), "export const x = 1;").unwrap();
+
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+
+        // This should run successfully and print language info
+        let result = bootstrap.run(false, false);
+        assert!(result.is_ok(), "Bootstrap should succeed");
+
+        // Verify TypeScript was detected
+        let detected = bootstrap.detect_languages();
+        let ts = detected.iter().find(|d| d.language == crate::bootstrap::language::Language::TypeScript);
+        assert!(ts.is_some(), "Should detect TypeScript");
     }
 }

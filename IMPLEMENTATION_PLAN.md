@@ -39,7 +39,7 @@ Ralph should work on **Sprint 6: Language Detection** - the foundation for multi
 | 3 | Quality Gate Enforcement | P0 | Complete |
 | 4 | Checkpoint & Rollback Enhancement | P1 | Complete |
 | 5 | narsil-mcp Integration | P0 | Complete |
-| 6 | Multi-Language Detection | P0 | Ready |
+| 6 | Multi-Language Detection | P0 | Complete |
 | 7 | Language-Specific Quality Gates | P0 | Pending |
 | 8 | Language-Specific Prompts | P0 | Pending |
 | 9 | Multi-Language CLI & Settings | P1 | Pending |
@@ -63,27 +63,27 @@ Ralph should work on **Sprint 6: Language Detection** - the foundation for multi
 - Acceptance: All languages have correct extensions and manifests
 
 ### 6b. Language Detector
-- [ ] Create `LanguageDetector` struct
-- [ ] Implement file extension scanning (walkdir)
-- [ ] Implement manifest file detection with confidence boost
-- [ ] Calculate confidence scores
-- [ ] Identify primary language
+- [x] Create `LanguageDetector` struct
+- [x] Implement file extension scanning (walkdir)
+- [x] Implement manifest file detection with confidence boost
+- [x] Calculate confidence scores
+- [x] Identify primary language
 - Files: `src/bootstrap/language_detector.rs`
 - Acceptance: Can detect Rust, Python, TypeScript, Go, Java projects
 
 ### 6c. Detection Integration
-- [ ] Integrate detector into `Bootstrap::run()`
-- [ ] Display detected languages with confidence
-- [ ] Pass languages to template generation
-- [ ] Handle no-language-detected case
+- [x] Integrate detector into `Bootstrap::run()`
+- [x] Display detected languages with confidence
+- [x] Pass languages to template generation
+- [x] Handle no-language-detected case
 - Files: `src/bootstrap/mod.rs`
 - Acceptance: `ralph bootstrap` shows detected languages
 
 ### 6d. Detection Tests
-- [ ] Test single-language detection (Rust, Python, TS, Go)
-- [ ] Test polyglot detection
-- [ ] Test confidence scoring
-- [ ] Test edge cases (empty project, unknown files)
+- [x] Test single-language detection (Rust, Python, TS, Go)
+- [x] Test polyglot detection
+- [x] Test confidence scoring
+- [x] Test edge cases (empty project, unknown files)
 - Files: `src/bootstrap/language_detector.rs` (tests module)
 - Acceptance: All detection scenarios tested
 
