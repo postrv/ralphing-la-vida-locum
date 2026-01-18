@@ -11,25 +11,47 @@
 //! - [`SecurityGate`] - Runs security scans via narsil-mcp
 //! - [`NoTodoGate`] - Checks for TODO/FIXME comments in code
 //!
+//! # Traits
+//!
+//! - [`Gate`] - Legacy stateful gate interface (stores project_dir)
+//! - [`QualityGate`] - New stateless interface (project_dir passed to run)
+//!
 //! # Example
 //!
 //! ```rust,ignore
 //! use ralph::quality::gates::{ClippyGate, Gate, GateConfig};
 //!
+//! // Legacy stateful usage
 //! let gate = ClippyGate::new("/path/to/project");
 //! let result = gate.check()?;
 //! if !result.passed {
 //!     eprintln!("Clippy failed: {:?}", result.issues);
 //! }
+//!
+//! // New QualityGate usage
+//! use ralph::quality::gates::{gates_for_language, QualityGate};
+//! use ralph::bootstrap::Language;
+//!
+//! let gates = gates_for_language(Language::Rust);
+//! for gate in &gates {
+//!     let issues = gate.run(Path::new("/path/to/project"))?;
+//!     if !issues.is_empty() {
+//!         eprintln!("{}", gate.remediation(&issues));
+//!     }
+//! }
 //! ```
+
+pub mod python;
+pub mod rust;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
-use crate::narsil::{NarsilClient, SecurityFinding, SecuritySeverity};
+use crate::bootstrap::language::Language;
+use crate::narsil::{NarsilClient, NarsilConfig, SecurityFinding, SecuritySeverity};
 
 // ============================================================================
 // Gate Result Types
@@ -249,10 +271,15 @@ impl GateResult {
 }
 
 // ============================================================================
-// Gate Trait
+// Gate Trait (Legacy - Stateful)
 // ============================================================================
 
-/// Trait for quality gates.
+/// Trait for quality gates (legacy stateful interface).
+///
+/// Gates implementing this trait store the project directory and are
+/// used by the [`QualityGateEnforcer`](super::QualityGateEnforcer).
+///
+/// For new code, prefer implementing [`QualityGate`] instead.
 pub trait Gate {
     /// Get the name of this gate.
     fn name(&self) -> &str;
@@ -267,6 +294,102 @@ pub trait Gate {
     /// Check if this gate is blocking (prevents commits on failure).
     fn is_blocking(&self) -> bool {
         true
+    }
+}
+
+// ============================================================================
+// QualityGate Trait (New - Stateless)
+// ============================================================================
+
+/// Trait for language-agnostic quality gates.
+///
+/// This trait defines a stateless interface where the project directory
+/// is passed to [`run()`](QualityGate::run) rather than stored in the gate.
+///
+/// # Thread Safety
+///
+/// All implementations must be `Send + Sync` to support concurrent gate
+/// execution in multi-threaded environments.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::{QualityGate, GateIssue, IssueSeverity};
+/// use std::path::Path;
+/// use anyhow::Result;
+///
+/// struct MyGate;
+///
+/// impl QualityGate for MyGate {
+///     fn name(&self) -> &str { "MyGate" }
+///
+///     fn run(&self, project_dir: &Path) -> Result<Vec<GateIssue>> {
+///         Ok(vec![])
+///     }
+///
+///     fn remediation(&self, issues: &[GateIssue]) -> String {
+///         format!("Fix {} issues", issues.len())
+///     }
+/// }
+/// ```
+pub trait QualityGate: Send + Sync {
+    /// Returns the display name of this gate.
+    fn name(&self) -> &str;
+
+    /// Runs the quality gate check on the given project.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_dir` - Path to the project root directory
+    ///
+    /// # Returns
+    ///
+    /// A vector of issues found, or an empty vector if the check passes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the gate fails to execute (e.g., tool not found).
+    fn run(&self, project_dir: &Path) -> Result<Vec<GateIssue>>;
+
+    /// Returns whether this gate blocks commits on failure.
+    fn is_blocking(&self) -> bool {
+        true
+    }
+
+    /// Generates remediation guidance for the given issues.
+    fn remediation(&self, issues: &[GateIssue]) -> String;
+}
+
+// ============================================================================
+// Gate Factory
+// ============================================================================
+
+/// Returns quality gates appropriate for the given language.
+///
+/// This factory function creates a set of gates that use the standard
+/// tooling for each language. For example:
+/// - Rust: ClippyGate, TestGate, NoAllowGate, SecurityGate, NoTodoGate
+/// - Python: RuffGate, PytestGate, MypyGate, BanditGate (future)
+///
+/// For languages without specific gate implementations, returns an empty vector.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::gates_for_language;
+/// use ralph::bootstrap::Language;
+///
+/// let rust_gates = gates_for_language(Language::Rust);
+/// assert!(!rust_gates.is_empty());
+/// ```
+#[must_use]
+pub fn gates_for_language(lang: Language) -> Vec<Box<dyn QualityGate>> {
+    match lang {
+        Language::Rust => rust::rust_gates(),
+        Language::Python => python::python_gates(),
+        // Future: Language::TypeScript | Language::JavaScript => typescript::ts_quality_gates(),
+        // Future: Language::Go => go::go_quality_gates(),
+        _ => Vec::new(),
     }
 }
 
@@ -322,13 +445,6 @@ impl ClippyGate {
     fn parse_output(&self, stderr: &str) -> Vec<GateIssue> {
         let mut issues = Vec::new();
 
-        // Parse lines like:
-        // warning: unused variable: `x`
-        //   --> src/main.rs:10:9
-        //   |
-        // 10 |     let x = 5;
-        //   |         ^ help: if this is intentional, prefix it with an underscore: `_x`
-
         let mut current_severity = None;
         let mut current_message = String::new();
         let mut current_file = None;
@@ -336,11 +452,6 @@ impl ClippyGate {
         let mut current_code = None;
 
         for line in stderr.lines() {
-            // Check for warning/error start
-            // Handles formats:
-            // - "warning: unused variable"
-            // - "error: mismatched types"
-            // - "error[E0308]: mismatched types"
             let is_warning = line.starts_with("warning: ") || line.starts_with("warning[");
             let is_error = line.starts_with("error: ") || line.starts_with("error[");
 
@@ -368,19 +479,17 @@ impl ClippyGate {
                 } else if let Some(stripped) = line.strip_prefix("error: ") {
                     (IssueSeverity::Error, stripped, None)
                 } else if line.starts_with("error[") {
-                    // Parse "error[E0308]: message"
                     if let Some(bracket_end) = line.find("]: ") {
-                        let code = &line[6..bracket_end]; // Skip "error["
-                        let msg = &line[bracket_end + 3..]; // Skip "]: "
+                        let code = &line[6..bracket_end];
+                        let msg = &line[bracket_end + 3..];
                         (IssueSeverity::Error, msg, Some(code.to_string()))
                     } else {
                         continue;
                     }
                 } else if line.starts_with("warning[") {
-                    // Parse "warning[W0001]: message"
                     if let Some(bracket_end) = line.find("]: ") {
-                        let code = &line[8..bracket_end]; // Skip "warning["
-                        let msg = &line[bracket_end + 3..]; // Skip "]: "
+                        let code = &line[8..bracket_end];
+                        let msg = &line[bracket_end + 3..];
                         (IssueSeverity::Warning, msg, Some(code.to_string()))
                     } else {
                         continue;
@@ -391,12 +500,10 @@ impl ClippyGate {
 
                 current_severity = Some(sev);
 
-                // Use error code from bracket format if present, otherwise extract from message
                 if let Some(code) = error_code {
                     current_code = Some(code);
                     current_message = rest.to_string();
                 } else if let Some(bracket_start) = rest.rfind('[') {
-                    // Extract code if present (e.g., "warning: unused variable: `x` [clippy::unused]")
                     if let Some(bracket_end) = rest.rfind(']') {
                         current_code = Some(rest[bracket_start + 1..bracket_end].to_string());
                         current_message = rest[..bracket_start].trim().to_string();
@@ -411,16 +518,12 @@ impl ClippyGate {
 
                 current_file = None;
                 current_line = None;
-            }
-            // Check for location line
-            else if line.trim_start().starts_with("--> ") {
+            } else if line.trim_start().starts_with("--> ") {
                 let loc = line.trim_start().trim_start_matches("--> ");
-                // Parse "src/main.rs:10:9"
                 let parts: Vec<&str> = loc.rsplitn(3, ':').collect();
                 if parts.len() >= 2 {
                     if let Ok(line_num) = parts[1].parse::<u32>() {
                         current_line = Some(line_num);
-                        // Reconstruct file path (everything before the line number)
                         if parts.len() >= 3 {
                             current_file = Some(parts[2].to_string());
                         }
@@ -447,16 +550,9 @@ impl ClippyGate {
 
         issues
     }
-}
 
-impl Gate for ClippyGate {
-    fn name(&self) -> &str {
-        "Clippy"
-    }
-
-    fn check(&self) -> Result<GateResult> {
-        let start = std::time::Instant::now();
-
+    /// Run clippy on a specific project directory (for QualityGate trait).
+    fn run_on(&self, project_dir: &Path) -> Result<Vec<GateIssue>> {
         let mut args = vec!["clippy".to_string()];
         args.extend(self.config.extra_args.clone());
 
@@ -468,17 +564,15 @@ impl Gate for ClippyGate {
 
         let output = Command::new("cargo")
             .args(&args)
-            .current_dir(&self.project_dir)
+            .current_dir(project_dir)
             .output()
             .context("Failed to run cargo clippy")?;
 
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let duration_ms = start.elapsed().as_millis() as u64;
-
         let issues = self.parse_output(&stderr);
 
         // Filter out allowed lints
-        let issues: Vec<_> = issues
+        Ok(issues
             .into_iter()
             .filter(|issue| {
                 if let Some(ref code) = issue.code {
@@ -487,19 +581,27 @@ impl Gate for ClippyGate {
                     true
                 }
             })
-            .collect();
+            .collect())
+    }
+}
+
+impl Gate for ClippyGate {
+    fn name(&self) -> &str {
+        "Clippy"
+    }
+
+    fn check(&self) -> Result<GateResult> {
+        let start = std::time::Instant::now();
+        let issues = self.run_on(&self.project_dir)?;
+        let duration_ms = start.elapsed().as_millis() as u64;
 
         let has_blocking = issues.iter().any(|i| i.severity.is_blocking());
-        let passed = output.status.success() && !has_blocking;
+        let passed = !has_blocking;
 
         Ok(if passed {
-            GateResult::pass(self.name())
-                .with_output(stderr.to_string())
-                .with_duration(duration_ms)
+            GateResult::pass(self.name()).with_duration(duration_ms)
         } else {
-            GateResult::fail(self.name(), issues)
-                .with_output(stderr.to_string())
-                .with_duration(duration_ms)
+            GateResult::fail(self.name(), issues).with_duration(duration_ms)
         })
     }
 }
@@ -522,7 +624,7 @@ pub struct TestConfig {
 impl Default for TestConfig {
     fn default() -> Self {
         Self {
-            min_pass_rate: 1.0, // All tests must pass by default
+            min_pass_rate: 1.0,
             extra_args: Vec::new(),
             include_doc_tests: true,
         }
@@ -558,13 +660,10 @@ impl TestGate {
         let mut failed = 0u32;
         let mut issues = Vec::new();
 
-        // Combine output for parsing
         let combined = format!("{}\n{}", stdout, stderr);
 
         for line in combined.lines() {
-            // Parse summary line: "test result: FAILED. 10 passed; 2 failed; 0 ignored"
             if line.starts_with("test result:") {
-                // Extract passed count
                 if let Some(p) = line.find(" passed") {
                     let before = &line[..p];
                     if let Some(start) = before.rfind(|c: char| !c.is_ascii_digit()) {
@@ -573,7 +672,6 @@ impl TestGate {
                         }
                     }
                 }
-                // Extract failed count
                 if let Some(f) = line.find(" failed") {
                     let before = &line[..f];
                     if let Some(start) = before.rfind(|c: char| !c.is_ascii_digit()) {
@@ -582,9 +680,7 @@ impl TestGate {
                         }
                     }
                 }
-            }
-            // Parse individual failure: "---- test_name stdout ----"
-            else if line.starts_with("---- ") && line.ends_with(" ----") {
+            } else if line.starts_with("---- ") && line.ends_with(" ----") {
                 let test_name = line
                     .trim_start_matches("---- ")
                     .trim_end_matches(" ----")
@@ -633,11 +729,10 @@ impl Gate for TestGate {
         let pass_rate = if total > 0 {
             passed_count as f64 / total as f64
         } else {
-            1.0 // No tests = pass
+            1.0
         };
 
         let passed = output.status.success() && pass_rate >= self.config.min_pass_rate;
-
         let combined_output = format!("{}\n{}", stdout, stderr);
 
         Ok(if passed {
@@ -659,7 +754,7 @@ impl Gate for TestGate {
 /// Quality gate that checks for forbidden `#[allow(...)]` annotations.
 pub struct NoAllowGate {
     project_dir: PathBuf,
-    /// Patterns that are allowed (e.g., allow(dead_code) in test modules).
+    /// Patterns that are allowed.
     allowed_patterns: Vec<String>,
 }
 
@@ -689,19 +784,13 @@ impl NoAllowGate {
         let mut raw_string_hashes = 0;
 
         for (line_num, line) in content.lines().enumerate() {
-            // Track raw string literal state to avoid false positives from test data
-            // Raw strings look like r#"..."# or r##"..."## etc.
             if !in_raw_string {
-                // Check for raw string start: r#" or r##" etc.
                 if let Some(pos) = line.find("r#") {
-                    // Count consecutive # characters after 'r'
                     let after_r = &line[pos + 1..];
                     let hash_count = after_r.chars().take_while(|&c| c == '#').count();
-                    // Check if followed by opening quote
                     if after_r.len() > hash_count && after_r.chars().nth(hash_count) == Some('"') {
-                        // Check if the closing delimiter is on the same line
                         let closing_delim = format!("\"{}", "#".repeat(hash_count));
-                        let content_start = pos + 2 + hash_count; // r + # count + "
+                        let content_start = pos + 2 + hash_count;
                         if content_start < line.len() {
                             let rest_of_line = &line[content_start..];
                             if !rest_of_line.contains(&closing_delim) {
@@ -715,32 +804,27 @@ impl NoAllowGate {
                     }
                 }
             } else {
-                // Check for raw string end: "# or "## etc.
                 let closing_delim = format!("\"{}", "#".repeat(raw_string_hashes));
                 if line.contains(&closing_delim) {
                     in_raw_string = false;
                     raw_string_hashes = 0;
                 }
-                continue; // Skip scanning inside raw strings
+                continue;
             }
 
-            // Skip if we just entered a raw string on this line
             if in_raw_string {
                 continue;
             }
 
             let trimmed = line.trim();
 
-            // Check for #[allow(...)] or #![allow(...)]
             if (trimmed.starts_with("#[allow(") || trimmed.starts_with("#![allow("))
                 && trimmed.contains(')')
             {
-                // Extract the lint name
                 let start = trimmed.find('(').unwrap() + 1;
                 let end = trimmed.rfind(')').unwrap();
                 let lint = &trimmed[start..end];
 
-                // Check if this pattern is allowed
                 if self.allowed_patterns.iter().any(|p| lint.contains(p)) {
                     continue;
                 }
@@ -764,8 +848,8 @@ impl NoAllowGate {
     }
 
     /// Find all Rust source files in the project.
-    fn find_rust_files(&self) -> Result<Vec<PathBuf>> {
-        let src_dir = self.project_dir.join("src");
+    fn find_rust_files(&self, project_dir: &Path) -> Result<Vec<PathBuf>> {
+        let src_dir = project_dir.join("src");
         if !src_dir.exists() {
             return Ok(Vec::new());
         }
@@ -788,6 +872,19 @@ impl NoAllowGate {
         }
         Ok(())
     }
+
+    /// Run scan on a specific project directory (for QualityGate trait).
+    fn run_on(&self, project_dir: &Path) -> Result<Vec<GateIssue>> {
+        let rust_files = self.find_rust_files(project_dir)?;
+        let mut all_issues = Vec::new();
+
+        for file in rust_files {
+            let issues = self.scan_file(&file)?;
+            all_issues.extend(issues);
+        }
+
+        Ok(all_issues)
+    }
 }
 
 impl Gate for NoAllowGate {
@@ -797,15 +894,7 @@ impl Gate for NoAllowGate {
 
     fn check(&self) -> Result<GateResult> {
         let start = std::time::Instant::now();
-
-        let rust_files = self.find_rust_files()?;
-        let mut all_issues = Vec::new();
-
-        for file in rust_files {
-            let issues = self.scan_file(&file)?;
-            all_issues.extend(issues);
-        }
-
+        let all_issues = self.run_on(&self.project_dir)?;
         let duration_ms = start.elapsed().as_millis() as u64;
         let passed = all_issues.is_empty();
 
@@ -822,35 +911,14 @@ impl Gate for NoAllowGate {
 // ============================================================================
 
 /// Quality gate that runs security scans via narsil-mcp and cargo-audit.
-///
-/// Combines results from multiple security scanning sources:
-/// - narsil-mcp `scan_security` tool (code analysis)
-/// - cargo-audit (dependency vulnerabilities)
-///
-/// Results are cached within the gate instance to avoid re-running
-/// expensive scans if `check()` is called multiple times.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// use ralph::quality::gates::SecurityGate;
-/// use ralph::narsil::{NarsilClient, NarsilConfig};
-///
-/// let client = NarsilClient::new(NarsilConfig::new("."))?;
-/// let gate = SecurityGate::new(".")
-///     .with_narsil_client(client)
-///     .with_threshold(IssueSeverity::Warning);
-///
-/// let result = gate.check()?;
-/// ```
 pub struct SecurityGate {
     project_dir: PathBuf,
     /// Minimum severity to report.
     severity_threshold: IssueSeverity,
     /// Optional narsil-mcp client for code security scanning.
     narsil_client: Option<NarsilClient>,
-    /// Cached narsil scan results (to avoid re-running within iteration).
-    narsil_cache: OnceCell<Vec<GateIssue>>,
+    /// Cached narsil scan results.
+    narsil_cache: OnceLock<Vec<GateIssue>>,
 }
 
 impl SecurityGate {
@@ -860,7 +928,7 @@ impl SecurityGate {
             project_dir: project_dir.as_ref().to_path_buf(),
             severity_threshold: IssueSeverity::Warning,
             narsil_client: None,
-            narsil_cache: OnceCell::new(),
+            narsil_cache: OnceLock::new(),
         }
     }
 
@@ -872,10 +940,6 @@ impl SecurityGate {
     }
 
     /// Set the narsil-mcp client for code security scanning.
-    ///
-    /// When provided, the gate will use narsil-mcp's `scan_security` tool
-    /// to find code vulnerabilities in addition to cargo-audit for
-    /// dependency vulnerabilities.
     #[must_use]
     pub fn with_narsil_client(mut self, client: NarsilClient) -> Self {
         self.narsil_client = Some(client);
@@ -883,13 +947,6 @@ impl SecurityGate {
     }
 
     /// Convert a narsil SecuritySeverity to a gate IssueSeverity.
-    ///
-    /// Mapping:
-    /// - Critical -> Critical (blocking)
-    /// - High -> Error (blocking)
-    /// - Medium -> Warning (non-blocking)
-    /// - Low -> Info (non-blocking)
-    /// - Info -> Info (non-blocking)
     pub fn convert_severity(severity: SecuritySeverity) -> IssueSeverity {
         match severity {
             SecuritySeverity::Critical => IssueSeverity::Critical,
@@ -902,25 +959,18 @@ impl SecurityGate {
 
     /// Convert a narsil SecurityFinding to a gate GateIssue.
     pub fn convert_finding(finding: &SecurityFinding) -> GateIssue {
-        let mut issue = GateIssue::new(
-            Self::convert_severity(finding.severity),
-            &finding.message,
-        );
+        let mut issue = GateIssue::new(Self::convert_severity(finding.severity), &finding.message);
 
-        // Set file location
         issue.file = Some(finding.file.clone());
 
-        // Set line number if available
         if let Some(line) = finding.line {
             issue.line = Some(line);
         }
 
-        // Set rule ID as code if available
         if let Some(ref rule_id) = finding.rule_id {
             issue.code = Some(rule_id.clone());
         }
 
-        // Set suggestion if available
         if let Some(ref suggestion) = finding.suggestion {
             issue.suggestion = Some(suggestion.clone());
         }
@@ -929,22 +979,29 @@ impl SecurityGate {
     }
 
     /// Run narsil-mcp security scan if client is available.
-    ///
-    /// Results are cached after the first call to avoid re-running
-    /// the expensive scan multiple times within the same iteration.
-    fn run_narsil_scan(&self) -> Result<Vec<GateIssue>> {
-        // Return cached results if available
+    fn run_narsil_scan(&self, project_dir: &Path) -> Result<Vec<GateIssue>> {
         if let Some(cached) = self.narsil_cache.get() {
             return Ok(cached.clone());
         }
 
-        let Some(ref client) = self.narsil_client else {
-            // No client, cache empty result
-            let _ = self.narsil_cache.set(Vec::new());
-            return Ok(Vec::new());
-        };
+        // Use existing client or try to create one
+        if let Some(ref client) = self.narsil_client {
+            return self.scan_with_client(client);
+        }
 
-        // Gracefully handle unavailable narsil-mcp
+        // Try to create a new client
+        let config = NarsilConfig::new(project_dir);
+        match NarsilClient::new(config) {
+            Ok(client) => self.scan_with_client(&client),
+            Err(_) => {
+                let _ = self.narsil_cache.set(Vec::new());
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    /// Run security scan with the given client.
+    fn scan_with_client(&self, client: &NarsilClient) -> Result<Vec<GateIssue>> {
         if !client.is_available() {
             let _ = self.narsil_cache.set(Vec::new());
             return Ok(Vec::new());
@@ -956,13 +1013,10 @@ impl SecurityGate {
                     .iter()
                     .map(Self::convert_finding)
                     .collect();
-                // Cache the results
                 let _ = self.narsil_cache.set(issues.clone());
                 Ok(issues)
             }
             Err(e) => {
-                // Log the error but don't fail the gate
-                // Narsil errors are recoverable
                 if e.is_recoverable() {
                     let _ = self.narsil_cache.set(Vec::new());
                     Ok(Vec::new())
@@ -974,21 +1028,18 @@ impl SecurityGate {
     }
 
     /// Try to run cargo-audit for dependency vulnerabilities.
-    fn run_cargo_audit(&self) -> Result<Vec<GateIssue>> {
+    fn run_cargo_audit(&self, project_dir: &Path) -> Result<Vec<GateIssue>> {
         let output = Command::new("cargo")
             .args(["audit", "--json"])
-            .current_dir(&self.project_dir)
+            .current_dir(project_dir)
             .output();
 
         match output {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                // Parse JSON output if available, otherwise return empty
-                // For now, just check exit code
                 if output.status.success() {
                     Ok(Vec::new())
                 } else {
-                    // Parse basic vulnerabilities from output
                     let issues: Vec<GateIssue> = stdout
                         .lines()
                         .filter(|line| line.contains("vulnerability"))
@@ -1005,11 +1056,24 @@ impl SecurityGate {
                     }
                 }
             }
-            Err(_) => {
-                // cargo-audit not installed, skip
-                Ok(Vec::new())
-            }
+            Err(_) => Ok(Vec::new()),
         }
+    }
+
+    /// Run security scan on a specific project directory (for QualityGate trait).
+    fn run_on(&self, project_dir: &Path) -> Result<Vec<GateIssue>> {
+        let mut all_issues = Vec::new();
+
+        let audit_issues = self.run_cargo_audit(project_dir)?;
+        all_issues.extend(audit_issues);
+
+        let narsil_issues = self.run_narsil_scan(project_dir)?;
+        all_issues.extend(narsil_issues);
+
+        Ok(all_issues
+            .into_iter()
+            .filter(|i| i.severity >= self.severity_threshold)
+            .collect())
     }
 }
 
@@ -1020,24 +1084,7 @@ impl Gate for SecurityGate {
 
     fn check(&self) -> Result<GateResult> {
         let start = std::time::Instant::now();
-
-        // Collect issues from both sources
-        let mut all_issues = Vec::new();
-
-        // Run cargo-audit for dependency vulnerabilities
-        let audit_issues = self.run_cargo_audit()?;
-        all_issues.extend(audit_issues);
-
-        // Run narsil-mcp scan for code vulnerabilities
-        let narsil_issues = self.run_narsil_scan()?;
-        all_issues.extend(narsil_issues);
-
-        // Filter by severity threshold
-        let issues: Vec<_> = all_issues
-            .into_iter()
-            .filter(|i| i.severity >= self.severity_threshold)
-            .collect();
-
+        let issues = self.run_on(&self.project_dir)?;
         let duration_ms = start.elapsed().as_millis() as u64;
         let has_blocking = issues.iter().any(|i| i.severity.is_blocking());
 
@@ -1049,7 +1096,6 @@ impl Gate for SecurityGate {
     }
 
     fn is_blocking(&self) -> bool {
-        // Security issues are blocking by default
         true
     }
 }
@@ -1110,8 +1156,8 @@ impl NoTodoGate {
     }
 
     /// Find all Rust source files in the project.
-    fn find_rust_files(&self) -> Result<Vec<PathBuf>> {
-        let src_dir = self.project_dir.join("src");
+    fn find_rust_files(&self, project_dir: &Path) -> Result<Vec<PathBuf>> {
+        let src_dir = project_dir.join("src");
         if !src_dir.exists() {
             return Ok(Vec::new());
         }
@@ -1134,6 +1180,19 @@ impl NoTodoGate {
         }
         Ok(())
     }
+
+    /// Run scan on a specific project directory (for QualityGate trait).
+    fn run_on(&self, project_dir: &Path) -> Result<Vec<GateIssue>> {
+        let rust_files = self.find_rust_files(project_dir)?;
+        let mut all_issues = Vec::new();
+
+        for file in rust_files {
+            let issues = self.scan_file(&file)?;
+            all_issues.extend(issues);
+        }
+
+        Ok(all_issues)
+    }
 }
 
 impl Gate for NoTodoGate {
@@ -1143,23 +1202,13 @@ impl Gate for NoTodoGate {
 
     fn check(&self) -> Result<GateResult> {
         let start = std::time::Instant::now();
-
-        let rust_files = self.find_rust_files()?;
-        let mut all_issues = Vec::new();
-
-        for file in rust_files {
-            let issues = self.scan_file(&file)?;
-            all_issues.extend(issues);
-        }
-
+        let all_issues = self.run_on(&self.project_dir)?;
         let duration_ms = start.elapsed().as_millis() as u64;
-
-        // TODO gate is non-blocking by default (warnings only)
         let passed = !all_issues.iter().any(|i| i.severity.is_blocking());
 
         Ok(if passed {
             let mut result = GateResult::pass(self.name()).with_duration(duration_ms);
-            result.issues = all_issues; // Include warnings in passing result
+            result.issues = all_issues;
             result
         } else {
             GateResult::fail(self.name(), all_issues).with_duration(duration_ms)
@@ -1167,7 +1216,6 @@ impl Gate for NoTodoGate {
     }
 
     fn is_blocking(&self) -> bool {
-        // TODO/FIXME comments are warnings, not blocking
         false
     }
 }
@@ -1324,8 +1372,6 @@ fn unused_function() {}
         let src_dir = temp_dir.path().join("src");
         std::fs::create_dir_all(&src_dir).unwrap();
 
-        // This simulates test code that writes #[allow] as test data inside raw string literals
-        // The gate should NOT flag these as violations
         let file_path = src_dir.join("lib.rs");
         std::fs::write(
             &file_path,
@@ -1349,9 +1395,8 @@ fn unused_function() {}
         let gate = NoAllowGate::new(temp_dir.path());
         let result = gate.check().unwrap();
 
-        // The #[allow(dead_code)] inside the raw string should be skipped
         assert!(result.passed, "Gate should pass - #[allow] inside raw strings should be skipped");
-        assert!(result.issues.is_empty(), "No issues should be reported for #[allow] inside raw strings");
+        assert!(result.issues.is_empty());
     }
 
     #[test]
@@ -1360,7 +1405,6 @@ fn unused_function() {}
         let src_dir = temp_dir.path().join("src");
         std::fs::create_dir_all(&src_dir).unwrap();
 
-        // Test multiline raw strings spanning multiple lines
         let file_path = src_dir.join("lib.rs");
         std::fs::write(
             &file_path,
@@ -1374,10 +1418,6 @@ fn test_fn() {
     let x = 5;
 }
 "#;
-
-// This real annotation SHOULD be detected
-// (but it's commented out so it won't be)
-// #[allow(dead_code)]
 "###,
         )
         .unwrap();
@@ -1385,7 +1425,7 @@ fn test_fn() {
         let gate = NoAllowGate::new(temp_dir.path());
         let result = gate.check().unwrap();
 
-        assert!(result.passed, "Gate should pass - all #[allow] are inside raw strings or comments");
+        assert!(result.passed);
     }
 
     #[test]
@@ -1438,12 +1478,10 @@ error[E0308]: mismatched types
 
         assert_eq!(issues.len(), 2);
 
-        // Check warning
         let warning = &issues[0];
         assert_eq!(warning.severity, IssueSeverity::Warning);
         assert!(warning.message.contains("unused variable"));
 
-        // Check error
         let error = &issues[1];
         assert_eq!(error.severity, IssueSeverity::Error);
         assert!(error.message.contains("mismatched types"));
@@ -1455,33 +1493,22 @@ error[E0308]: mismatched types
 
     #[test]
     fn test_security_severity_to_issue_severity() {
-        use crate::narsil::SecuritySeverity;
-
-        // Critical narsil severity -> Critical issue severity
         assert_eq!(
             SecurityGate::convert_severity(SecuritySeverity::Critical),
             IssueSeverity::Critical
         );
-
-        // High narsil severity -> Error issue severity (blocking)
         assert_eq!(
             SecurityGate::convert_severity(SecuritySeverity::High),
             IssueSeverity::Error
         );
-
-        // Medium narsil severity -> Warning issue severity
         assert_eq!(
             SecurityGate::convert_severity(SecuritySeverity::Medium),
             IssueSeverity::Warning
         );
-
-        // Low narsil severity -> Info issue severity
         assert_eq!(
             SecurityGate::convert_severity(SecuritySeverity::Low),
             IssueSeverity::Info
         );
-
-        // Info narsil severity -> Info issue severity
         assert_eq!(
             SecurityGate::convert_severity(SecuritySeverity::Info),
             IssueSeverity::Info
@@ -1490,8 +1517,6 @@ error[E0308]: mismatched types
 
     #[test]
     fn test_security_finding_to_gate_issue() {
-        use crate::narsil::{SecurityFinding, SecuritySeverity};
-
         let finding = SecurityFinding::new(
             SecuritySeverity::High,
             "SQL injection vulnerability",
@@ -1513,8 +1538,6 @@ error[E0308]: mismatched types
 
     #[test]
     fn test_security_finding_without_optional_fields() {
-        use crate::narsil::{SecurityFinding, SecuritySeverity};
-
         let finding = SecurityFinding::new(
             SecuritySeverity::Medium,
             "Potential vulnerability",
@@ -1533,29 +1556,20 @@ error[E0308]: mismatched types
 
     #[test]
     fn test_security_gate_with_narsil_client() {
-        use crate::narsil::{NarsilClient, NarsilConfig};
-
         let temp_dir = TempDir::new().unwrap();
-        let config = NarsilConfig::new(temp_dir.path())
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(temp_dir.path()).with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         let gate = SecurityGate::new(temp_dir.path()).with_narsil_client(client);
 
-        // When narsil is unavailable, should still work (graceful degradation)
         let result = gate.check().unwrap();
-        // Should pass since no vulnerabilities found
         assert!(result.passed);
     }
 
     #[test]
     fn test_security_gate_combines_audit_and_narsil() {
-        // Test that both cargo-audit and narsil-mcp results are combined
-        use crate::narsil::{NarsilClient, NarsilConfig};
-
         let temp_dir = TempDir::new().unwrap();
 
-        // Create a Cargo.toml to make cargo-audit work
         std::fs::write(
             temp_dir.path().join("Cargo.toml"),
             r#"[package]
@@ -1566,40 +1580,126 @@ edition = "2021"
         )
         .unwrap();
 
-        let config = NarsilConfig::new(temp_dir.path())
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(temp_dir.path()).with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         let gate = SecurityGate::new(temp_dir.path()).with_narsil_client(client);
         let result = gate.check().unwrap();
 
-        // Should complete without panicking
-        assert!(result.gate_name == "Security");
+        assert_eq!(result.gate_name, "Security");
     }
 
     #[test]
     fn test_security_gate_caches_results() {
-        // Test that calling check() multiple times returns consistent results
-        // (caching is an implementation detail, but behavior should be consistent)
-        use crate::narsil::{NarsilClient, NarsilConfig};
-
         let temp_dir = TempDir::new().unwrap();
 
-        let config = NarsilConfig::new(temp_dir.path())
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(temp_dir.path()).with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         let gate = SecurityGate::new(temp_dir.path()).with_narsil_client(client);
 
-        // Call check() multiple times
         let result1 = gate.check().unwrap();
         let result2 = gate.check().unwrap();
         let result3 = gate.check().unwrap();
 
-        // Results should be consistent
         assert_eq!(result1.passed, result2.passed);
         assert_eq!(result2.passed, result3.passed);
         assert_eq!(result1.issues.len(), result2.issues.len());
         assert_eq!(result2.issues.len(), result3.issues.len());
+    }
+
+    // =========================================================================
+    // QualityGate trait tests
+    // =========================================================================
+
+    #[test]
+    fn test_gates_for_language_rust_not_empty() {
+        let gates = gates_for_language(Language::Rust);
+        assert!(!gates.is_empty(), "Rust should have quality gates");
+    }
+
+    #[test]
+    fn test_gates_for_language_rust_has_expected_gates() {
+        let gates = gates_for_language(Language::Rust);
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+
+        assert!(names.contains(&"Clippy"), "Should have Clippy gate");
+        assert!(names.contains(&"Tests"), "Should have Tests gate");
+        assert!(names.contains(&"NoAllow"), "Should have NoAllow gate");
+        assert!(names.contains(&"Security"), "Should have Security gate");
+        assert!(names.contains(&"NoTodo"), "Should have NoTodo gate");
+    }
+
+    #[test]
+    fn test_gates_for_language_unsupported_returns_empty() {
+        let gates = gates_for_language(Language::Sql);
+        assert!(gates.is_empty(), "Unsupported languages should return empty");
+    }
+
+    #[test]
+    fn test_quality_gates_are_send_sync() {
+        let gates = gates_for_language(Language::Rust);
+        fn assert_send_sync<T: Send + Sync>(_: &T) {}
+        for gate in &gates {
+            assert_send_sync(gate);
+        }
+    }
+
+    #[test]
+    fn test_quality_gates_have_remediation() {
+        let gates = gates_for_language(Language::Rust);
+        for gate in &gates {
+            let issues = vec![GateIssue::new(IssueSeverity::Error, "test error")];
+            let remediation = gate.remediation(&issues);
+            assert!(
+                !remediation.is_empty(),
+                "Gate {} should provide remediation",
+                gate.name()
+            );
+        }
+    }
+
+    // =========================================================================
+    // Python QualityGate tests
+    // =========================================================================
+
+    #[test]
+    fn test_gates_for_language_python_not_empty() {
+        let gates = gates_for_language(Language::Python);
+        assert!(!gates.is_empty(), "Python should have quality gates");
+    }
+
+    #[test]
+    fn test_gates_for_language_python_has_expected_gates() {
+        let gates = gates_for_language(Language::Python);
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+
+        assert!(names.contains(&"Ruff"), "Should have Ruff gate");
+        assert!(names.contains(&"Pytest"), "Should have Pytest gate");
+        assert!(names.contains(&"Mypy"), "Should have Mypy gate");
+        assert!(names.contains(&"Bandit"), "Should have Bandit gate");
+    }
+
+    #[test]
+    fn test_python_quality_gates_are_send_sync() {
+        let gates = gates_for_language(Language::Python);
+        fn assert_send_sync<T: Send + Sync>(_: &T) {}
+        for gate in &gates {
+            assert_send_sync(gate);
+        }
+    }
+
+    #[test]
+    fn test_python_quality_gates_have_remediation() {
+        let gates = gates_for_language(Language::Python);
+        for gate in &gates {
+            let issues = vec![GateIssue::new(IssueSeverity::Error, "test error")];
+            let remediation = gate.remediation(&issues);
+            assert!(
+                !remediation.is_empty(),
+                "Gate {} should provide remediation",
+                gate.name()
+            );
+        }
     }
 }
