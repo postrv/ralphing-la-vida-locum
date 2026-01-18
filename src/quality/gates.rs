@@ -685,8 +685,50 @@ impl NoAllowGate {
             .with_context(|| format!("Failed to read file: {}", path.display()))?;
 
         let mut issues = Vec::new();
+        let mut in_raw_string = false;
+        let mut raw_string_hashes = 0;
 
         for (line_num, line) in content.lines().enumerate() {
+            // Track raw string literal state to avoid false positives from test data
+            // Raw strings look like r#"..."# or r##"..."## etc.
+            if !in_raw_string {
+                // Check for raw string start: r#" or r##" etc.
+                if let Some(pos) = line.find("r#") {
+                    // Count consecutive # characters after 'r'
+                    let after_r = &line[pos + 1..];
+                    let hash_count = after_r.chars().take_while(|&c| c == '#').count();
+                    // Check if followed by opening quote
+                    if after_r.len() > hash_count && after_r.chars().nth(hash_count) == Some('"') {
+                        // Check if the closing delimiter is on the same line
+                        let closing_delim = format!("\"{}", "#".repeat(hash_count));
+                        let content_start = pos + 2 + hash_count; // r + # count + "
+                        if content_start < line.len() {
+                            let rest_of_line = &line[content_start..];
+                            if !rest_of_line.contains(&closing_delim) {
+                                in_raw_string = true;
+                                raw_string_hashes = hash_count;
+                            }
+                        } else {
+                            in_raw_string = true;
+                            raw_string_hashes = hash_count;
+                        }
+                    }
+                }
+            } else {
+                // Check for raw string end: "# or "## etc.
+                let closing_delim = format!("\"{}", "#".repeat(raw_string_hashes));
+                if line.contains(&closing_delim) {
+                    in_raw_string = false;
+                    raw_string_hashes = 0;
+                }
+                continue; // Skip scanning inside raw strings
+            }
+
+            // Skip if we just entered a raw string on this line
+            if in_raw_string {
+                continue;
+            }
+
             let trimmed = line.trim();
 
             // Check for #[allow(...)] or #![allow(...)]
