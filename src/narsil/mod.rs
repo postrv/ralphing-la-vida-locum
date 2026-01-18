@@ -28,9 +28,14 @@
 //! }
 //! ```
 
+mod ccg;
 mod client;
 mod intelligence;
 
+pub use ccg::{
+    CcgArchitecture, CcgCache, CcgManifest, DependencyKind, EntryPoint, EntryPointKind,
+    LanguageStats, Module, ModuleDependency, PublicSymbol, SecuritySummary, SymbolKind, Visibility,
+};
 pub use client::{
     Dependency, NarsilClient, NarsilConfig, NarsilError, Reference, SecurityFinding,
     SecuritySeverity, ToolResponse,

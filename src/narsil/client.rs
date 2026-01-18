@@ -358,6 +358,55 @@ impl NarsilClient {
     }
 
     // =========================================================================
+    // CCG Methods
+    // =========================================================================
+
+    /// Get the CCG manifest (L0) for the repository.
+    ///
+    /// The manifest contains basic metadata about the repository including:
+    /// - File and symbol counts
+    /// - Language breakdown
+    /// - Security summary
+    ///
+    /// Returns None if narsil-mcp is not available or CCG export fails.
+    pub fn get_ccg_manifest(&self) -> Result<Option<crate::narsil::CcgManifest>, NarsilError> {
+        if !self.available {
+            return Ok(None);
+        }
+
+        self.invoke_get_ccg_manifest()
+    }
+
+    /// Get the CCG architecture (L1) for the repository.
+    ///
+    /// The architecture contains structural information including:
+    /// - Module hierarchy
+    /// - Public API symbols
+    /// - Entry points
+    /// - Module dependencies
+    ///
+    /// Returns None if narsil-mcp is not available or CCG export fails.
+    pub fn get_ccg_architecture(&self) -> Result<Option<crate::narsil::CcgArchitecture>, NarsilError> {
+        if !self.available {
+            return Ok(None);
+        }
+
+        self.invoke_get_ccg_architecture()
+    }
+
+    /// Export full CCG to a directory.
+    ///
+    /// Exports all CCG layers (L0-L2) to the specified directory.
+    /// Returns the path to the exported CCG or None if unavailable.
+    pub fn export_ccg(&self, output_dir: &str) -> Result<Option<PathBuf>, NarsilError> {
+        if !self.available {
+            return Ok(None);
+        }
+
+        self.invoke_export_ccg(output_dir)
+    }
+
+    // =========================================================================
     // Private Methods
     // =========================================================================
 
@@ -611,6 +660,271 @@ impl NarsilClient {
 
         Some(dep)
     }
+
+    // =========================================================================
+    // CCG Private Methods
+    // =========================================================================
+
+    fn invoke_get_ccg_manifest(
+        &self,
+    ) -> Result<Option<crate::narsil::CcgManifest>, NarsilError> {
+        // Try to get project structure and build a manifest from it
+        let output = Command::new(&self.config.binary_path)
+            .arg("get-project-structure")
+            .arg("--repo")
+            .arg(&self.config.repo_path)
+            .arg("--format")
+            .arg("json")
+            .output();
+
+        let output = match output {
+            Ok(o) if o.status.success() => o,
+            // CCG not available or command failed - return None gracefully
+            _ => return Ok(None),
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        self.parse_ccg_manifest(&stdout)
+    }
+
+    fn parse_ccg_manifest(
+        &self,
+        output: &str,
+    ) -> Result<Option<crate::narsil::CcgManifest>, NarsilError> {
+        use crate::narsil::{CcgManifest, LanguageStats, SecuritySummary};
+
+        if output.trim().is_empty() {
+            return Ok(None);
+        }
+
+        let value: serde_json::Value =
+            serde_json::from_str(output).map_err(|e| NarsilError::ParseError(e.to_string()))?;
+
+        // Extract repository name from path
+        let name = self
+            .config
+            .repo_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let mut manifest = CcgManifest::new(&name, &self.config.repo_path);
+
+        // Parse file count
+        if let Some(files) = value.get("total_files").and_then(|v| v.as_u64()) {
+            manifest.file_count = files as u32;
+        }
+
+        // Parse symbol count (if available)
+        if let Some(symbols) = value.get("total_symbols").and_then(|v| v.as_u64()) {
+            manifest.symbol_count = symbols as u32;
+        }
+
+        // Parse language breakdown (if available)
+        if let Some(languages) = value.get("languages").and_then(|v| v.as_object()) {
+            let mut primary: Option<(String, u32)> = None;
+            for (lang, stats) in languages {
+                let file_count = stats
+                    .get("files")
+                    .or(stats.get("file_count"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                let lines = stats
+                    .get("lines")
+                    .or(stats.get("lines_of_code"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                let symbols = stats
+                    .get("symbols")
+                    .or(stats.get("symbol_count"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+
+                manifest = manifest.with_language(lang.clone(), LanguageStats::new(file_count, lines, symbols));
+
+                // Track primary language by file count
+                if primary.as_ref().is_none_or(|(_, count)| file_count > *count) {
+                    primary = Some((lang.clone(), file_count));
+                }
+            }
+
+            if let Some((lang, _)) = primary {
+                manifest = manifest.with_primary_language(lang);
+            }
+        }
+
+        // Parse security summary (if available from a separate scan)
+        if let Some(security) = value.get("security") {
+            let critical = security.get("critical").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let high = security.get("high").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let medium = security.get("medium").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let low = security.get("low").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+            manifest = manifest.with_security_summary(SecuritySummary::new(critical, high, medium, low));
+        }
+
+        Ok(Some(manifest))
+    }
+
+    fn invoke_get_ccg_architecture(
+        &self,
+    ) -> Result<Option<crate::narsil::CcgArchitecture>, NarsilError> {
+        use crate::narsil::CcgArchitecture;
+
+        // Get symbols to build architecture
+        let output = Command::new(&self.config.binary_path)
+            .arg("find-symbols")
+            .arg("--repo")
+            .arg(&self.config.repo_path)
+            .arg("--format")
+            .arg("json")
+            .output();
+
+        let output = match output {
+            Ok(o) if o.status.success() => o,
+            _ => return Ok(None),
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.trim().is_empty() {
+            return Ok(Some(CcgArchitecture::new()));
+        }
+
+        self.parse_ccg_architecture(&stdout)
+    }
+
+    fn parse_ccg_architecture(
+        &self,
+        output: &str,
+    ) -> Result<Option<crate::narsil::CcgArchitecture>, NarsilError> {
+        use crate::narsil::{
+            CcgArchitecture, EntryPoint, EntryPointKind, Module, PublicSymbol, SymbolKind,
+            Visibility,
+        };
+        use std::collections::HashSet;
+
+        if output.trim().is_empty() {
+            return Ok(Some(CcgArchitecture::new()));
+        }
+
+        let value: serde_json::Value =
+            serde_json::from_str(output).map_err(|e| NarsilError::ParseError(e.to_string()))?;
+
+        let mut arch = CcgArchitecture::new();
+        let mut seen_modules: HashSet<String> = HashSet::new();
+
+        // Parse symbols from the response
+        let symbols = if let Some(syms) = value.get("symbols") {
+            syms.as_array()
+        } else if value.is_array() {
+            value.as_array()
+        } else {
+            return Ok(Some(arch));
+        };
+
+        let Some(symbols) = symbols else {
+            return Ok(Some(arch));
+        };
+
+        for sym in symbols {
+            // Extract module path
+            if let Some(module_path) = sym.get("module").or(sym.get("path")).and_then(|v| v.as_str())
+            {
+                // Add module if not seen
+                if !seen_modules.contains(module_path) {
+                    seen_modules.insert(module_path.to_string());
+
+                    let visibility = if sym
+                        .get("visibility")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("private")
+                        == "public"
+                    {
+                        Visibility::Public
+                    } else {
+                        Visibility::Private
+                    };
+
+                    arch = arch.with_module(
+                        Module::new(module_path, module_path).with_visibility(visibility),
+                    );
+                }
+            }
+
+            // Parse public symbols
+            if let Some(name) = sym.get("name").and_then(|v| v.as_str()) {
+                let kind_str = sym.get("kind").and_then(|v| v.as_str()).unwrap_or("function");
+                let kind = match kind_str.to_lowercase().as_str() {
+                    "function" | "fn" => SymbolKind::Function,
+                    "method" => SymbolKind::Method,
+                    "struct" => SymbolKind::Struct,
+                    "enum" => SymbolKind::Enum,
+                    "trait" => SymbolKind::Trait,
+                    "type" => SymbolKind::Type,
+                    "const" => SymbolKind::Const,
+                    "static" => SymbolKind::Static,
+                    "module" | "mod" => SymbolKind::Module,
+                    "macro" => SymbolKind::Macro,
+                    _ => SymbolKind::Function,
+                };
+
+                let is_public = sym
+                    .get("visibility")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("private")
+                    == "public";
+
+                if is_public {
+                    let mut symbol = PublicSymbol::new(name, kind);
+
+                    if let Some(module) = sym.get("module").and_then(|v| v.as_str()) {
+                        symbol = symbol.with_module(module);
+                        symbol = symbol.with_qualified_name(format!("{}::{}", module, name));
+                    }
+
+                    if let Some(desc) = sym.get("description").or(sym.get("doc")).and_then(|v| v.as_str()) {
+                        symbol = symbol.with_description(desc);
+                    }
+
+                    if let Some(sig) = sym.get("signature").and_then(|v| v.as_str()) {
+                        symbol = symbol.with_signature(sig);
+                    }
+
+                    arch = arch.with_public_symbol(symbol);
+                }
+
+                // Detect entry points
+                if name == "main" && kind == SymbolKind::Function {
+                    if let Some(file) = sym.get("file").or(sym.get("path")).and_then(|v| v.as_str()) {
+                        let mut entry = EntryPoint::new("main", EntryPointKind::Main, file);
+                        if let Some(line) = sym.get("line").and_then(|v| v.as_u64()) {
+                            entry = entry.with_line(line as u32);
+                        }
+                        arch = arch.with_entry_point(entry);
+                    }
+                }
+            }
+        }
+
+        Ok(Some(arch))
+    }
+
+    fn invoke_export_ccg(&self, output_dir: &str) -> Result<Option<PathBuf>, NarsilError> {
+        let output = Command::new(&self.config.binary_path)
+            .arg("export-ccg")
+            .arg("--repo")
+            .arg(&self.config.repo_path)
+            .arg("--output")
+            .arg(output_dir)
+            .output();
+
+        match output {
+            Ok(o) if o.status.success() => Ok(Some(PathBuf::from(output_dir))),
+            // Command not available or failed - return None gracefully
+            _ => Ok(None),
+        }
+    }
 }
 
 // ============================================================================
@@ -833,5 +1147,158 @@ mod tests {
 
         assert_eq!(dep.path.to_str().unwrap(), "std::collections");
         assert_eq!(dep.kind, Some("use".to_string()));
+    }
+
+    // =========================================================================
+    // CCG Tests
+    // =========================================================================
+
+    #[test]
+    fn test_parse_ccg_manifest_empty() {
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let manifest = client.parse_ccg_manifest("").unwrap();
+        assert!(manifest.is_none());
+    }
+
+    #[test]
+    fn test_parse_ccg_manifest_basic() {
+        let config = NarsilConfig::new("/test/repo");
+        let client = NarsilClient::new(config).unwrap();
+
+        let json = r#"{
+            "total_files": 46,
+            "total_symbols": 2310
+        }"#;
+
+        let manifest = client.parse_ccg_manifest(json).unwrap();
+        assert!(manifest.is_some());
+
+        let manifest = manifest.unwrap();
+        assert_eq!(manifest.file_count, 46);
+        assert_eq!(manifest.symbol_count, 2310);
+    }
+
+    #[test]
+    fn test_parse_ccg_manifest_with_languages() {
+        let config = NarsilConfig::new("/test/repo");
+        let client = NarsilClient::new(config).unwrap();
+
+        let json = r#"{
+            "total_files": 50,
+            "languages": {
+                "rust": {"files": 40, "lines": 5000, "symbols": 200},
+                "toml": {"files": 10, "lines": 100, "symbols": 0}
+            }
+        }"#;
+
+        let manifest = client.parse_ccg_manifest(json).unwrap();
+        assert!(manifest.is_some());
+
+        let manifest = manifest.unwrap();
+        assert_eq!(manifest.primary_language, Some("rust".to_string()));
+        assert!(manifest.languages.contains_key("rust"));
+        assert!(manifest.languages.contains_key("toml"));
+    }
+
+    #[test]
+    fn test_parse_ccg_manifest_with_security() {
+        let config = NarsilConfig::new("/test/repo");
+        let client = NarsilClient::new(config).unwrap();
+
+        let json = r#"{
+            "total_files": 10,
+            "security": {
+                "critical": 1,
+                "high": 2,
+                "medium": 5,
+                "low": 10
+            }
+        }"#;
+
+        let manifest = client.parse_ccg_manifest(json).unwrap();
+        assert!(manifest.is_some());
+
+        let manifest = manifest.unwrap();
+        assert!(manifest.has_blocking_issues());
+        assert_eq!(manifest.total_security_issues(), 18);
+    }
+
+    #[test]
+    fn test_parse_ccg_architecture_empty() {
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let arch = client.parse_ccg_architecture("").unwrap();
+        assert!(arch.is_some());
+        assert!(arch.unwrap().modules.is_empty());
+    }
+
+    #[test]
+    fn test_parse_ccg_architecture_with_symbols() {
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let json = r#"{
+            "symbols": [
+                {
+                    "name": "main",
+                    "kind": "function",
+                    "module": "crate",
+                    "visibility": "public",
+                    "file": "src/main.rs",
+                    "line": 10
+                },
+                {
+                    "name": "Config",
+                    "kind": "struct",
+                    "module": "config",
+                    "visibility": "public"
+                }
+            ]
+        }"#;
+
+        let arch = client.parse_ccg_architecture(json).unwrap();
+        assert!(arch.is_some());
+
+        let arch = arch.unwrap();
+        // Should have parsed modules
+        assert!(!arch.modules.is_empty());
+        // Should have public symbols
+        assert!(!arch.public_api.is_empty());
+        // Should have detected main as entry point
+        assert!(!arch.entry_points.is_empty());
+        assert_eq!(arch.entry_points[0].name, "main");
+    }
+
+    #[test]
+    fn test_get_ccg_manifest_returns_none_when_unavailable() {
+        let config = NarsilConfig::new(".")
+            .with_binary_path("/nonexistent/narsil-mcp");
+        let client = NarsilClient::new(config).unwrap();
+
+        let result = client.get_ccg_manifest().unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_ccg_architecture_returns_none_when_unavailable() {
+        let config = NarsilConfig::new(".")
+            .with_binary_path("/nonexistent/narsil-mcp");
+        let client = NarsilClient::new(config).unwrap();
+
+        let result = client.get_ccg_architecture().unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_export_ccg_returns_none_when_unavailable() {
+        let config = NarsilConfig::new(".")
+            .with_binary_path("/nonexistent/narsil-mcp");
+        let client = NarsilClient::new(config).unwrap();
+
+        let result = client.export_ccg("/tmp/ccg_output").unwrap();
+        assert!(result.is_none());
     }
 }
