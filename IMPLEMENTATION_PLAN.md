@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Start Sprint 7e** - Implement Gate Auto-Detection
+2. **Start Sprint 8a** - Implement Template Registry
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 7e - Gate Auto-Detection
+**Current task:** Sprint 8a - Template Registry
 
 ---
 
@@ -38,8 +38,8 @@
 | Sprint | Focus | Status |
 |--------|-------|--------|
 | 1-6 | Foundation (State Machine, Prompts, Gates, Checkpoints, narsil-mcp, Language Detection) | Complete |
-| **7** | **Language-Specific Quality Gates** | **IN PROGRESS** |
-| 8 | Language-Specific Prompts | Pending |
+| 7 | Language-Specific Quality Gates | Complete |
+| **8** | **Language-Specific Prompts** | **NEXT** |
 | 9 | Multi-Language CLI & Settings | Pending |
 | 10 | Polyglot & Advanced Features | Pending |
 | 11 | CCG-Aware Prompts | Pending |
@@ -47,7 +47,7 @@
 
 ---
 
-## Sprint 7: Language-Specific Quality Gates (Priority: P0) - CURRENT
+## Sprint 7: Language-Specific Quality Gates (Priority: P0) - COMPLETE
 
 **Goal:** Create quality gates that use each language's standard tooling.
 
@@ -87,11 +87,11 @@
 - Files: `src/quality/gates/go.rs`
 - Acceptance: Go projects get appropriate gates
 
-### 7e. Gate Auto-Detection
-- [ ] Create `detect_available_gates(Language) -> Vec<Box<dyn QualityGate>>` function
-- [ ] Check tool availability (e.g., `which ruff`) before adding gate
-- [ ] Combine gates for polyglot projects
-- [ ] Always include narsil-mcp security gate if available
+### 7e. Gate Auto-Detection ✓ COMPLETE
+- [x] Create `detect_available_gates(Language) -> Vec<Box<dyn QualityGate>>` function
+- [x] Check tool availability (e.g., `which ruff`) before adding gate
+- [x] Combine gates for polyglot projects
+- [x] Always include narsil-mcp security gate if available
 - Files: `src/quality/gates/mod.rs`
 - Acceptance: Only available tools are used as gates
 
