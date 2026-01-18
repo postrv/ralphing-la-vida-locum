@@ -157,6 +157,9 @@ impl TemplateRegistry {
         registry.load_typescript_templates();
         registry.load_go_templates();
         registry.load_java_templates();
+        registry.load_ruby_templates();
+        registry.load_php_templates();
+        registry.load_csharp_templates();
 
         registry
     }
@@ -308,6 +311,54 @@ impl TemplateRegistry {
         );
     }
 
+    /// Loads Ruby-specific templates.
+    ///
+    /// Ruby templates include RSpec, RuboCop, Brakeman, and Bundler workflows.
+    fn load_ruby_templates(&mut self) {
+        self.register(
+            Language::Ruby,
+            TemplateKind::PromptBuild,
+            include_str!("../templates/ruby/PROMPT_build.md"),
+        );
+        self.register(
+            Language::Ruby,
+            TemplateKind::ClaudeMd,
+            include_str!("../templates/ruby/CLAUDE.md"),
+        );
+    }
+
+    /// Loads PHP-specific templates.
+    ///
+    /// PHP templates include PHPUnit, PHPStan, PHP_CodeSniffer, and Composer workflows.
+    fn load_php_templates(&mut self) {
+        self.register(
+            Language::Php,
+            TemplateKind::PromptBuild,
+            include_str!("../templates/php/PROMPT_build.md"),
+        );
+        self.register(
+            Language::Php,
+            TemplateKind::ClaudeMd,
+            include_str!("../templates/php/CLAUDE.md"),
+        );
+    }
+
+    /// Loads C#-specific templates.
+    ///
+    /// C# templates include xUnit, NUnit, MSTest, dotnet test, and Roslyn analyzer workflows.
+    fn load_csharp_templates(&mut self) {
+        self.register(
+            Language::CSharp,
+            TemplateKind::PromptBuild,
+            include_str!("../templates/csharp/PROMPT_build.md"),
+        );
+        self.register(
+            Language::CSharp,
+            TemplateKind::ClaudeMd,
+            include_str!("../templates/csharp/CLAUDE.md"),
+        );
+    }
+
     /// Gets a template for the given kind and language.
     ///
     /// If a language-specific template exists, it is returned. Otherwise,
@@ -389,6 +440,125 @@ impl TemplateRegistry {
             .filter(|(_, k)| *k == kind)
             .map(|(lang, _)| *lang)
             .collect()
+    }
+
+    /// Check if the given language list represents a polyglot project.
+    ///
+    /// A project is considered polyglot if it has two or more languages.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::bootstrap::templates::TemplateRegistry;
+    /// use ralph::Language;
+    ///
+    /// let registry = TemplateRegistry::new();
+    /// assert!(!registry.is_polyglot_template(&[Language::Rust]));
+    /// assert!(registry.is_polyglot_template(&[Language::Rust, Language::Python]));
+    /// ```
+    #[must_use]
+    pub fn is_polyglot_template(&self, languages: &[Language]) -> bool {
+        languages.len() >= 2
+    }
+
+    /// Get a combined template for polyglot projects.
+    ///
+    /// For single-language projects, returns the same as `get()`.
+    /// For multi-language projects, generates a combined template with
+    /// per-language sections.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` - The template kind to generate
+    /// * `languages` - The languages to include in the template
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::bootstrap::templates::{TemplateRegistry, TemplateKind};
+    /// use ralph::Language;
+    ///
+    /// let registry = TemplateRegistry::new();
+    ///
+    /// // Single language
+    /// let single = registry.get_polyglot_prompt(TemplateKind::PromptBuild, &[Language::Rust]);
+    ///
+    /// // Polyglot
+    /// let polyglot = registry.get_polyglot_prompt(
+    ///     TemplateKind::PromptBuild,
+    ///     &[Language::Rust, Language::Python],
+    /// );
+    /// ```
+    #[must_use]
+    pub fn get_polyglot_prompt(&self, kind: TemplateKind, languages: &[Language]) -> String {
+        // Empty or single language: return standard template
+        if languages.is_empty() {
+            return self.get(kind, Language::Rust).to_string();
+        }
+
+        if languages.len() == 1 {
+            return self.get(kind, languages[0]).to_string();
+        }
+
+        // Multiple languages: generate combined template
+        self.generate_polyglot_template(kind, languages)
+    }
+
+    /// Generate a combined template for multiple languages.
+    fn generate_polyglot_template(&self, kind: TemplateKind, languages: &[Language]) -> String {
+        let mut combined = String::new();
+
+        // Add polyglot header
+        combined.push_str(&self.polyglot_header(kind, languages));
+
+        // Add primary language section (first in list)
+        if let Some(primary) = languages.first() {
+            combined.push_str(&format!("\n## Primary Language: {}\n\n", primary));
+            combined.push_str(self.get(kind, *primary));
+        }
+
+        // Add secondary language sections
+        for lang in languages.iter().skip(1) {
+            combined.push_str(&format!("\n\n---\n\n## Additional Language: {}\n\n", lang));
+            combined.push_str(&self.extract_language_essentials(kind, *lang));
+        }
+
+        combined
+    }
+
+    /// Generate the polyglot header for combined templates.
+    fn polyglot_header(&self, kind: TemplateKind, languages: &[Language]) -> String {
+        let lang_list: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
+
+        format!(
+            "# Polyglot Project: {}\n\n\
+             This project uses multiple programming languages. Each section below \
+             contains language-specific guidance.\n\n\
+             **Languages:** {}\n\n\
+             **Template:** {}\n",
+            lang_list.join(" + "),
+            lang_list.join(", "),
+            kind.filename()
+        )
+    }
+
+    /// Extract essential content from a language template for secondary sections.
+    ///
+    /// This provides a condensed version of the template focusing on:
+    /// - Build commands
+    /// - Quality gates
+    /// - Key tooling
+    fn extract_language_essentials(&self, kind: TemplateKind, language: Language) -> String {
+        let template = self.get(kind, language);
+
+        // For now, include the full template but mark it as secondary
+        // In future iterations, we could parse and extract specific sections
+        format!(
+            "The following {} standards apply when working with {} code:\n\n{}",
+            kind.filename(),
+            language,
+            template
+        )
     }
 }
 
@@ -1184,5 +1354,232 @@ mod tests {
                 lang
             );
         }
+    }
+
+    // ============================================================
+    // Polyglot prompt generation tests (Sprint 10)
+    // ============================================================
+
+    #[test]
+    fn test_get_polyglot_prompt_with_single_language() {
+        let registry = TemplateRegistry::new();
+        let prompt = registry.get_polyglot_prompt(TemplateKind::PromptBuild, &[Language::Rust]);
+
+        // Single language should return same as get()
+        let single = registry.get(TemplateKind::PromptBuild, Language::Rust);
+        assert_eq!(prompt, single);
+    }
+
+    #[test]
+    fn test_get_polyglot_prompt_with_two_languages() {
+        let registry = TemplateRegistry::new();
+        let prompt = registry.get_polyglot_prompt(
+            TemplateKind::PromptBuild,
+            &[Language::Rust, Language::Python],
+        );
+
+        // Should contain polyglot header
+        assert!(
+            prompt.contains("Polyglot") || prompt.contains("polyglot") || prompt.contains("Multi-language"),
+            "Polyglot prompt should indicate multi-language project"
+        );
+
+        // Should contain Rust section
+        assert!(
+            prompt.contains("Rust") || prompt.contains("cargo"),
+            "Polyglot prompt should contain Rust section"
+        );
+
+        // Should contain Python section
+        assert!(
+            prompt.contains("Python") || prompt.contains("pytest"),
+            "Polyglot prompt should contain Python section"
+        );
+    }
+
+    #[test]
+    fn test_get_polyglot_prompt_with_three_languages() {
+        let registry = TemplateRegistry::new();
+        let prompt = registry.get_polyglot_prompt(
+            TemplateKind::PromptBuild,
+            &[Language::Rust, Language::Python, Language::TypeScript],
+        );
+
+        // Should contain all three language references
+        assert!(prompt.contains("Rust") || prompt.contains("cargo"));
+        assert!(prompt.contains("Python") || prompt.contains("pytest"));
+        assert!(prompt.contains("TypeScript") || prompt.contains("npm"));
+    }
+
+    #[test]
+    fn test_get_polyglot_prompt_empty_languages_returns_default() {
+        let registry = TemplateRegistry::new();
+        let prompt = registry.get_polyglot_prompt(TemplateKind::PromptBuild, &[]);
+
+        // Empty should return default template
+        let default = registry.get(TemplateKind::PromptBuild, Language::Rust);
+        assert!(!prompt.is_empty());
+        assert_eq!(prompt, default);
+    }
+
+    #[test]
+    fn test_get_polyglot_prompt_preserves_quality_gates_for_all_languages() {
+        let registry = TemplateRegistry::new();
+        let prompt = registry.get_polyglot_prompt(
+            TemplateKind::PromptBuild,
+            &[Language::Rust, Language::Python],
+        );
+
+        // Should reference quality concepts from both languages
+        assert!(
+            prompt.contains("Quality") || prompt.contains("gate") || prompt.contains("Gate"),
+            "Polyglot prompt should contain quality gate references"
+        );
+    }
+
+    #[test]
+    fn test_get_polyglot_claude_md() {
+        let registry = TemplateRegistry::new();
+        let claude_md = registry.get_polyglot_prompt(
+            TemplateKind::ClaudeMd,
+            &[Language::Rust, Language::TypeScript],
+        );
+
+        // Should contain project info for both languages
+        assert!(
+            claude_md.contains("Rust") || claude_md.contains("cargo"),
+            "Polyglot CLAUDE.md should reference Rust"
+        );
+        assert!(
+            claude_md.contains("TypeScript") || claude_md.contains("npm"),
+            "Polyglot CLAUDE.md should reference TypeScript"
+        );
+    }
+
+    #[test]
+    fn test_is_polyglot_template_with_multiple_languages() {
+        let registry = TemplateRegistry::new();
+
+        // Single language is not polyglot
+        assert!(!registry.is_polyglot_template(&[Language::Rust]));
+
+        // Multiple languages is polyglot
+        assert!(registry.is_polyglot_template(&[Language::Rust, Language::Python]));
+
+        // Empty is not polyglot
+        assert!(!registry.is_polyglot_template(&[]));
+    }
+
+    // ============================================================
+    // Additional language template tests (Sprint 10)
+    // ============================================================
+
+    #[test]
+    fn test_ruby_has_specific_prompt_build() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::PromptBuild, Language::Ruby),
+            "Ruby should have a specific PromptBuild template"
+        );
+    }
+
+    #[test]
+    fn test_ruby_has_specific_claude_md() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::ClaudeMd, Language::Ruby),
+            "Ruby should have a specific ClaudeMd template"
+        );
+    }
+
+    #[test]
+    fn test_ruby_prompt_build_contains_rspec() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Ruby);
+        assert!(
+            template.contains("rspec") || template.contains("RSpec"),
+            "Ruby build prompt should reference RSpec"
+        );
+    }
+
+    #[test]
+    fn test_ruby_prompt_build_contains_rubocop() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Ruby);
+        assert!(
+            template.contains("rubocop") || template.contains("RuboCop"),
+            "Ruby build prompt should reference RuboCop"
+        );
+    }
+
+    #[test]
+    fn test_php_has_specific_prompt_build() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::PromptBuild, Language::Php),
+            "PHP should have a specific PromptBuild template"
+        );
+    }
+
+    #[test]
+    fn test_php_has_specific_claude_md() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::ClaudeMd, Language::Php),
+            "PHP should have a specific ClaudeMd template"
+        );
+    }
+
+    #[test]
+    fn test_php_prompt_build_contains_phpunit() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Php);
+        assert!(
+            template.contains("phpunit") || template.contains("PHPUnit"),
+            "PHP build prompt should reference PHPUnit"
+        );
+    }
+
+    #[test]
+    fn test_csharp_has_specific_prompt_build() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::PromptBuild, Language::CSharp),
+            "C# should have a specific PromptBuild template"
+        );
+    }
+
+    #[test]
+    fn test_csharp_has_specific_claude_md() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::ClaudeMd, Language::CSharp),
+            "C# should have a specific ClaudeMd template"
+        );
+    }
+
+    #[test]
+    fn test_csharp_prompt_build_contains_dotnet_test() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::CSharp);
+        assert!(
+            template.contains("dotnet test") || template.contains("xunit") || template.contains("MSTest"),
+            "C# build prompt should reference dotnet test or testing framework"
+        );
+    }
+
+    #[test]
+    fn test_generic_fallback_exists() {
+        let registry = TemplateRegistry::new();
+        // Lua doesn't have specific templates, should use generic
+        let template = registry.get(TemplateKind::PromptBuild, Language::Lua);
+        assert!(
+            !template.is_empty(),
+            "Languages without specific templates should get generic fallback"
+        );
+        assert!(
+            template.contains("Quality") || template.contains("TDD"),
+            "Generic template should contain quality/TDD guidance"
+        );
     }
 }

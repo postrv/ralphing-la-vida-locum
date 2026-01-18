@@ -161,6 +161,111 @@ impl Bootstrap {
         detector.primary_language()
     }
 
+    /// Generate a language-aware MCP configuration.
+    ///
+    /// Creates an MCP configuration JSON string that is optimized for the
+    /// project's detected or specified languages. The configuration includes:
+    /// - Standard narsil-mcp flags (--git, --call-graph, --persist, --watch)
+    /// - Language-appropriate settings
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::bootstrap::Bootstrap;
+    /// use ralph::bootstrap::language::Language;
+    ///
+    /// let bootstrap = Bootstrap::new(PathBuf::from("."))
+    ///     .with_languages(vec![Language::Rust, Language::Python]);
+    ///
+    /// let config = bootstrap.generate_mcp_config();
+    /// println!("{}", config);
+    /// ```
+    #[must_use]
+    pub fn generate_mcp_config(&self) -> String {
+        let languages = self.effective_languages();
+
+        // Build the args array
+        let mut args = vec![
+            "--repos".to_string(),
+            ".".to_string(),
+            "--git".to_string(),
+            "--call-graph".to_string(),
+            "--persist".to_string(),
+            "--watch".to_string(),
+        ];
+
+        // Add language-specific exclude patterns if we have languages
+        if !languages.is_empty() {
+            // narsil-mcp will auto-detect languages, but we can add exclude patterns
+            // to avoid indexing irrelevant directories
+            let excludes = self.get_language_excludes(&languages);
+            for exclude in excludes {
+                args.push("--exclude".to_string());
+                args.push(exclude);
+            }
+        }
+
+        // Build the JSON structure
+        let args_json: Vec<String> = args.iter().map(|a| format!("\"{}\"", a)).collect();
+
+        format!(
+            r#"{{
+  "mcpServers": {{
+    "narsil-mcp": {{
+      "command": "narsil-mcp",
+      "args": [
+        {}
+      ]
+    }}
+  }}
+}}"#,
+            args_json.join(",\n        ")
+        )
+    }
+
+    /// Get exclude patterns appropriate for the given languages.
+    ///
+    /// Returns patterns that should be excluded from indexing to improve
+    /// performance and reduce noise.
+    fn get_language_excludes(&self, languages: &[Language]) -> Vec<String> {
+        let mut excludes = Vec::new();
+
+        for lang in languages {
+            match lang {
+                Language::Rust => {
+                    excludes.push("target".to_string());
+                }
+                Language::Python => {
+                    excludes.push("__pycache__".to_string());
+                    excludes.push(".venv".to_string());
+                    excludes.push("venv".to_string());
+                    excludes.push(".tox".to_string());
+                    excludes.push("*.egg-info".to_string());
+                }
+                Language::TypeScript | Language::JavaScript => {
+                    excludes.push("node_modules".to_string());
+                    excludes.push("dist".to_string());
+                    excludes.push(".next".to_string());
+                }
+                Language::Go => {
+                    excludes.push("vendor".to_string());
+                }
+                Language::Java => {
+                    excludes.push("target".to_string());
+                    excludes.push("build".to_string());
+                    excludes.push(".gradle".to_string());
+                }
+                _ => {}
+            }
+        }
+
+        // Remove duplicates
+        excludes.sort();
+        excludes.dedup();
+
+        excludes
+    }
+
     /// Display detected languages with confidence scores.
     fn display_detected_languages(&self) {
         let detected = self.detect_languages();
@@ -894,5 +999,75 @@ mod tests {
         assert_eq!(languages.len(), 2);
         assert!(languages.contains(&Language::TypeScript));
         assert!(languages.contains(&Language::JavaScript));
+    }
+
+    // ============================================================
+    // Language-aware MCP config tests (Sprint 10)
+    // ============================================================
+
+    #[test]
+    fn test_generate_mcp_config_for_rust() {
+        let temp = TempDir::new().unwrap();
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![Language::Rust]);
+
+        let config = bootstrap.generate_mcp_config();
+
+        // Should be valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&config)
+            .expect("MCP config should be valid JSON");
+
+        // Should have narsil-mcp server
+        assert!(parsed["mcpServers"]["narsil-mcp"].is_object());
+
+        // Should have basic flags
+        let args = parsed["mcpServers"]["narsil-mcp"]["args"].as_array().unwrap();
+        let args_str: Vec<&str> = args.iter().filter_map(|a| a.as_str()).collect();
+        assert!(args_str.contains(&"--git"));
+        assert!(args_str.contains(&"--call-graph"));
+    }
+
+    #[test]
+    fn test_generate_mcp_config_for_python() {
+        let temp = TempDir::new().unwrap();
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![Language::Python]);
+
+        let config = bootstrap.generate_mcp_config();
+        let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
+
+        // Should have narsil-mcp configured
+        assert!(parsed["mcpServers"]["narsil-mcp"].is_object());
+    }
+
+    #[test]
+    fn test_generate_mcp_config_for_polyglot() {
+        let temp = TempDir::new().unwrap();
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
+            .with_languages(vec![Language::Rust, Language::Python, Language::TypeScript]);
+
+        let config = bootstrap.generate_mcp_config();
+        let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
+
+        // Should have narsil-mcp configured
+        assert!(parsed["mcpServers"]["narsil-mcp"].is_object());
+
+        // Should have standard flags
+        let args = parsed["mcpServers"]["narsil-mcp"]["args"].as_array().unwrap();
+        let args_str: Vec<&str> = args.iter().filter_map(|a| a.as_str()).collect();
+        assert!(args_str.contains(&"--git"));
+    }
+
+    #[test]
+    fn test_generate_mcp_config_empty_languages_uses_default() {
+        let temp = TempDir::new().unwrap();
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf());
+
+        let config = bootstrap.generate_mcp_config();
+
+        // Should still be valid JSON with default config
+        let parsed: serde_json::Value = serde_json::from_str(&config)
+            .expect("MCP config should be valid JSON");
+        assert!(parsed["mcpServers"]["narsil-mcp"].is_object());
     }
 }
