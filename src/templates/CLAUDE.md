@@ -87,14 +87,23 @@ todo!()                       // Implement now
 #[cfg(test)]                  // Keep tests in modules
 ```
 
-### Test-Driven Development (Mandatory)
+### Test-Driven Development (MANDATORY - NO EXCEPTIONS)
+
+**Tests FIRST. Implementation SECOND. Always.**
 
 **Every change follows this cycle:**
-1. **RED**: Write a failing test that defines expected behavior
-2. **GREEN**: Write minimal code to make the test pass
-3. **REFACTOR**: Clean up while keeping tests green
-4. **REVIEW**: Run clippy + security scans
-5. **COMMIT**: Only if ALL quality gates pass
+1. **REINDEX**: `reindex` - refresh narsil-mcp index before starting
+2. **RED**: Write a failing test that defines expected behavior
+3. **GREEN**: Write minimal code to make the test pass
+4. **REFACTOR**: Clean up while keeping tests green
+5. **REVIEW**: Run clippy + security scans
+6. **COMMIT**: Only if ALL quality gates pass
+7. **REINDEX**: `reindex` - refresh narsil-mcp index after completing
+
+**If you write implementation before tests, STOP:**
+1. Delete the implementation
+2. Write the test first
+3. Then write minimal code to pass
 
 **Test Coverage Requirements:**
 - Every public function: at least 1 unit test
@@ -222,8 +231,14 @@ Ralph monitors for stagnation and will escalate:
 
 ## QUALITY GATES (Pre-Commit Checklist)
 
+**Start of Task:**
+```
+[ ] reindex                                    → narsil-mcp index refreshed
+```
+
 **Mandatory (always enforced):**
 ```
+[ ] Tests written BEFORE implementation        → TDD verified
 [ ] cargo clippy --all-targets -- -D warnings  → 0 warnings
 [ ] cargo test                                  → all pass
 [ ] No #[allow(...)] annotations added
@@ -237,6 +252,11 @@ Ralph monitors for stagnation and will escalate:
 ```
 [ ] scan_security                              → 0 CRITICAL/HIGH
 [ ] find_injection_vulnerabilities             → 0 findings
+```
+
+**End of Task:**
+```
+[ ] reindex                                    → narsil-mcp index updated
 ```
 
 ---
