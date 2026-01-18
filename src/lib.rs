@@ -84,8 +84,9 @@ pub use narsil::{
 
 // Re-export analytics types
 pub use analytics::{
-    AggregateStats, Analytics, AnalyticsEvent, QualityMetricsSnapshot, QualityTrend,
-    SessionSummary, TrendDirection,
+    AggregateStats, Analytics, AnalyticsEvent, AuditAction, AuditEvent, AuditExportFormat,
+    AuditSeverity, CampaignOutcome, QualityMetricsSnapshot, QualityTrend, SessionSummary,
+    TrendDirection,
 };
 
 // Re-export bootstrap types
