@@ -14,7 +14,7 @@
 //! assert_eq!(context.session_stats.iteration_count, 5);
 //! ```
 
-use crate::narsil::{CcgArchitecture, CcgManifest, ConstraintSet};
+use crate::narsil::{CcgArchitecture, CcgManifest, ComplianceResult, ConstraintSet};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -1198,6 +1198,9 @@ pub struct CodeIntelligenceContext {
     /// CCG L2 constraints that apply to the codebase.
     #[serde(default, skip_serializing_if = "ConstraintSet::is_empty")]
     pub constraints: ConstraintSet,
+    /// Constraint compliance verification result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compliance_result: Option<ComplianceResult>,
 }
 
 impl CodeIntelligenceContext {
@@ -1253,6 +1256,7 @@ impl CodeIntelligenceContext {
             || self.ccg_manifest.is_some()
             || self.ccg_architecture.is_some()
             || !self.constraints.is_empty()
+            || self.compliance_result.is_some()
     }
 
     /// Get the count of functions in the call graph.
@@ -1328,6 +1332,44 @@ impl CodeIntelligenceContext {
     #[must_use]
     pub fn has_constraints(&self) -> bool {
         !self.constraints.is_empty()
+    }
+
+    /// Add constraint compliance result.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::prompt::context::CodeIntelligenceContext;
+    /// use ralph::narsil::ComplianceResult;
+    ///
+    /// let intel = CodeIntelligenceContext::new()
+    ///     .with_compliance_result(ComplianceResult::passed(5));
+    /// assert!(intel.has_compliance_result());
+    /// ```
+    #[must_use]
+    pub fn with_compliance_result(mut self, result: ComplianceResult) -> Self {
+        self.compliance_result = Some(result);
+        self
+    }
+
+    /// Check if compliance result is available.
+    #[must_use]
+    pub fn has_compliance_result(&self) -> bool {
+        self.compliance_result.is_some()
+    }
+
+    /// Check if there are any constraint violations.
+    #[must_use]
+    pub fn has_violations(&self) -> bool {
+        self.compliance_result
+            .as_ref()
+            .is_some_and(|r| !r.compliant)
+    }
+
+    /// Get the compliance result if available.
+    #[must_use]
+    pub fn compliance(&self) -> Option<&ComplianceResult> {
+        self.compliance_result.as_ref()
     }
 
     /// Get constraints that apply to a specific target (function, module, etc.).

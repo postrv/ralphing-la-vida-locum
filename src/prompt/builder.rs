@@ -669,6 +669,15 @@ impl SectionBuilder {
             }
         }
 
+        // Violations section (if compliance result shows violations)
+        if intel.has_violations() {
+            let violations_section = Self::build_violations_section(intel);
+            if !violations_section.is_empty() {
+                lines.push(violations_section);
+                lines.push(String::new());
+            }
+        }
+
         lines.join("\n")
     }
 
@@ -925,6 +934,87 @@ impl SectionBuilder {
         lines.push("- Add tests to verify constraint compliance".to_string());
 
         lines.push(String::new());
+        lines.join("\n")
+    }
+
+    /// Build a violations section showing constraint compliance failures.
+    ///
+    /// Displays violations from constraint verification, helping the model
+    /// understand what code needs to be fixed to comply with constraints.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::builder::SectionBuilder;
+    /// use ralph::prompt::context::CodeIntelligenceContext;
+    /// use ralph::narsil::{ComplianceResult, ConstraintViolation};
+    ///
+    /// let result = ComplianceResult::failed(
+    ///     vec![
+    ///         ConstraintViolation::new("max-complexity", "process_data", "Complexity 15 exceeds max 10")
+    ///     ],
+    ///     1,
+    /// );
+    ///
+    /// let intel = CodeIntelligenceContext::new()
+    ///     .with_compliance_result(result)
+    ///     .mark_available();
+    ///
+    /// let section = SectionBuilder::build_violations_section(&intel);
+    /// assert!(section.contains("Constraint Violations"));
+    /// assert!(section.contains("process_data"));
+    /// ```
+    #[must_use]
+    pub fn build_violations_section(intel: &CodeIntelligenceContext) -> String {
+        let Some(result) = intel.compliance() else {
+            return String::new();
+        };
+
+        if result.compliant {
+            return String::new();
+        }
+
+        let mut lines = vec![
+            "### ⚠️ Constraint Violations".to_string(),
+            String::new(),
+            format!(
+                "**{} violation(s)** found that need to be addressed:",
+                result.violations.len()
+            ),
+            String::new(),
+        ];
+
+        for (i, violation) in result.violations.iter().enumerate().take(10) {
+            let location = match (&violation.file, violation.line) {
+                (Some(f), Some(l)) => format!(" at `{}:{}`", f, l),
+                (Some(f), None) => format!(" in `{}`", f),
+                _ => String::new(),
+            };
+
+            lines.push(format!(
+                "{}. **`{}`**{}: {}",
+                i + 1,
+                violation.target,
+                location,
+                violation.message
+            ));
+
+            if let Some(ref suggestion) = violation.suggestion {
+                lines.push(format!("   - 💡 *{}*", suggestion));
+            }
+        }
+
+        if result.violations.len() > 10 {
+            lines.push(format!(
+                "\n*...and {} more violations*",
+                result.violations.len() - 10
+            ));
+        }
+
+        lines.push(String::new());
+        lines.push("**Action required:** Fix these violations before proceeding.".to_string());
+        lines.push(String::new());
+
         lines.join("\n")
     }
 
@@ -1922,5 +2012,87 @@ mod tests {
         // Should include both CCG overview and constraints
         assert!(section.contains("Project Overview") || section.contains("project"));
         assert!(section.contains("Active Constraints") || section.contains("maxComplexity"));
+    }
+
+    #[test]
+    fn test_build_violations_section_empty_when_compliant() {
+        use crate::narsil::ComplianceResult;
+
+        let intel = CodeIntelligenceContext::new()
+            .with_compliance_result(ComplianceResult::passed(5))
+            .mark_available();
+
+        let section = SectionBuilder::build_violations_section(&intel);
+        assert!(section.is_empty());
+    }
+
+    #[test]
+    fn test_build_violations_section_empty_when_no_result() {
+        let intel = CodeIntelligenceContext::new().mark_available();
+
+        let section = SectionBuilder::build_violations_section(&intel);
+        assert!(section.is_empty());
+    }
+
+    #[test]
+    fn test_build_violations_section_with_violations() {
+        use crate::narsil::{ComplianceResult, ConstraintViolation};
+
+        let result = ComplianceResult::failed(
+            vec![
+                ConstraintViolation::new(
+                    "max-complexity",
+                    "process_data",
+                    "Complexity 15 exceeds maximum of 10",
+                )
+                .with_location("src/handler.rs", 42)
+                .with_suggestion("Break into smaller functions"),
+            ],
+            1,
+        );
+
+        let intel = CodeIntelligenceContext::new()
+            .with_compliance_result(result)
+            .mark_available();
+
+        let section = SectionBuilder::build_violations_section(&intel);
+
+        assert!(section.contains("Constraint Violations"));
+        assert!(section.contains("process_data"));
+        assert!(section.contains("src/handler.rs:42"));
+        assert!(section.contains("Complexity 15"));
+        assert!(section.contains("Break into smaller functions"));
+        assert!(section.contains("Action required"));
+    }
+
+    #[test]
+    fn test_build_violations_section_multiple_violations() {
+        use crate::narsil::{ComplianceResult, ConstraintViolation};
+
+        let result = ComplianceResult::failed(
+            vec![
+                ConstraintViolation::new(
+                    "max-complexity",
+                    "func1",
+                    "Complexity 15 exceeds max",
+                ),
+                ConstraintViolation::new(
+                    "max-lines",
+                    "func2",
+                    "Function has 200 lines, max is 100",
+                ),
+            ],
+            2,
+        );
+
+        let intel = CodeIntelligenceContext::new()
+            .with_compliance_result(result)
+            .mark_available();
+
+        let section = SectionBuilder::build_violations_section(&intel);
+
+        assert!(section.contains("2 violation(s)"));
+        assert!(section.contains("func1"));
+        assert!(section.contains("func2"));
     }
 }

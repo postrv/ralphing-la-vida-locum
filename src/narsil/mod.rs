@@ -31,6 +31,7 @@
 mod ccg;
 mod client;
 mod constraint_loader;
+mod constraint_verifier;
 mod intelligence;
 
 pub use ccg::{
@@ -44,6 +45,7 @@ pub use client::{
     SecuritySeverity, ToolResponse,
 };
 pub use constraint_loader::{ConstraintLoadError, ConstraintLoader, DEFAULT_CONSTRAINTS_PATH};
+pub use constraint_verifier::{ConstraintVerifier, FunctionMetrics};
 pub use intelligence::CodeIntelligenceBuilder;
 
 #[cfg(test)]
