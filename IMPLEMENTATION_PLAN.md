@@ -71,11 +71,11 @@
 - Files: `src/quality/gates/python.rs`
 - Acceptance: Python projects get appropriate linting/testing gates
 
-### 7c. TypeScript/JavaScript Quality Gates
-- [ ] Implement `EslintGate`
-- [ ] Implement `JestGate` (with vitest/mocha detection)
-- [ ] Implement `TscGate` (TypeScript type check)
-- [ ] Implement `NpmAuditGate`
+### 7c. TypeScript/JavaScript Quality Gates ✓ COMPLETE
+- [x] Implement `EslintGate`
+- [x] Implement `JestGate` (with vitest/mocha detection)
+- [x] Implement `TscGate` (TypeScript type check)
+- [x] Implement `NpmAuditGate`
 - Files: `src/quality/gates/typescript.rs`
 - Acceptance: TS/JS projects get appropriate gates
 
