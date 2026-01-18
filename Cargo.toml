@@ -53,7 +53,7 @@ uuid = { version = "1.11", features = ["v4"] }
 
 # Terminal
 colored = "2.2"
-indicatif = "0.17"
+indicatif = "0.18"
 
 # Error handling
 anyhow = "1.0"
