@@ -10,7 +10,7 @@
 
 pub mod predictor;
 
-use crate::analytics::Analytics;
+use ralph::Analytics;
 use crate::r#loop::state::{LoopMode, LoopState};
 use anyhow::Result;
 use chrono::{DateTime, Utc};

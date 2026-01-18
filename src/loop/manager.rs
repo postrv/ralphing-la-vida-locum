@@ -44,7 +44,7 @@ use super::retry::{
 };
 use super::state::{LoopMode, LoopState};
 use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransition};
-use crate::analytics::Analytics;
+use ralph::Analytics;
 use crate::supervisor::predictor::{
     InterventionThresholds, PreventiveAction, PredictorConfig, RiskSignals, RiskWeights,
     StagnationPredictor,

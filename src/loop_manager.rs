@@ -3,7 +3,7 @@
 //! This module handles the main automation loop that runs Claude Code
 //! iterations with stagnation detection, mode switching, and analytics.
 
-use crate::analytics::Analytics;
+use ralph::Analytics;
 use ralph::config::ProjectConfig;
 use crate::supervisor::{Supervisor, SupervisorVerdict};
 use anyhow::{bail, Context, Result};
