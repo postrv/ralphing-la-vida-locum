@@ -3,6 +3,9 @@
 ## Phase 1: PLAN
 - Read IMPLEMENTATION_PLAN.md
 - Select highest-priority incomplete task
+- **Reference Documents:**
+  - `further_dev_plans/ralph-multilang-bootstrap.md` for multi-language design
+  - Existing templates in `src/templates/` for patterns
 - **Context Gathering (narsil-mcp - optional, degrades gracefully):**
   - `get_call_graph` - understand function relationships
   - `get_dependencies` - understand module dependencies
