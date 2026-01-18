@@ -25,7 +25,7 @@
 //! let prompt = assembler.build_prompt("build").expect("should build");
 //! ```
 
-use crate::narsil::{CodeIntelligenceBuilder, NarsilClient};
+use crate::narsil::{CodeIntelligenceBuilder, ConstraintLoader, NarsilClient};
 use crate::prompt::antipatterns::{
     detect_quality_gate_ignoring, detect_scope_creep, AntiPatternDetector, DetectorConfig,
     IterationSummary,
@@ -36,7 +36,7 @@ use crate::prompt::context::{
     ErrorSeverity, GateResult, PromptContext, QualityGateStatus, SessionStats, TaskPhase,
 };
 use crate::prompt::templates::PromptTemplates;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Configuration for the PromptAssembler.
 #[derive(Debug, Clone)]
@@ -164,6 +164,8 @@ pub struct PromptAssembler {
     intelligence_symbols: Vec<String>,
     /// Files to query for dependency intelligence.
     intelligence_files: Vec<String>,
+    /// Project directory for loading constraints.
+    project_dir: Option<PathBuf>,
 }
 
 impl PromptAssembler {
@@ -218,6 +220,7 @@ impl PromptAssembler {
             intelligence_functions: Vec::new(),
             intelligence_symbols: Vec::new(),
             intelligence_files: Vec::new(),
+            project_dir: None,
         }
     }
 
@@ -249,6 +252,29 @@ impl PromptAssembler {
         let templates = PromptTemplates::load_or_defaults(dir)?;
         self.builder = DynamicPromptBuilder::new(templates);
         Ok(())
+    }
+
+    /// Set the project directory for loading CCG constraints.
+    ///
+    /// When a project directory is set, the assembler will automatically
+    /// load constraints from `.ccg/constraints.json` when building prompts.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use ralph::prompt::assembler::PromptAssembler;
+    ///
+    /// let mut assembler = PromptAssembler::new();
+    /// assembler.set_project_dir("/path/to/project");
+    /// ```
+    pub fn set_project_dir(&mut self, dir: impl AsRef<Path>) {
+        self.project_dir = Some(dir.as_ref().to_path_buf());
+    }
+
+    /// Get the project directory if set.
+    #[must_use]
+    pub fn project_dir(&self) -> Option<&Path> {
+        self.project_dir.as_deref()
     }
 
     // =========================================================================
@@ -808,7 +834,18 @@ impl PromptAssembler {
         context = context.with_anti_patterns(patterns);
 
         // Add code intelligence from narsil-mcp
-        let intelligence = self.build_code_intelligence();
+        let mut intelligence = self.build_code_intelligence();
+
+        // Load CCG constraints from project directory if set
+        if let Some(ref project_dir) = self.project_dir {
+            let loader = ConstraintLoader::new(project_dir);
+            if let Ok(constraints) = loader.load() {
+                if !constraints.is_empty() {
+                    intelligence = intelligence.with_constraints(constraints);
+                }
+            }
+        }
+
         context = context.with_code_intelligence(intelligence);
 
         context
@@ -895,6 +932,7 @@ impl std::fmt::Debug for PromptAssembler {
             .field("intelligence_functions", &self.intelligence_functions)
             .field("intelligence_symbols", &self.intelligence_symbols)
             .field("intelligence_files", &self.intelligence_files)
+            .field("project_dir", &self.project_dir)
             .finish_non_exhaustive()
     }
 }
@@ -1478,5 +1516,123 @@ mod tests {
         assert!(assembler.intelligence_functions().is_empty());
         assert!(assembler.intelligence_symbols().is_empty());
         assert!(assembler.intelligence_files().is_empty());
+    }
+
+    // =========================================================================
+    // Constraint Loading Tests (Sprint 11 - CCG-Aware Prompts)
+    // =========================================================================
+
+    #[test]
+    fn test_assembler_set_project_dir() {
+        let mut assembler = PromptAssembler::new();
+        assembler.set_project_dir("/path/to/project");
+
+        assert_eq!(
+            assembler.project_dir(),
+            Some(std::path::Path::new("/path/to/project"))
+        );
+    }
+
+    #[test]
+    fn test_assembler_project_dir_default_is_none() {
+        let assembler = PromptAssembler::new();
+        assert!(assembler.project_dir().is_none());
+    }
+
+    #[test]
+    fn test_assembler_loads_constraints_from_project() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let ccg_dir = dir.path().join(".ccg");
+        fs::create_dir_all(&ccg_dir).unwrap();
+
+        let json = r#"{
+            "constraints": [
+                {
+                    "id": "test-constraint",
+                    "kind": "maxComplexity",
+                    "description": "Test constraint",
+                    "severity": "warning",
+                    "targets": [],
+                    "value": 10,
+                    "enabled": true
+                }
+            ]
+        }"#;
+        fs::write(ccg_dir.join("constraints.json"), json).unwrap();
+
+        let mut assembler = PromptAssembler::new();
+        assembler.set_project_dir(dir.path());
+
+        let context = assembler.build_context();
+
+        // Constraints should be loaded into the code intelligence context
+        assert!(context.code_intelligence.has_constraints());
+        assert_eq!(context.code_intelligence.constraints.len(), 1);
+    }
+
+    #[test]
+    fn test_assembler_no_constraints_when_file_missing() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+
+        let mut assembler = PromptAssembler::new();
+        assembler.set_project_dir(dir.path());
+
+        let context = assembler.build_context();
+
+        // No constraints file, so no constraints should be loaded
+        assert!(!context.code_intelligence.has_constraints());
+    }
+
+    #[test]
+    fn test_assembler_constraints_appear_in_prompt() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let ccg_dir = dir.path().join(".ccg");
+        fs::create_dir_all(&ccg_dir).unwrap();
+
+        let json = r#"{
+            "constraints": [
+                {
+                    "id": "max-complexity",
+                    "kind": "maxComplexity",
+                    "description": "Keep functions simple",
+                    "severity": "error",
+                    "targets": [],
+                    "value": 10,
+                    "enabled": true
+                }
+            ]
+        }"#;
+        fs::write(ccg_dir.join("constraints.json"), json).unwrap();
+
+        let mut assembler = PromptAssembler::new();
+        assembler.set_project_dir(dir.path());
+
+        let prompt = assembler.build_prompt("build").expect("should build");
+
+        // The constraint should appear in the prompt
+        assert!(prompt.contains("Active Constraints") || prompt.contains("maxComplexity"));
+    }
+
+    #[test]
+    fn test_assembler_reset_preserves_project_dir() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+
+        let mut assembler = PromptAssembler::new();
+        assembler.set_project_dir(dir.path());
+
+        assembler.reset();
+
+        // Project dir should be preserved after reset
+        assert!(assembler.project_dir().is_some());
     }
 }
