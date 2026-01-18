@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Start Sprint 10** - Polyglot & Advanced Features
+2. **Start Sprint 11** - CCG-Aware Prompts
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 10 - Polyglot & Advanced Features
+**Current task:** Sprint 11 - CCG-Aware Prompts
 
 ---
 
@@ -41,8 +41,8 @@
 | 7 | Language-Specific Quality Gates | Complete |
 | 8 | Language-Specific Prompts | Complete |
 | 9 | Multi-Language CLI & Settings | Complete |
-| **10** | **Polyglot & Advanced Features** | **NEXT** |
-| 11 | CCG-Aware Prompts | Pending |
+| 10 | Polyglot & Advanced Features | Complete |
+| **11** | **CCG-Aware Prompts** | **NEXT** |
 | 12-13 | Retry & Stagnation Prevention | Complete |
 
 ---
@@ -134,12 +134,12 @@
 
 ---
 
-## Sprint 10: Polyglot & Advanced Features (Priority: P1)
+## Sprint 10: Polyglot & Advanced Features (Priority: P1) - COMPLETE
 
-- [ ] Detect polyglot projects (multiple languages >10% confidence)
-- [ ] Generate combined prompts with per-language sections
-- [ ] Language-aware narsil-mcp config generation
-- [ ] Additional language templates (Ruby, PHP, C#, generic fallback)
+- [x] Detect polyglot projects (multiple languages >10% confidence)
+- [x] Generate combined prompts with per-language sections
+- [x] Language-aware narsil-mcp config generation
+- [x] Additional language templates (Ruby, PHP, C#, generic fallback)
 
 ---
 
