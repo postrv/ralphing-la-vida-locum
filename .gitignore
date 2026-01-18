@@ -1,5 +1,6 @@
 /target
 /.archive
+/.ralph
 .idea
 context.txt
 fake.ralph/
