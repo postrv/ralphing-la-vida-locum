@@ -14,7 +14,7 @@
 //! assert_eq!(context.session_stats.iteration_count, 5);
 //! ```
 
-use crate::narsil::{CcgArchitecture, CcgManifest};
+use crate::narsil::{CcgArchitecture, CcgManifest, ConstraintSet};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -1195,6 +1195,9 @@ pub struct CodeIntelligenceContext {
     /// CCG L1 architecture with module hierarchy and public API.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ccg_architecture: Option<CcgArchitecture>,
+    /// CCG L2 constraints that apply to the codebase.
+    #[serde(default, skip_serializing_if = "ConstraintSet::is_empty")]
+    pub constraints: ConstraintSet,
 }
 
 impl CodeIntelligenceContext {
@@ -1249,6 +1252,7 @@ impl CodeIntelligenceContext {
             || !self.dependencies.is_empty()
             || self.ccg_manifest.is_some()
             || self.ccg_architecture.is_some()
+            || !self.constraints.is_empty()
     }
 
     /// Get the count of functions in the call graph.
@@ -1313,6 +1317,43 @@ impl CodeIntelligenceContext {
         self.ccg_architecture.as_ref().map(|a| a.modules.as_slice())
     }
 
+    /// Add CCG constraints.
+    #[must_use]
+    pub fn with_constraints(mut self, constraints: ConstraintSet) -> Self {
+        self.constraints = constraints;
+        self
+    }
+
+    /// Check if there are any active constraints.
+    #[must_use]
+    pub fn has_constraints(&self) -> bool {
+        !self.constraints.is_empty()
+    }
+
+    /// Get constraints that apply to a specific target (function, module, etc.).
+    #[must_use]
+    pub fn constraints_for_target(&self, target: &str) -> Vec<&crate::narsil::CcgConstraint> {
+        self.constraints.for_target(target)
+    }
+
+    /// Check if there are blocking constraints (error or critical severity).
+    #[must_use]
+    pub fn has_blocking_constraints(&self) -> bool {
+        self.constraints.has_blocking()
+    }
+
+    /// Generate constraint warnings for a specific target.
+    ///
+    /// Returns formatted warning messages for any constraints that apply to the target.
+    #[must_use]
+    pub fn constraint_warnings_for(&self, target: &str) -> Vec<String> {
+        self.constraints
+            .for_target(target)
+            .iter()
+            .map(|c| c.to_prompt_string())
+            .collect()
+    }
+
     /// Check if there are blocking security issues (critical or high severity).
     #[must_use]
     pub fn has_blocking_security_issues(&self) -> bool {
@@ -1347,6 +1388,9 @@ impl CodeIntelligenceContext {
             size += arch.public_api.len() * 80;
             size += arch.modules.len() * 40;
         }
+
+        // Constraints: ~100 bytes per constraint
+        size += self.constraints.len() * 100;
 
         size
     }
@@ -2568,5 +2612,122 @@ mod tests {
         assert!(restored.is_available);
         assert!(restored.has_ccg_data());
         assert_eq!(restored.symbol_count(), Some(200));
+    }
+
+    // ==========================================================================
+    // CodeIntelligenceContext Constraint Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_code_intelligence_context_with_constraints() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new()
+            .with_constraint(
+                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
+                    .with_value(ConstraintValue::Number(10)),
+            );
+
+        let intel = CodeIntelligenceContext::new().with_constraints(constraints);
+
+        assert!(intel.has_constraints());
+        assert!(intel.has_data());
+    }
+
+    #[test]
+    fn test_code_intelligence_context_constraints_for_target() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet};
+
+        let constraints = ConstraintSet::new()
+            .with_constraint(
+                CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "For core")
+                    .with_target("core::*"),
+            )
+            .with_constraint(CcgConstraint::new("c2", ConstraintKind::MaxLines, "Global"));
+
+        let intel = CodeIntelligenceContext::new().with_constraints(constraints);
+
+        // core::process matches both wildcards and global
+        let core_constraints = intel.constraints_for_target("core::process");
+        assert_eq!(core_constraints.len(), 2);
+
+        // api::handler only matches global
+        let api_constraints = intel.constraints_for_target("api::handler");
+        assert_eq!(api_constraints.len(), 1);
+    }
+
+    #[test]
+    fn test_code_intelligence_context_has_blocking_constraints() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintSeverity};
+
+        let non_blocking = ConstraintSet::new()
+            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test"));
+
+        let intel = CodeIntelligenceContext::new().with_constraints(non_blocking);
+        assert!(!intel.has_blocking_constraints());
+
+        let blocking = ConstraintSet::new()
+            .with_constraint(
+                CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Blocking")
+                    .with_severity(ConstraintSeverity::Error),
+            );
+
+        let intel = CodeIntelligenceContext::new().with_constraints(blocking);
+        assert!(intel.has_blocking_constraints());
+    }
+
+    #[test]
+    fn test_code_intelligence_context_constraint_warnings_for() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new()
+            .with_constraint(
+                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
+                    .with_target("process")
+                    .with_value(ConstraintValue::Number(10)),
+            );
+
+        let intel = CodeIntelligenceContext::new().with_constraints(constraints);
+
+        let warnings = intel.constraint_warnings_for("process");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("maxComplexity"));
+    }
+
+    #[test]
+    fn test_code_intelligence_context_estimate_payload_size_with_constraints() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet};
+
+        let constraints = ConstraintSet::new()
+            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test1"))
+            .with_constraint(CcgConstraint::new("c2", ConstraintKind::MaxLines, "Test2"));
+
+        let intel = CodeIntelligenceContext::new().with_constraints(constraints);
+
+        // Should include constraint size (~100 bytes per constraint)
+        let size = intel.estimate_payload_size();
+        assert!(size >= 200);
+    }
+
+    #[test]
+    fn test_code_intelligence_context_constraint_serialize_roundtrip() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new()
+            .with_constraint(
+                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
+                    .with_value(ConstraintValue::Number(10)),
+            );
+
+        let intel = CodeIntelligenceContext::new()
+            .with_constraints(constraints)
+            .mark_available();
+
+        let json = serde_json::to_string(&intel).unwrap();
+        let restored: CodeIntelligenceContext = serde_json::from_str(&json).unwrap();
+
+        assert!(restored.is_available);
+        assert!(restored.has_constraints());
+        assert_eq!(restored.constraints.len(), 1);
     }
 }
