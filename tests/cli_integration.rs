@@ -506,3 +506,122 @@ fn test_hook_validate_respects_config_deny_list() {
         .code(2)
         .stderr(predicate::str::contains("denied by project permissions"));
 }
+
+// ============================================================
+// Bootstrap Language Override Tests (Sprint 9a)
+// ============================================================
+
+#[test]
+fn test_bootstrap_detect_only() {
+    let temp = TempDir::new().unwrap();
+
+    // Create a Python project
+    std::fs::write(temp.path().join("main.py"), "print('hello')").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .arg("--detect-only")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Detected languages"))
+        .stdout(predicate::str::contains("Python"));
+
+    // Verify NO files were created (detect-only should not bootstrap)
+    assert!(!temp.path().join(".claude/CLAUDE.md").exists());
+    assert!(!temp.path().join("IMPLEMENTATION_PLAN.md").exists());
+}
+
+#[test]
+fn test_bootstrap_detect_only_empty_project() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .arg("--detect-only")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No programming languages detected"));
+
+    // Verify NO files were created
+    assert!(!temp.path().join(".claude").exists());
+}
+
+#[test]
+fn test_bootstrap_with_language_override() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .arg("--language")
+        .arg("rust")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Automation suite bootstrapped"))
+        .stdout(predicate::str::contains("Override languages"))
+        .stdout(predicate::str::contains("Rust"));
+
+    // Verify files were created
+    assert!(temp.path().join(".claude/CLAUDE.md").exists());
+}
+
+#[test]
+fn test_bootstrap_with_multiple_languages() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .arg("--language")
+        .arg("rust")
+        .arg("--language")
+        .arg("python")
+        .arg("--language")
+        .arg("typescript")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Override languages"))
+        .stdout(predicate::str::contains("Rust"))
+        .stdout(predicate::str::contains("Python"))
+        .stdout(predicate::str::contains("TypeScript"));
+}
+
+#[test]
+fn test_bootstrap_with_invalid_language() {
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .arg("--language")
+        .arg("notareallanguage")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown language"));
+}
+
+#[test]
+fn test_bootstrap_language_shorthand() {
+    let temp = TempDir::new().unwrap();
+
+    // Test common shorthand aliases
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .arg("--language")
+        .arg("ts")  // shorthand for TypeScript
+        .arg("--language")
+        .arg("py")  // shorthand for Python
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("TypeScript"))
+        .stdout(predicate::str::contains("Python"));
+}

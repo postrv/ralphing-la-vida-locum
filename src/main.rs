@@ -112,6 +112,15 @@ enum Commands {
         /// Skip git hook installation
         #[arg(long)]
         no_git_hooks: bool,
+
+        /// Override detected languages. Can be specified multiple times for polyglot projects.
+        /// Accepts language names (rust, python, typescript) or common aliases (rs, py, ts).
+        #[arg(short, long = "language", value_name = "LANG")]
+        languages: Vec<String>,
+
+        /// Only detect and display project languages without bootstrapping
+        #[arg(long)]
+        detect_only: bool,
     },
 
     /// Analyze project (generate full analysis artifacts)
@@ -435,8 +444,86 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Commands::Bootstrap { force, no_git_hooks } => {
-            let bootstrap = Bootstrap::new(project_path);
+        Commands::Bootstrap { force, no_git_hooks, languages, detect_only } => {
+            // Parse language overrides if provided
+            let parsed_languages: Vec<ralph::Language> = if languages.is_empty() {
+                Vec::new()
+            } else {
+                let mut result = Vec::new();
+                for lang_str in &languages {
+                    match lang_str.parse::<ralph::Language>() {
+                        Ok(lang) => result.push(lang),
+                        Err(e) => {
+                            eprintln!(
+                                "{} {}: {}",
+                                "Error:".red().bold(),
+                                e,
+                                lang_str
+                            );
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                result
+            };
+
+            // Create bootstrap instance with optional language override
+            let bootstrap = if parsed_languages.is_empty() {
+                Bootstrap::new(project_path)
+            } else {
+                Bootstrap::new(project_path).with_languages(parsed_languages.clone())
+            };
+
+            // Handle detect-only mode
+            if detect_only {
+                // Display language override if provided
+                if !parsed_languages.is_empty() {
+                    println!("\n{} Override languages:", "Languages:".cyan());
+                    for lang in &parsed_languages {
+                        println!("   → {}", lang.to_string().bold());
+                    }
+                    println!();
+                } else {
+                    // Display detected languages
+                    let detected = bootstrap.detect_languages();
+                    if detected.is_empty() {
+                        println!(
+                            "\n{} No programming languages detected",
+                            "Note:".yellow()
+                        );
+                        println!("   This is an empty or unrecognized project type");
+                    } else {
+                        println!("\n{} Detected languages:", "Languages:".cyan());
+                        for lang in &detected {
+                            let marker = if lang.primary { "→" } else { " " };
+                            let primary_tag = if lang.primary {
+                                " (primary)".green().to_string()
+                            } else {
+                                String::new()
+                            };
+                            println!(
+                                "   {} {}: {:.0}% confidence ({} files){}",
+                                marker,
+                                lang.language.to_string().bold(),
+                                lang.confidence * 100.0,
+                                lang.file_count,
+                                primary_tag
+                            );
+                        }
+                    }
+                }
+                return Ok(());
+            }
+
+            // Display override languages if provided
+            if !parsed_languages.is_empty() {
+                println!("\n{} Override languages:", "Languages:".cyan());
+                for lang in &parsed_languages {
+                    println!("   → {}", lang.to_string().bold());
+                }
+                println!();
+            }
+
             bootstrap.run(force, !no_git_hooks)?;
 
             println!(
