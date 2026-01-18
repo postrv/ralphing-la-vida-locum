@@ -37,6 +37,7 @@
 //! ```
 
 pub mod analytics;
+pub mod bootstrap;
 pub mod checkpoint;
 pub mod config;
 pub mod error;
@@ -86,6 +87,9 @@ pub use analytics::{
     AggregateStats, Analytics, AnalyticsEvent, QualityMetricsSnapshot, QualityTrend,
     SessionSummary, TrendDirection,
 };
+
+// Re-export bootstrap types
+pub use bootstrap::language::{Language, ParseLanguageError};
 
 // TestFixture is only available in test builds
 #[cfg(test)]
