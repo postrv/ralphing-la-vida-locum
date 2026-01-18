@@ -13,6 +13,7 @@
 //! - [`narsil`] - narsil-mcp integration for code intelligence
 //! - [`prompt`] - Dynamic prompt generation and context management
 //! - [`quality`] - Quality gate enforcement and remediation
+//! - [`reporting`] - Quality reporting and data export
 //! - [`testing`] - Testing infrastructure (traits, mocks, fixtures)
 //!
 //! # Example
@@ -44,6 +45,7 @@ pub mod error;
 pub mod narsil;
 pub mod prompt;
 pub mod quality;
+pub mod reporting;
 pub mod testing;
 
 // Re-export commonly used types
@@ -91,6 +93,9 @@ pub use analytics::{
 
 // Re-export bootstrap types
 pub use bootstrap::language::{Language, ParseLanguageError};
+
+// Re-export reporting types
+pub use reporting::{ExportFormat, QualityExporter, ReportConfig, ReportData, ReportGenerator};
 
 // TestFixture is only available in test builds
 #[cfg(test)]
