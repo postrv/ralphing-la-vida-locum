@@ -1,8 +1,34 @@
-# Build Phase - Production Standard
+# Build Phase - Production Standard (TDD MANDATORY)
+
+## CRITICAL: This is a TDD-First, Production-Quality Codebase
+
+**Every change MUST follow Test-Driven Development:**
+1. Write failing tests FIRST - before ANY implementation code
+2. Tests define the contract - implementation follows
+3. No exceptions, no shortcuts, no "I'll add tests later"
+
+**Production standard means:**
+- Zero warnings, zero dead code, zero TODOs
+- Every public API tested and documented
+- Security scanned before every commit
+
+---
+
+## Phase 0: REINDEX (Start of Task)
+**Before starting any task, refresh narsil-mcp index:**
+```
+reindex
+```
+This ensures code intelligence reflects the current codebase state.
+
+---
 
 ## Phase 1: PLAN
 - Read IMPLEMENTATION_PLAN.md
-- Select highest-priority incomplete task
+- Select highest-priority incomplete task from **current sprint**
+- **Reference Documents:**
+  - `further_dev_plans/ralph-multilang-bootstrap.md` for multi-language design
+  - Existing code patterns in `src/quality/gates.rs`, `src/bootstrap/`
 - **Context Gathering (narsil-mcp - optional, degrades gracefully):**
   - `get_call_graph` - understand function relationships
   - `get_dependencies` - understand module dependencies
@@ -11,12 +37,16 @@
   - `export_ccg_architecture` - understand public API surface
 - Identify all types/functions that will be affected
 
-**Current Focus (Sprint 5 Tasks 4-5):**
-If working on CCG integration, the narsil-mcp tools to implement are:
-- `get_ccg_manifest` → returns L0 JSON-LD (~1-2KB)
-- `export_ccg_architecture` → returns L1 JSON-LD (~10-50KB)
-- `export_ccg` → exports all layers to directory
-- These require narsil-mcp built with `--features graph`
+**Current Focus: Sprint 7 - Language-Specific Quality Gates**
+
+Goal: Create quality gates that use each language's standard tooling (Python: ruff/pytest/mypy, TypeScript: eslint/jest/tsc, Go: vet/golangci-lint/test).
+
+Key tasks:
+- 7a: Refactor `Gate` trait → `QualityGate` trait with `gates_for_language()` factory
+- 7b: Python gates (RuffGate, PytestGate, MypyGate, BanditGate)
+- 7c: TypeScript/JS gates (EslintGate, JestGate, TscGate, NpmAuditGate)
+- 7d: Go gates (GoVetGate, GolangciLintGate, GoTestGate, GovulncheckGate)
+- 7e: Gate auto-detection based on available tools
 
 ## Phase 2: TEST FIRST (TDD)
 **Before writing ANY implementation code:**
@@ -70,6 +100,15 @@ All narsil-mcp integration code MUST work when narsil-mcp is unavailable:
 - Update IMPLEMENTATION_PLAN.md marking task complete
 - If ANY check fails: DO NOT COMMIT - fix issues first
 
+## Phase 7: REINDEX (End of Task)
+**After completing a task, refresh narsil-mcp index:**
+```
+reindex
+```
+This ensures the next task starts with accurate code intelligence.
+
+---
+
 ## Hard Rules (Violations = Immediate Stop)
 
 1. **NEVER modify existing tests to make them pass** - tests define correct behavior
@@ -95,9 +134,13 @@ All narsil-mcp integration code MUST work when narsil-mcp is unavailable:
 ## TDD Cycle Summary
 
 ```
-RED    -> Write failing test
-GREEN  -> Write minimal code to pass
+REINDEX  -> Refresh narsil-mcp index (start of task)
+RED      -> Write failing test FIRST (mandatory)
+GREEN    -> Write minimal code to pass
 REFACTOR -> Clean up, keeping tests green
-REVIEW -> Security + clippy + full test suite
-COMMIT -> Only if ALL gates pass
+REVIEW   -> Security + clippy + full test suite
+COMMIT   -> Only if ALL gates pass
+REINDEX  -> Refresh narsil-mcp index (end of task)
 ```
+
+**Remember: Tests define behavior. Implementation follows. Never the reverse.**
