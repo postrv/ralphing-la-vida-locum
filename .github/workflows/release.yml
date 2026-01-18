@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Ralph ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          body: |
+            ## Ralph ${{ github.ref_name }}
+
+            See [CHANGELOG.md](https://github.com/postrv/ralphing-la-vida-locum/blob/main/CHANGELOG.md) for details.
+
+            ### Installation
+
+            **macOS (Apple Silicon)**
+            ```bash
+            curl -LO https://github.com/postrv/ralphing-la-vida-locum/releases/download/${{ github.ref_name }}/ralph-aarch64-apple-darwin.tar.gz
+            tar xzf ralph-aarch64-apple-darwin.tar.gz
+            sudo mv ralph /usr/local/bin/
+            ```
+
+            **macOS (Intel)**
+            ```bash
+            curl -LO https://github.com/postrv/ralphing-la-vida-locum/releases/download/${{ github.ref_name }}/ralph-x86_64-apple-darwin.tar.gz
+            tar xzf ralph-x86_64-apple-darwin.tar.gz
+            sudo mv ralph /usr/local/bin/
+            ```
+
+            **Linux**
+            ```bash
+            curl -LO https://github.com/postrv/ralphing-la-vida-locum/releases/download/${{ github.ref_name }}/ralph-x86_64-unknown-linux-gnu.tar.gz
+            tar xzf ralph-x86_64-unknown-linux-gnu.tar.gz
+            sudo mv ralph /usr/local/bin/
+            ```
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: ralph-x86_64-unknown-linux-gnu
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: ralph-x86_64-apple-darwin
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: ralph-aarch64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czvf ../../../${{ matrix.name }}.tar.gz ralph
+          cd ../../..
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ./${{ matrix.name }}.tar.gz
+          asset_name: ${{ matrix.name }}.tar.gz
+          asset_content_type: application/gzip

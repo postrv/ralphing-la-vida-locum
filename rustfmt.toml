@@ -1,0 +1,36 @@
+# Ralph rustfmt configuration
+# See: https://rust-lang.github.io/rustfmt/
+# Using stable options only
+
+# Edition to use for parsing
+edition = "2021"
+
+# Maximum line width
+max_width = 100
+
+# Use tabs instead of spaces (false = spaces)
+hard_tabs = false
+
+# Number of spaces per tab
+tab_spaces = 4
+
+# How to handle line breaks in function signatures
+fn_params_layout = "Tall"
+
+# Use field init shorthand if possible
+use_field_init_shorthand = true
+
+# Use try! macro for early returns
+use_try_shorthand = true
+
+# Indent style for chain method calls
+chain_width = 60
+
+# Reorder imports
+reorder_imports = true
+
+# Reorder modules
+reorder_modules = true
+
+# Remove nested parens
+remove_nested_parens = true
