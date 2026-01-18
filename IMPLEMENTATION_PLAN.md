@@ -6,6 +6,19 @@
 
 ---
 
+## NEXT STEPS (Start Here)
+
+**Ralph, do this NOW:**
+
+1. **`reindex`** - Refresh narsil-mcp index before starting
+2. **Start Sprint 7a** - Refactor `Gate` trait to `QualityGate` with `gates_for_language()` factory
+3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
+4. **`reindex`** - Refresh narsil-mcp index after completing
+
+**Current task:** Sprint 7a - QualityGate Trait Refactor
+
+---
+
 ## CRITICAL: TDD & Production Standards
 
 **All work MUST follow Test-Driven Development (TDD):**
@@ -20,88 +33,38 @@
 
 ---
 
-## Current Focus: Sprint 7 (Language-Specific Quality Gates)
-
-Ralph should work on **Sprint 7: Language-Specific Quality Gates** - extending quality enforcement to multiple languages.
-
-**Goal:** Create quality gates that use each language's standard tooling (Python: ruff/pytest/mypy, TypeScript: eslint/jest/tsc, Go: vet/golangci-lint/test).
-
-**Reference:** See `further_dev_plans/ralph-multilang-bootstrap.md` for full design.
-
----
-
 ## Sprint Overview
 
-| Sprint | Focus | Priority | Status |
-|--------|-------|----------|--------|
-| 1 | Task-Level State Machine | P0 | Complete |
-| 2 | Dynamic Prompt Generation | P0 | Complete |
-| 3 | Quality Gate Enforcement | P0 | Complete |
-| 4 | Checkpoint & Rollback Enhancement | P1 | Complete |
-| 5 | narsil-mcp Integration | P0 | Complete |
-| 6 | Multi-Language Detection | P0 | Complete |
-| 7 | Language-Specific Quality Gates | P0 | Pending |
-| 8 | Language-Specific Prompts | P0 | Pending |
-| 9 | Multi-Language CLI & Settings | P1 | Pending |
-| 10 | Polyglot & Advanced Features | P1 | Pending |
-| 11 | CCG-Aware Prompts | P2 | Pending |
-| 12 | Intelligent Retry with Decomposition | P1 | Complete |
-| 13 | Predictive Stagnation Prevention | P2 | Complete |
+| Sprint | Focus | Status |
+|--------|-------|--------|
+| 1-6 | Foundation (State Machine, Prompts, Gates, Checkpoints, narsil-mcp, Language Detection) | Complete |
+| **7** | **Language-Specific Quality Gates** | **IN PROGRESS** |
+| 8 | Language-Specific Prompts | Pending |
+| 9 | Multi-Language CLI & Settings | Pending |
+| 10 | Polyglot & Advanced Features | Pending |
+| 11 | CCG-Aware Prompts | Pending |
+| 12-13 | Retry & Stagnation Prevention | Complete |
 
 ---
 
-## Sprint 6: Multi-Language Detection (Priority: P0)
-
-**Goal:** Auto-detect project languages using file extensions and manifest files.
-
-### 6a. Language Enum & Extensions
-- [x] Create `Language` enum with all 32 narsil-mcp languages
-- [x] Implement `extensions()` method for each language
-- [x] Implement `manifest_files()` method for each language
-- [x] Add `Display` and `FromStr` traits
-- Files: `src/bootstrap/language.rs`
-- Acceptance: All languages have correct extensions and manifests
-
-### 6b. Language Detector
-- [x] Create `LanguageDetector` struct
-- [x] Implement file extension scanning (walkdir)
-- [x] Implement manifest file detection with confidence boost
-- [x] Calculate confidence scores
-- [x] Identify primary language
-- Files: `src/bootstrap/language_detector.rs`
-- Acceptance: Can detect Rust, Python, TypeScript, Go, Java projects
-
-### 6c. Detection Integration
-- [x] Integrate detector into `Bootstrap::run()`
-- [x] Display detected languages with confidence
-- [x] Pass languages to template generation
-- [x] Handle no-language-detected case
-- Files: `src/bootstrap/mod.rs`
-- Acceptance: `ralph bootstrap` shows detected languages
-
-### 6d. Detection Tests
-- [x] Test single-language detection (Rust, Python, TS, Go)
-- [x] Test polyglot detection
-- [x] Test confidence scoring
-- [x] Test edge cases (empty project, unknown files)
-- Files: `src/bootstrap/language_detector.rs` (tests module)
-- Acceptance: All detection scenarios tested
-
----
-
-## Sprint 7: Language-Specific Quality Gates (Priority: P0)
+## Sprint 7: Language-Specific Quality Gates (Priority: P0) - CURRENT
 
 **Goal:** Create quality gates that use each language's standard tooling.
 
-### 7a. QualityGate Trait Refactor
+**Reference:** `further_dev_plans/ralph-multilang-bootstrap.md` for full design.
+
+**Key existing code:** `src/quality/gates.rs` (current Rust-only `Gate` trait)
+
+### 7a. QualityGate Trait Refactor ← START HERE
 - [ ] Create `QualityGate` trait with `name()`, `run()`, `is_blocking()`, `remediation()`
-- [ ] Migrate existing Rust gates to trait
-- [ ] Create `gates_for_language()` factory function
-- Files: `src/quality/gates/mod.rs`
-- Acceptance: Trait-based gate system working for Rust
+- [ ] Migrate existing Rust gates (ClippyGate, TestGate, etc.) to new trait
+- [ ] Create `gates_for_language(Language) -> Vec<Box<dyn QualityGate>>` factory function
+- [ ] Add unit tests for trait and factory
+- Files: `src/quality/gates/mod.rs`, `src/quality/gates/rust.rs`
+- Acceptance: Trait-based gate system working for Rust, all existing tests pass
 
 ### 7b. Python Quality Gates
-- [ ] Implement `RuffGate` (with flake8 fallback)
+- [ ] Implement `RuffGate` (with flake8 fallback detection)
 - [ ] Implement `PytestGate`
 - [ ] Implement `MypyGate`
 - [ ] Implement `BanditGate` (security)
@@ -125,12 +88,12 @@ Ralph should work on **Sprint 7: Language-Specific Quality Gates** - extending q
 - Acceptance: Go projects get appropriate gates
 
 ### 7e. Gate Auto-Detection
-- [ ] Create `detect_available_gates()` function
-- [ ] Check tool availability before adding gate
+- [ ] Create `detect_available_gates(Language) -> Vec<Box<dyn QualityGate>>` function
+- [ ] Check tool availability (e.g., `which ruff`) before adding gate
 - [ ] Combine gates for polyglot projects
-- [ ] Always include narsil-mcp security if available
+- [ ] Always include narsil-mcp security gate if available
 - Files: `src/quality/gates/mod.rs`
-- Acceptance: Only available gates are used
+- Acceptance: Only available tools are used as gates
 
 ---
 
@@ -142,213 +105,81 @@ Ralph should work on **Sprint 7: Language-Specific Quality Gates** - extending q
 - [ ] Create `TemplateRegistry` struct
 - [ ] Implement `TemplateKind` enum (PromptBuild, ClaudeMd, etc.)
 - [ ] Load templates via `include_str!`
-- [ ] Implement `get()` with generic fallback
+- [ ] Implement `get(kind, language)` with generic fallback
 - Files: `src/bootstrap/templates/mod.rs`
-- Acceptance: Registry loads and returns templates
 
-### 8b. Python Templates
-- [ ] Create `templates/python/PROMPT_build.md`
-- [ ] Create `templates/python/CLAUDE.md`
-- [ ] Include ruff/pytest/mypy workflow
-- [ ] Include Python-specific hard rules
-- Files: `src/templates/python/`
-- Acceptance: Python projects get appropriate prompts
-
-### 8c. TypeScript Templates
-- [ ] Create `templates/typescript/PROMPT_build.md`
-- [ ] Create `templates/typescript/CLAUDE.md`
-- [ ] Include eslint/jest/tsc workflow
-- [ ] Include TS-specific hard rules (no `any`, etc.)
-- Files: `src/templates/typescript/`
-- Acceptance: TypeScript projects get appropriate prompts
-
-### 8d. Go Templates
-- [ ] Create `templates/go/PROMPT_build.md`
-- [ ] Create `templates/go/CLAUDE.md`
-- [ ] Include vet/golangci-lint/test workflow
-- [ ] Include Go-specific hard rules
-- Files: `src/templates/go/`
-- Acceptance: Go projects get appropriate prompts
-
-### 8e. Java Templates
-- [ ] Create `templates/java/PROMPT_build.md`
-- [ ] Create `templates/java/CLAUDE.md`
-- [ ] Include maven/gradle detection
-- [ ] Include checkstyle/spotbugs workflow
-- Files: `src/templates/java/`
-- Acceptance: Java projects get appropriate prompts
+### 8b-8e. Language Templates (Python, TypeScript, Go, Java)
+- [ ] Create `templates/{language}/PROMPT_build.md` for each
+- [ ] Create `templates/{language}/CLAUDE.md` for each
+- [ ] Include language-specific workflows and hard rules
+- Files: `src/templates/{python,typescript,go,java}/`
 
 ---
 
 ## Sprint 9: Multi-Language CLI & Settings (Priority: P1)
 
-**Goal:** CLI enhancements and language-specific permission settings.
-
 ### 9a. CLI Language Override
 - [ ] Add `--language` flag to bootstrap command
 - [ ] Support multiple `--language` flags for polyglot
 - [ ] Add `--detect-only` flag
-- [ ] Update help text
-- Files: `src/cli/bootstrap.rs`
-- Acceptance: Can override detected language
 
-### 9b. Python Settings Template
-- [ ] Create `templates/python/settings.json`
-- [ ] Allow pip, python, pytest, ruff, mypy, poetry, uv
-- [ ] Deny dangerous operations
-- Files: `src/templates/python/settings.json`
-- Acceptance: Python projects get safe permissions
-
-### 9c. TypeScript Settings Template
-- [ ] Create `templates/typescript/settings.json`
-- [ ] Allow npm, npx, yarn, pnpm, node, tsc, eslint
-- [ ] Deny npm publish and dangerous operations
-- Files: `src/templates/typescript/settings.json`
-- Acceptance: TS projects get safe permissions
-
-### 9d. Go Settings Template
-- [ ] Create `templates/go/settings.json`
-- [ ] Allow go, golangci-lint
-- [ ] Deny dangerous operations
-- Files: `src/templates/go/settings.json`
-- Acceptance: Go projects get safe permissions
+### 9b-9d. Language Settings Templates
+- [ ] Create `templates/{language}/settings.json` with safe permissions
+- Files: `src/templates/{python,typescript,go}/settings.json`
 
 ---
 
 ## Sprint 10: Polyglot & Advanced Features (Priority: P1)
 
-**Goal:** Support multi-language projects and narsil-mcp integration.
-
-### 10a. Polyglot Prompt Generation
-- [ ] Detect when multiple languages have >10% confidence
-- [ ] Generate combined PROMPT_build.md
-- [ ] Include per-language sections based on file type
-- [ ] Merge quality gates from all languages
-- Files: `src/bootstrap/mod.rs`
-- Acceptance: Polyglot projects get combined prompts
-
-### 10b. Language-Aware narsil-mcp Config
-- [ ] Generate appropriate `.mcp.json` for detected language
-- [ ] Select preset based on language (balanced vs full)
-- [ ] Configure language-specific analyzers
-- Files: `src/bootstrap/mod.rs`
-- Acceptance: narsil-mcp config matches project language
-
-### 10c. Additional Language Templates
-- [ ] Add Ruby templates (rubocop, rspec, brakeman)
-- [ ] Add PHP templates (phpstan, phpunit)
-- [ ] Add C# templates (dotnet format/test/audit)
-- [ ] Add generic fallback template
-- Files: `src/templates/{ruby,php,csharp,generic}/`
-- Acceptance: Additional languages supported
+- [ ] Detect polyglot projects (multiple languages >10% confidence)
+- [ ] Generate combined prompts with per-language sections
+- [ ] Language-aware narsil-mcp config generation
+- [ ] Additional language templates (Ruby, PHP, C#, generic fallback)
 
 ---
 
 ## Sprint 11: CCG-Aware Prompts (Priority: P2)
 
-**Goal:** Use CCG information to guide autonomous coding decisions.
-
-### 11a. CCG Constraint Loading
 - [ ] Parse CCG constraint specifications
-- [ ] Support basic constraints (noDirectCalls, maxComplexity)
-- [ ] Validate constraint syntax
-- [ ] Store constraints for reference
-- Files: `src/narsil/ccg.rs`
-- Acceptance: Can load and parse constraints
-
-### 11b. Constraint-Aware Prompts
-- [ ] Inject relevant constraints into prompts
-- [ ] Warn when working on constrained code
-- [ ] Suggest constraint-compliant approaches
-- Files: `src/prompt/builder.rs`
-- Acceptance: Prompts reference relevant constraints
-
-### 11c. Constraint Verification
-- [ ] Verify changes satisfy constraints after implementation
-- [ ] Report constraint violations in quality gate
-- [ ] Track compliance metrics
-- Files: `src/quality/gates.rs`
-- Acceptance: Changes verified against constraints
+- [ ] Inject constraints into prompts
+- [ ] Verify changes satisfy constraints
 
 ---
 
-## Completed Sprints (Summary)
+## Completed Sprints (Reference Only)
 
-### Sprint 1: Task-Level State Machine
-Track individual tasks through a state machine for intelligent task selection.
-- Core task tracker with state transitions
-- IMPLEMENTATION_PLAN.md parsing
-- Progress recording and persistence
-
-### Sprint 2: Dynamic Prompt Generation
-Context-aware prompt generation replacing static templates.
-- Prompt builder with fluent API
-- Task, error, and quality context injection
-- Anti-pattern detection
-
-### Sprint 3: Quality Gate Enforcement
-Hard enforcement of quality gates with remediation prompts.
-- Clippy, test, no-allow, no-TODO gates
-- Security gate via narsil-mcp
-- Remediation prompt generation
-
-### Sprint 4: Checkpoint & Rollback Enhancement
-Semantic checkpoints with quality metrics and regression rollback.
-- Enhanced checkpoint structure with metrics
-- Regression detection and automatic rollback
-- Rollback decision logic
-
-### Sprint 5: narsil-mcp Integration
-Deep integration with narsil-mcp for code intelligence.
-- MCP client foundation with graceful degradation
-- Security scan integration
-- Code intelligence queries (call graph, references, dependencies)
-- CCG loading (L0-L2 layers)
-- Intelligence-informed prompts
-
-### Sprint 12: Intelligent Retry with Decomposition
-Automatic task decomposition and retry with focused guidance.
-- Failure classification
-- Recovery strategy generation
-- Task decomposition
-- Focused retry prompts
-
-### Sprint 13: Predictive Stagnation Prevention
-Detect patterns that predict stagnation and intervene early.
-- Pattern detection (repeated touches, error repetition)
-- Risk score calculation
-- Preventive actions
+| Sprint | What Was Built |
+|--------|----------------|
+| 1 | Task tracker with state machine, IMPLEMENTATION_PLAN.md parsing |
+| 2 | Prompt builder with fluent API, context injection |
+| 3 | Quality gates (Clippy, Test, NoAllow, NoTodo, Security) |
+| 4 | Checkpoint system with regression detection and rollback |
+| 5 | narsil-mcp client with graceful degradation, CCG support |
+| 6 | Language enum (32 languages), LanguageDetector with confidence scoring |
+| 12 | Failure classification, task decomposition, focused retry |
+| 13 | Stagnation pattern detection, risk scoring, preventive actions |
 
 ---
 
-## Quality Standards (Production-Grade)
+## Quality Gates (Must Pass Before Commit)
 
-**Task Lifecycle:**
-1. `reindex` - Start with fresh code intelligence
-2. Write tests FIRST (TDD mandatory)
-3. Implement, refactor, review
-4. Pass all gates, commit
-5. `reindex` - End with updated index
-
-**Before marking a task complete:**
-
-1. **TDD**: Tests were written BEFORE implementation
-2. **Compilation**: `cargo check` passes with no warnings
-3. **Clippy**: `cargo clippy --all-targets -- -D warnings` passes
-4. **Tests**: `cargo test` passes with all new tests
-5. **Coverage**: New code has test coverage
-6. **Docs**: Public functions have doc comments
-7. **Security**: No new security issues (via narsil-mcp if available)
-8. **Reindex**: narsil-mcp index refreshed after changes
+```
+[ ] reindex                                    (start of task)
+[ ] Tests written BEFORE implementation        (TDD verified)
+[ ] cargo clippy --all-targets -- -D warnings  (0 warnings)
+[ ] cargo test                                  (all pass)
+[ ] No #[allow(...)] annotations added
+[ ] No TODO/FIXME comments in new code
+[ ] reindex                                    (end of task)
+```
 
 ---
 
 ## Notes
 
 - Ralph reads this file each iteration to select the next task
-- Checkbox completion (`[x]`) signals progress to the loop
-- Tasks are prioritized top-to-bottom within each section
-- Blocked tasks should document why and suggest resolution
+- Checkbox completion (`[x]`) signals progress
+- Tasks are prioritized top-to-bottom within each sprint
 - Reference `further_dev_plans/ralph-multilang-bootstrap.md` for detailed design
 
-<!-- When the current sprint is done, add the marker: ALL TASKS COMPLETE -->
+<!-- When Sprint 7 is done, update NEXT STEPS to point to Sprint 8 -->
