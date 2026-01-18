@@ -461,7 +461,10 @@ mod tests {
     #[test]
     fn test_javascript_extensions() {
         let exts = Language::JavaScript.extensions();
-        assert!(exts.contains(&".js"), "JavaScript should have .js extension");
+        assert!(
+            exts.contains(&".js"),
+            "JavaScript should have .js extension"
+        );
         assert!(
             exts.contains(&".jsx"),
             "JavaScript should have .jsx extension"
@@ -535,7 +538,10 @@ mod tests {
     #[test]
     fn test_swift_extensions() {
         let exts = Language::Swift.extensions();
-        assert!(exts.contains(&".swift"), "Swift should have .swift extension");
+        assert!(
+            exts.contains(&".swift"),
+            "Swift should have .swift extension"
+        );
     }
 
     #[test]
@@ -548,7 +554,10 @@ mod tests {
     #[test]
     fn test_scala_extensions() {
         let exts = Language::Scala.extensions();
-        assert!(exts.contains(&".scala"), "Scala should have .scala extension");
+        assert!(
+            exts.contains(&".scala"),
+            "Scala should have .scala extension"
+        );
     }
 
     #[test]
@@ -690,7 +699,10 @@ mod tests {
     #[test]
     fn test_scala_manifests() {
         let manifests = Language::Scala.manifest_files();
-        assert!(manifests.contains(&"build.sbt"), "Scala should have build.sbt");
+        assert!(
+            manifests.contains(&"build.sbt"),
+            "Scala should have build.sbt"
+        );
     }
 
     #[test]

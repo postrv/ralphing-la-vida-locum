@@ -257,7 +257,11 @@ impl QualityMetrics {
     /// assert!(current.is_worse_than(&baseline, &thresholds));
     /// ```
     #[must_use]
-    pub fn is_worse_than(&self, baseline: &QualityMetrics, thresholds: &RegressionThresholds) -> bool {
+    pub fn is_worse_than(
+        &self,
+        baseline: &QualityMetrics,
+        thresholds: &RegressionThresholds,
+    ) -> bool {
         // Check absolute regressions
         if self.clippy_warnings > baseline.clippy_warnings + thresholds.max_clippy_increase {
             return true;
@@ -406,13 +410,13 @@ pub struct RegressionThresholds {
 impl Default for RegressionThresholds {
     fn default() -> Self {
         Self {
-            max_clippy_increase: 0,          // Zero tolerance for new warnings
-            max_test_failures_increase: 0,   // Zero tolerance for new failures
-            max_security_increase: 0,        // Zero tolerance for security issues
-            max_allow_increase: 0,           // Zero tolerance for #[allow]
+            max_clippy_increase: 0,           // Zero tolerance for new warnings
+            max_test_failures_increase: 0,    // Zero tolerance for new failures
+            max_security_increase: 0,         // Zero tolerance for security issues
+            max_allow_increase: 0,            // Zero tolerance for #[allow]
             max_test_pass_rate_drop_pct: 5.0, // Allow 5% drop (for test refactoring)
-            max_coverage_drop_pct: 5.0,      // Allow 5% coverage drop
-            rollback_threshold_score: 50.0,  // Rollback if regression score >= 50
+            max_coverage_drop_pct: 5.0,       // Allow 5% coverage drop
+            rollback_threshold_score: 50.0,   // Rollback if regression score >= 50
         }
     }
 }
@@ -648,12 +652,7 @@ impl Checkpoint {
 
         format!(
             "{}:{:.8} - {} (iter {}){}{}",
-            self.id,
-            self.git_hash,
-            self.description,
-            self.iteration,
-            verified_marker,
-            tags_str
+            self.id, self.git_hash, self.description, self.iteration, verified_marker, tags_str
         )
     }
 }
@@ -925,14 +924,8 @@ mod tests {
 
     #[test]
     fn test_checkpoint_with_task_tracker_state() {
-        let checkpoint = Checkpoint::new(
-            "Test",
-            "abc123",
-            "main",
-            QualityMetrics::new(),
-            1,
-        )
-        .with_task_tracker_state(r#"{"tasks": []}"#);
+        let checkpoint = Checkpoint::new("Test", "abc123", "main", QualityMetrics::new(), 1)
+            .with_task_tracker_state(r#"{"tasks": []}"#);
 
         assert_eq!(
             checkpoint.task_tracker_state,
@@ -942,8 +935,8 @@ mod tests {
 
     #[test]
     fn test_checkpoint_mark_verified() {
-        let checkpoint = Checkpoint::new("Test", "abc", "main", QualityMetrics::new(), 1)
-            .mark_verified();
+        let checkpoint =
+            Checkpoint::new("Test", "abc", "main", QualityMetrics::new(), 1).mark_verified();
 
         assert!(checkpoint.verified);
     }
@@ -966,8 +959,12 @@ mod tests {
             .with_files_modified(vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]);
 
         assert_eq!(checkpoint.files_modified.len(), 2);
-        assert!(checkpoint.files_modified.contains(&"src/lib.rs".to_string()));
-        assert!(checkpoint.files_modified.contains(&"src/main.rs".to_string()));
+        assert!(checkpoint
+            .files_modified
+            .contains(&"src/lib.rs".to_string()));
+        assert!(checkpoint
+            .files_modified
+            .contains(&"src/main.rs".to_string()));
     }
 
     #[test]
@@ -989,9 +986,15 @@ mod tests {
 
     #[test]
     fn test_checkpoint_summary() {
-        let checkpoint = Checkpoint::new("All tests pass", "abc123def", "main", QualityMetrics::new(), 5)
-            .mark_verified()
-            .with_tag("milestone");
+        let checkpoint = Checkpoint::new(
+            "All tests pass",
+            "abc123def",
+            "main",
+            QualityMetrics::new(),
+            5,
+        )
+        .mark_verified()
+        .with_tag("milestone");
 
         let summary = checkpoint.summary();
         assert!(summary.contains("abc123de"));

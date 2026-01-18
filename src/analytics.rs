@@ -145,7 +145,11 @@ impl Analytics {
     }
 
     /// Build a session summary from events
-    fn build_session_summary(&self, session_id: &str, events: &[&AnalyticsEvent]) -> SessionSummary {
+    fn build_session_summary(
+        &self,
+        session_id: &str,
+        events: &[&AnalyticsEvent],
+    ) -> SessionSummary {
         let mut summary = SessionSummary {
             session_id: session_id.to_string(),
             started_at: None,
@@ -171,7 +175,8 @@ impl Analytics {
                 }
                 "iteration" => {
                     summary.iterations += 1;
-                    if let Some(stagnation) = event.data.get("stagnation").and_then(|v| v.as_u64()) {
+                    if let Some(stagnation) = event.data.get("stagnation").and_then(|v| v.as_u64())
+                    {
                         if stagnation > 0 {
                             summary.stagnations += 1;
                         }
@@ -202,10 +207,7 @@ impl Analytics {
             return;
         }
 
-        println!(
-            "\n{} Recent Sessions",
-            "Analytics:".cyan().bold()
-        );
+        println!("\n{} Recent Sessions", "Analytics:".cyan().bold());
         println!("{}", "─".repeat(60));
 
         for (i, session) in sessions.iter().enumerate() {
@@ -230,9 +232,7 @@ impl Analytics {
             println!("   Mode: {} | Duration: {}", mode, duration);
             println!(
                 "   Iterations: {} | Stagnations: {} | Errors: {}",
-                session.iterations,
-                session.stagnations,
-                session.errors
+                session.iterations, session.stagnations, session.errors
             );
 
             if session.docs_drift_events > 0 {
@@ -374,7 +374,10 @@ impl Analytics {
         let avg_security = total_security as f32 / count as f32;
 
         // Calculate average test pass rate (only for snapshots with tests)
-        let test_rates: Vec<f32> = snapshots.iter().filter_map(|s| s.test_pass_rate()).collect();
+        let test_rates: Vec<f32> = snapshots
+            .iter()
+            .filter_map(|s| s.test_pass_rate())
+            .collect();
         let avg_test_pass_rate = if test_rates.is_empty() {
             None
         } else {
@@ -397,7 +400,8 @@ impl Analytics {
         };
 
         // Determine overall trend
-        let overall = Self::calculate_trend_direction(clippy_delta, test_failures_delta, security_delta);
+        let overall =
+            Self::calculate_trend_direction(clippy_delta, test_failures_delta, security_delta);
 
         Ok(QualityTrend {
             overall,
@@ -643,7 +647,11 @@ mod tests {
         let analytics = Analytics::new(temp.path().to_path_buf());
 
         analytics
-            .log_event("test-session", "test_event", serde_json::json!({"foo": "bar"}))
+            .log_event(
+                "test-session",
+                "test_event",
+                serde_json::json!({"foo": "bar"}),
+            )
             .unwrap();
 
         let events = analytics.read_events().unwrap();
@@ -658,11 +666,19 @@ mod tests {
         let analytics = Analytics::new(temp.path().to_path_buf());
 
         analytics
-            .log_event("session1", "session_start", serde_json::json!({"mode": "build"}))
+            .log_event(
+                "session1",
+                "session_start",
+                serde_json::json!({"mode": "build"}),
+            )
             .unwrap();
 
         analytics
-            .log_event("session1", "iteration", serde_json::json!({"stagnation": 0}))
+            .log_event(
+                "session1",
+                "iteration",
+                serde_json::json!({"stagnation": 0}),
+            )
             .unwrap();
 
         analytics

@@ -121,7 +121,7 @@ fn test_error_aggregator() {
 
     let errors = aggregator.sorted_by_frequency();
     assert_eq!(errors.len(), 2); // Aggregated to 2 unique codes
-    // E0308 should be first (2 occurrences)
+                                 // E0308 should be first (2 occurrences)
     assert_eq!(errors[0].occurrence_count, 2);
 }
 
@@ -212,7 +212,11 @@ fn test_dynamic_prompt_builder() {
     let builder = DynamicPromptBuilder::new(templates);
 
     let context = PromptContext::new()
-        .with_current_task(CurrentTaskContext::new("1", "Test", TaskPhase::Implementation))
+        .with_current_task(CurrentTaskContext::new(
+            "1",
+            "Test",
+            TaskPhase::Implementation,
+        ))
         .with_session_stats(SessionStats::new(5, 2, 100));
 
     let prompt = builder.build("build", &context);
@@ -327,7 +331,11 @@ fn test_prompt_assembler_full_workflow() {
     let mut assembler = PromptAssembler::new();
 
     // Set up context
-    assembler.set_current_task("2.1", "Implement dynamic prompts", TaskPhase::Implementation);
+    assembler.set_current_task(
+        "2.1",
+        "Implement dynamic prompts",
+        TaskPhase::Implementation,
+    );
     assembler.update_task_completion(50);
     assembler.update_task_files(vec!["src/prompt/mod.rs".to_string()]);
 
@@ -434,11 +442,15 @@ fn test_prompt_assembler_all_modes() {
     let assembler = PromptAssembler::new();
 
     // Build mode
-    let build_prompt = assembler.build_prompt("build").expect("build should succeed");
+    let build_prompt = assembler
+        .build_prompt("build")
+        .expect("build should succeed");
     assert!(build_prompt.contains("Build Phase"));
 
     // Debug mode
-    let debug_prompt = assembler.build_prompt("debug").expect("debug should succeed");
+    let debug_prompt = assembler
+        .build_prompt("debug")
+        .expect("debug should succeed");
     assert!(debug_prompt.contains("Debug Phase"));
 
     // Plan mode

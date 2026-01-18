@@ -232,9 +232,11 @@ impl JestGate {
                                 .map(|s| s.lines().next().unwrap_or(s).to_string())
                                 .unwrap_or_else(|| "Test failed".to_string());
 
-                            let mut issue =
-                                GateIssue::new(IssueSeverity::Error, format!("{}: {}", assertion.title, message))
-                                    .with_code("jest_failure");
+                            let mut issue = GateIssue::new(
+                                IssueSeverity::Error,
+                                format!("{}: {}", assertion.title, message),
+                            )
+                            .with_code("jest_failure");
 
                             issue.file = Some(PathBuf::from(&test_result.name));
                             issues.push(issue);
@@ -759,9 +761,7 @@ Found {} critical and {} high severity vulnerabilities.
 - Consider alternative packages if no fix is available
 - Add to allow-list only if vulnerability doesn't apply to your use case
 "#,
-            critical,
-            high,
-            fixable
+            critical, high, fixable
         )
     }
 }
@@ -1000,8 +1000,8 @@ FAIL src/foo.test.ts
     #[test]
     fn test_jest_gate_remediation() {
         let gate = JestGate::new();
-        let issues = vec![GateIssue::new(IssueSeverity::Error, "Test failed")
-            .with_code("jest_failure")];
+        let issues =
+            vec![GateIssue::new(IssueSeverity::Error, "Test failed").with_code("jest_failure")];
         let remediation = gate.remediation(&issues);
         assert!(remediation.contains("Test Failures"));
         assert!(remediation.contains("1 test(s) failed"));
@@ -1154,8 +1154,7 @@ src/utils.ts(20,1): error TS2304: Cannot find name 'foo'."#;
         let gate = NpmAuditGate::new();
         let issues = vec![
             GateIssue::new(IssueSeverity::Critical, "critical issue"),
-            GateIssue::new(IssueSeverity::Error, "high issue")
-                .with_code("npm-fix-available"),
+            GateIssue::new(IssueSeverity::Error, "high issue").with_code("npm-fix-available"),
         ];
         let remediation = gate.remediation(&issues);
         assert!(remediation.contains("npm Audit"));

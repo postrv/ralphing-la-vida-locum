@@ -76,7 +76,8 @@ impl<'a> CodeIntelligenceBuilder<'a> {
     /// ```
     #[must_use]
     pub fn for_functions(mut self, functions: &[&str]) -> Self {
-        self.functions.extend(functions.iter().map(|s| s.to_string()));
+        self.functions
+            .extend(functions.iter().map(|s| s.to_string()));
         self
     }
 
@@ -451,8 +452,7 @@ mod tests {
     #[test]
     fn test_builder_returns_empty_when_unavailable() {
         // Use a non-existent binary path to ensure unavailability
-        let config = NarsilConfig::new(".")
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(".").with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         let result = CodeIntelligenceBuilder::new(&client)

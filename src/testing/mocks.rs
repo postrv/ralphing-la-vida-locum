@@ -108,12 +108,7 @@ impl GitOperations for MockGitOperations {
         if self.push_succeeds {
             Ok(())
         } else {
-            bail!(
-                "{}",
-                self.push_error
-                    .as_deref()
-                    .unwrap_or("Push failed")
-            )
+            bail!("{}", self.push_error.as_deref().unwrap_or("Push failed"))
         }
     }
 }
@@ -511,9 +506,8 @@ mod tests {
 
     #[test]
     fn test_mock_quality_security_scan() {
-        let checker = MockQualityChecker::new().with_security_findings(vec![
-            "SQL injection in db.rs:42".to_string(),
-        ]);
+        let checker = MockQualityChecker::new()
+            .with_security_findings(vec!["SQL injection in db.rs:42".to_string()]);
         let result = checker.run_security_scan().unwrap();
         assert!(!result.passed);
         assert_eq!(result.failures.len(), 1);
@@ -521,9 +515,8 @@ mod tests {
 
     #[test]
     fn test_mock_quality_allow_annotations() {
-        let checker = MockQualityChecker::new().with_allow_annotations(vec![
-            "src/lib.rs:10: #[allow(dead_code)]".to_string(),
-        ]);
+        let checker = MockQualityChecker::new()
+            .with_allow_annotations(vec!["src/lib.rs:10: #[allow(dead_code)]".to_string()]);
         let result = checker.check_no_allow_annotations().unwrap();
         assert!(!result.passed);
         assert_eq!(result.warnings.len(), 1);

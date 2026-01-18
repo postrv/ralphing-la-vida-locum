@@ -189,7 +189,11 @@ impl ArchiveManager {
     }
 
     /// Archive deprecated decision records
-    fn archive_deprecated_decisions(&self, result: &mut ArchiveResult, dry_run: bool) -> Result<()> {
+    fn archive_deprecated_decisions(
+        &self,
+        result: &mut ArchiveResult,
+        dry_run: bool,
+    ) -> Result<()> {
         let decisions_dir = self.docs_dir().join("decisions");
 
         if !decisions_dir.exists() {
@@ -370,7 +374,11 @@ mod tests {
         std::fs::create_dir_all(temp.path().join(".archive/docs")).unwrap();
         std::fs::create_dir_all(temp.path().join(".archive/decisions")).unwrap();
         std::fs::write(temp.path().join(".archive/docs/old.md"), "archived doc").unwrap();
-        std::fs::write(temp.path().join(".archive/decisions/adr-001.md"), "archived adr").unwrap();
+        std::fs::write(
+            temp.path().join(".archive/decisions/adr-001.md"),
+            "archived adr",
+        )
+        .unwrap();
 
         let manager = ArchiveManager::new(temp.path().to_path_buf(), 90);
         let stats = manager.get_stats().unwrap();
@@ -433,8 +441,9 @@ mod tests {
         std::fs::create_dir_all(temp.path().join("docs/decisions")).unwrap();
         std::fs::write(
             temp.path().join("docs/decisions/adr-001.md"),
-            "# ADR-001\n\n## Status: Deprecated\n\n## Context\nOld decision"
-        ).unwrap();
+            "# ADR-001\n\n## Status: Deprecated\n\n## Context\nOld decision",
+        )
+        .unwrap();
 
         let manager = ArchiveManager::new(temp.path().to_path_buf(), 365); // High threshold
         let result = manager.run(false).unwrap();

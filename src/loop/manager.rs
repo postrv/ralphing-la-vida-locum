@@ -43,25 +43,25 @@ use super::retry::{
     RecoveryStrategy, RetryAttempt, RetryConfig, RetryHistory, SubTask, TaskDecomposer,
 };
 use super::state::{LoopMode, LoopState};
-use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransition, ValidationResult};
-use ralph::Analytics;
+use super::task_tracker::{
+    TaskState, TaskTracker, TaskTrackerConfig, TaskTransition, ValidationResult,
+};
 use crate::supervisor::predictor::{
-    InterventionThresholds, PreventiveAction, PredictorConfig, RiskSignals, RiskWeights,
+    InterventionThresholds, PredictorConfig, PreventiveAction, RiskSignals, RiskWeights,
     StagnationPredictor,
 };
 use crate::supervisor::{Supervisor, SupervisorVerdict};
+use anyhow::{bail, Context, Result};
+use colored::Colorize;
 use ralph::checkpoint::{
     CheckpointManager, CheckpointManagerConfig, QualityMetrics, RegressionThresholds,
     RollbackManager,
 };
-use anyhow::{bail, Context, Result};
-use colored::Colorize;
 use ralph::config::ProjectConfig;
-use ralph::prompt::{
-    AssemblerConfig, AttemptOutcome, ErrorSeverity, PromptAssembler, TaskPhase,
-};
+use ralph::prompt::{AssemblerConfig, AttemptOutcome, ErrorSeverity, PromptAssembler, TaskPhase};
 use ralph::quality::EnforcerConfig;
 use ralph::testing::{ClaudeProcess, FileSystem, GitOperations, QualityChecker};
+use ralph::Analytics;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
@@ -375,13 +375,14 @@ impl LoopManager {
             .with_timeout_secs(3600)
             .with_max_quality_failures(3)
             .without_auto_save()  // Disable first
-            .with_auto_save(true);  // Then re-enable for production
+            .with_auto_save(true); // Then re-enable for production
         let tracker_path = TaskTracker::default_path(&cfg.project_dir);
         let mut task_tracker = TaskTracker::load_or_new(&tracker_path, tracker_config);
 
         // Parse the implementation plan from the injected filesystem
         let plan_content = match deps.fs.try_read() {
-            Ok(fs) => fs.read_file("IMPLEMENTATION_PLAN.md")
+            Ok(fs) => fs
+                .read_file("IMPLEMENTATION_PLAN.md")
                 .context("Failed to read IMPLEMENTATION_PLAN.md")?,
             Err(_) => {
                 let fs = deps.fs.blocking_read();
@@ -469,8 +470,7 @@ impl LoopManager {
         )?;
 
         // Get initial plan and commit hashes
-        self.state
-            .update_plan_hash(self.get_plan_hash()?);
+        self.state.update_plan_hash(self.get_plan_hash()?);
         self.state
             .update_commit_hash(self.get_commit_hash().unwrap_or_default());
 
@@ -783,17 +783,28 @@ impl LoopManager {
                                         self.prompt_assembler.update_clippy_status(true, vec![]);
                                         if let Some(ref task_id) = current_task_id {
                                             // Update review with passing result
-                                            match self.task_tracker.update_review(task_id, "clippy", true) {
-                                                Ok(_) => debug!("Quality review passed for {}", task_id),
+                                            match self
+                                                .task_tracker
+                                                .update_review(task_id, "clippy", true)
+                                            {
+                                                Ok(_) => {
+                                                    debug!("Quality review passed for {}", task_id)
+                                                }
                                                 Err(e) => debug!("Could not update review: {}", e),
                                             }
 
                                             // Check if all checkboxes are complete
-                                            if let Some(task) = self.task_tracker.get_task(task_id) {
-                                                let all_checked = task.checkboxes.iter().all(|(_, checked)| *checked);
+                                            if let Some(task) = self.task_tracker.get_task(task_id)
+                                            {
+                                                let all_checked = task
+                                                    .checkboxes
+                                                    .iter()
+                                                    .all(|(_, checked)| *checked);
                                                 if all_checked && !task.checkboxes.is_empty() {
                                                     // Complete the task
-                                                    if let Err(e) = self.task_tracker.complete_task(task_id) {
+                                                    if let Err(e) =
+                                                        self.task_tracker.complete_task(task_id)
+                                                    {
                                                         debug!("Could not complete task: {}", e);
                                                     } else {
                                                         println!(
@@ -802,7 +813,9 @@ impl LoopManager {
                                                             task_id
                                                         );
                                                         // Reset retry state for the completed task
-                                                        self.reset_task_retries(&task_id.to_string());
+                                                        self.reset_task_retries(
+                                                            &task_id.to_string(),
+                                                        );
                                                     }
                                                 }
                                             }
@@ -810,8 +823,12 @@ impl LoopManager {
                                     }
                                     Ok(result) => {
                                         // Quality failed - update review with failure
-                                        debug!("Quality check failed: {} warnings", result.warnings.len());
-                                        self.prompt_assembler.update_clippy_status(false, result.warnings.clone());
+                                        debug!(
+                                            "Quality check failed: {} warnings",
+                                            result.warnings.len()
+                                        );
+                                        self.prompt_assembler
+                                            .update_clippy_status(false, result.warnings.clone());
 
                                         // Log warning locations for debugging
                                         for warning in &result.warnings {
@@ -822,13 +839,17 @@ impl LoopManager {
                                                     .split(':')
                                                     .next()
                                                     .and_then(|s| s.parse::<u32>().ok());
-                                                let location = Self::create_failure_location(file, line);
+                                                let location =
+                                                    Self::create_failure_location(file, line);
                                                 debug!("Quality warning at {}", location);
                                             }
                                         }
 
                                         if let Some(ref task_id) = current_task_id {
-                                            match self.task_tracker.update_review(task_id, "clippy", false) {
+                                            match self
+                                                .task_tracker
+                                                .update_review(task_id, "clippy", false)
+                                            {
                                                 Ok(blocked) if blocked => {
                                                     println!(
                                                         "   {} Task {} blocked due to quality failures",
@@ -836,7 +857,10 @@ impl LoopManager {
                                                         task_id
                                                     );
                                                 }
-                                                Ok(_) => debug!("Quality review failed for {}, will retry", task_id),
+                                                Ok(_) => debug!(
+                                                    "Quality review failed for {}, will retry",
+                                                    task_id
+                                                ),
                                                 Err(e) => debug!("Could not update review: {}", e),
                                             }
                                         }
@@ -917,10 +941,8 @@ impl LoopManager {
 
                                 // Check if failure is atomic or needs decomposition
                                 if !self.is_atomic_failure(&failure) {
-                                    let subtasks = self.decompose_task_for_failure(
-                                        &task_id_str,
-                                        &failure,
-                                    );
+                                    let subtasks =
+                                        self.decompose_task_for_failure(&task_id_str, &failure);
                                     debug!(
                                         "Task decomposed into {} subtasks for recovery",
                                         subtasks.len()
@@ -962,7 +984,10 @@ impl LoopManager {
                             // Record failed attempt in prompt assembler
                             self.prompt_assembler.record_attempt(
                                 AttemptOutcome::CompilationError,
-                                Some(&format!("{} mode, {} retries", self.state.mode, retry_count)),
+                                Some(&format!(
+                                    "{} mode, {} retries",
+                                    self.state.mode, retry_count
+                                )),
                                 vec![format!("Exit code: {}", exit_code)],
                             );
                             self.prompt_assembler.add_error(
@@ -1057,7 +1082,9 @@ impl LoopManager {
 
                 // Create checkpoint if progress was made and quality is good
                 if made_progress && quality.warning_count == 0 {
-                    let commit_hash = self.get_commit_hash().unwrap_or_else(|_| "unknown".to_string());
+                    let commit_hash = self
+                        .get_commit_hash()
+                        .unwrap_or_else(|_| "unknown".to_string());
                     let description = format!(
                         "Iteration {} - {} tests, 0 warnings",
                         self.state.iteration, quality.test_count
@@ -1530,7 +1557,11 @@ impl LoopManager {
                 }
                 // Also try lookup by number
                 if let Some(task) = self.task_tracker.get_task_by_number(next_id.number()) {
-                    debug!("Task #{} found by number: {}", next_id.number(), task.id.title());
+                    debug!(
+                        "Task #{} found by number: {}",
+                        next_id.number(),
+                        task.id.title()
+                    );
                 }
             }
             if task_counts.all_done() || self.task_tracker.is_all_done() {
@@ -1570,15 +1601,15 @@ impl LoopManager {
     fn get_plan_hash(&self) -> Result<String> {
         let content = if let Some(deps) = &self.deps {
             // Use try_read to avoid blocking in async contexts
-            let fs = deps.fs.try_read().map_err(|_| {
-                anyhow::anyhow!("Could not acquire filesystem lock")
-            })?;
+            let fs = deps
+                .fs
+                .try_read()
+                .map_err(|_| anyhow::anyhow!("Could not acquire filesystem lock"))?;
             fs.read_file("IMPLEMENTATION_PLAN.md")
                 .context("Failed to read IMPLEMENTATION_PLAN.md")?
         } else {
             let plan_path = self.project_dir.join("IMPLEMENTATION_PLAN.md");
-            std::fs::read_to_string(&plan_path)
-                .context("Failed to read IMPLEMENTATION_PLAN.md")?
+            std::fs::read_to_string(&plan_path).context("Failed to read IMPLEMENTATION_PLAN.md")?
         };
         Ok(format!("{:x}", md5::compute(content.as_bytes())))
     }
@@ -1586,15 +1617,15 @@ impl LoopManager {
     /// Read the plan content from IMPLEMENTATION_PLAN.md.
     fn read_plan_content(&self) -> Result<String> {
         if let Some(deps) = &self.deps {
-            let fs = deps.fs.try_read().map_err(|_| {
-                anyhow::anyhow!("Could not acquire filesystem lock")
-            })?;
+            let fs = deps
+                .fs
+                .try_read()
+                .map_err(|_| anyhow::anyhow!("Could not acquire filesystem lock"))?;
             fs.read_file("IMPLEMENTATION_PLAN.md")
                 .context("Failed to read IMPLEMENTATION_PLAN.md")
         } else {
             let plan_path = self.project_dir.join("IMPLEMENTATION_PLAN.md");
-            std::fs::read_to_string(&plan_path)
-                .context("Failed to read IMPLEMENTATION_PLAN.md")
+            std::fs::read_to_string(&plan_path).context("Failed to read IMPLEMENTATION_PLAN.md")
         }
     }
 
@@ -1686,7 +1717,10 @@ impl LoopManager {
             }
             Err(e) => {
                 // Fall back to simple commit check on error
-                debug!("Progress evaluation failed ({}), falling back to commit check", e);
+                debug!(
+                    "Progress evaluation failed ({}), falling back to commit check",
+                    e
+                );
                 let commit_count = self.count_commits_since(&self.state.last_commit_hash);
                 if commit_count > 0 {
                     debug!("Progress detected: {} new commit(s)", commit_count);
@@ -1794,7 +1828,8 @@ impl LoopManager {
         error_output: &str,
         task_id: Option<&str>,
     ) -> Option<(RecoveryStrategy, String)> {
-        self.intelligent_retry.process_failure(error_output, task_id)
+        self.intelligent_retry
+            .process_failure(error_output, task_id)
     }
 
     /// Record a retry attempt in history.
@@ -1824,12 +1859,18 @@ impl LoopManager {
         let intelligent_summary = self.intelligent_retry.summary();
 
         // Include success rates for common strategies
-        let isolated_fix_rate = self.retry_history.success_rate(RecoveryStrategy::IsolatedFix);
+        let isolated_fix_rate = self
+            .retry_history
+            .success_rate(RecoveryStrategy::IsolatedFix);
         let test_first_rate = self.retry_history.success_rate(RecoveryStrategy::TestFirst);
 
         // Include success rates for common failure classes
-        let compile_error_rate = self.retry_history.class_success_rate(FailureClass::CompileError);
-        let test_failure_rate = self.retry_history.class_success_rate(FailureClass::TestFailure);
+        let compile_error_rate = self
+            .retry_history
+            .class_success_rate(FailureClass::CompileError);
+        let test_failure_rate = self
+            .retry_history
+            .class_success_rate(FailureClass::TestFailure);
 
         format!(
             "{}; {}; Strategy success: IsolatedFix={:.0}%, TestFirst={:.0}%; Class success: CompileError={:.0}%, TestFailure={:.0}%",
@@ -1897,7 +1938,10 @@ impl LoopManager {
     pub fn clear_resolved_failure(&mut self, error_output: &str) {
         let failure = self.failure_classifier().classify(error_output);
         self.intelligent_retry.clear_failure_history(&failure);
-        debug!("Cleared retry history for resolved failure: {}", failure.summary());
+        debug!(
+            "Cleared retry history for resolved failure: {}",
+            failure.summary()
+        );
     }
 
     /// Log retry status for diagnostics.
@@ -1933,7 +1977,11 @@ impl LoopManager {
         // Try to build dynamic prompt first, fall back to static file if needed
         let prompt = match self.prompt_assembler.build_prompt(mode_name) {
             Ok(dynamic_prompt) => {
-                debug!("Using dynamic prompt for mode: {} ({} chars)", mode_name, dynamic_prompt.len());
+                debug!(
+                    "Using dynamic prompt for mode: {} ({} chars)",
+                    mode_name,
+                    dynamic_prompt.len()
+                );
                 // Dynamic prompt already includes task context via {{TASK_CONTEXT}} marker
                 // No need to duplicate with task_tracker.get_context_summary()
                 dynamic_prompt
@@ -1944,9 +1992,10 @@ impl LoopManager {
 
                 let base_prompt = if let Some(deps) = &self.deps {
                     // Use try_read to avoid blocking in async contexts
-                    let fs = deps.fs.try_read().map_err(|_| {
-                        anyhow::anyhow!("Could not acquire filesystem lock")
-                    })?;
+                    let fs = deps
+                        .fs
+                        .try_read()
+                        .map_err(|_| anyhow::anyhow!("Could not acquire filesystem lock"))?;
                     let prompt_filename = self.state.mode.prompt_filename();
                     if !fs.exists(&prompt_filename) {
                         bail!("Prompt file not found: {}", prompt_path.display());
@@ -2103,7 +2152,10 @@ impl LoopManager {
                 // instead of hanging indefinitely
                 let push_result = AsyncCommand::new("git")
                     .args(["push", "origin", &branch])
-                    .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=10")
+                    .env(
+                        "GIT_SSH_COMMAND",
+                        "ssh -o BatchMode=yes -o ConnectTimeout=10",
+                    )
                     .current_dir(&self.project_dir)
                     .output()
                     .await;
@@ -2136,9 +2188,10 @@ impl LoopManager {
     fn is_complete(&self) -> Result<bool> {
         let content = if let Some(deps) = &self.deps {
             // Use try_read to avoid blocking in async contexts
-            let fs = deps.fs.try_read().map_err(|_| {
-                anyhow::anyhow!("Could not acquire filesystem lock")
-            })?;
+            let fs = deps
+                .fs
+                .try_read()
+                .map_err(|_| anyhow::anyhow!("Could not acquire filesystem lock"))?;
             fs.read_file("IMPLEMENTATION_PLAN.md")?
         } else {
             let plan_path = self.project_dir.join("IMPLEMENTATION_PLAN.md");
@@ -2266,9 +2319,7 @@ impl LoopManager {
     /// in long-running automation sessions.
     fn cleanup_lsp() {
         // Kill any stale rust-analyzer processes
-        let _ = Command::new("pkill")
-            .args(["-f", "rust-analyzer"])
-            .output();
+        let _ = Command::new("pkill").args(["-f", "rust-analyzer"]).output();
 
         // Give processes time to terminate
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -2398,8 +2449,13 @@ impl LoopManager {
 
             // Skip known important files
             let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if ["README.md", "IMPLEMENTATION_PLAN.md", "CLAUDE.md", "CHANGELOG.md"]
-                .contains(&filename)
+            if [
+                "README.md",
+                "IMPLEMENTATION_PLAN.md",
+                "CLAUDE.md",
+                "CHANGELOG.md",
+            ]
+            .contains(&filename)
             {
                 continue;
             }
@@ -2590,7 +2646,9 @@ mod tests {
     // Dependency Injection Tests
     // =========================================================================
 
-    use ralph::testing::{MockClaudeProcess, MockFileSystem, MockGitOperations, MockQualityChecker};
+    use ralph::testing::{
+        MockClaudeProcess, MockFileSystem, MockGitOperations, MockQualityChecker,
+    };
 
     fn create_test_deps() -> LoopDependencies {
         LoopDependencies {
@@ -2795,8 +2853,7 @@ mod tests {
             git: Arc::new(MockGitOperations::new()),
             claude: Arc::new(MockClaudeProcess::new().with_exit_code(0)),
             fs: Arc::new(RwLock::new(
-                MockFileSystem::new()
-                    .with_file("IMPLEMENTATION_PLAN.md", "# Plan"), // No static prompt file needed
+                MockFileSystem::new().with_file("IMPLEMENTATION_PLAN.md", "# Plan"), // No static prompt file needed
             )),
             quality: Arc::new(MockQualityChecker::new()),
         };
@@ -2806,7 +2863,11 @@ mod tests {
 
         // Should succeed using dynamic prompt generation
         let result = manager.run_claude_iteration().await;
-        assert!(result.is_ok(), "Expected Ok with dynamic prompt, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected Ok with dynamic prompt, got: {:?}",
+            result
+        );
         assert_eq!(result.unwrap(), 0);
     }
 
@@ -3020,7 +3081,11 @@ First task.
         let mut manager = LoopManager::with_deps(cfg, deps).unwrap();
 
         // Select and start task
-        let task_id = manager.task_tracker_mut().select_next_task().cloned().unwrap();
+        let task_id = manager
+            .task_tracker_mut()
+            .select_next_task()
+            .cloned()
+            .unwrap();
         manager.task_tracker_mut().start_task(&task_id).unwrap();
 
         // Verify task is in progress
@@ -3062,7 +3127,11 @@ Second task.
         let mut manager = LoopManager::with_deps(cfg, deps).unwrap();
 
         // Select, start, and complete task 1
-        let task_id = manager.task_tracker_mut().select_next_task().cloned().unwrap();
+        let task_id = manager
+            .task_tracker_mut()
+            .select_next_task()
+            .cloned()
+            .unwrap();
         manager.task_tracker_mut().start_task(&task_id).unwrap();
         manager.task_tracker_mut().complete_task(&task_id).unwrap();
 
@@ -3122,7 +3191,7 @@ Connect all components.
             } else if task_id.number() == 2 {
                 assert_eq!(task.checkboxes.len(), 2);
                 assert!(!task.checkboxes[0].1); // First unchecked
-                assert!(task.checkboxes[1].1);  // Second checked
+                assert!(task.checkboxes[1].1); // Second checked
             }
         }
     }

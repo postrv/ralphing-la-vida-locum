@@ -318,13 +318,7 @@ impl AntiPatternDetector {
                         consecutive_no_commit
                     ),
                 )
-                .with_evidence(
-                    files_modified
-                        .iter()
-                        .take(5)
-                        .cloned()
-                        .collect(),
-                )
+                .with_evidence(files_modified.iter().take(5).cloned().collect())
                 .with_severity(severity)
                 .with_remediation("Make incremental commits to save progress and enable rollback")
                 .with_persistence(persistence),
@@ -361,7 +355,9 @@ impl AntiPatternDetector {
                     ),
                 )
                 .with_severity(severity)
-                .with_remediation("Run `cargo test` to verify changes don't break existing functionality")
+                .with_remediation(
+                    "Run `cargo test` to verify changes don't break existing functionality",
+                )
                 .with_persistence(persistence),
             )
         } else {
@@ -447,12 +443,7 @@ impl AntiPatternDetector {
                         switches, seen_tasks_len
                     ),
                 )
-                .with_evidence(
-                    seen_tasks
-                        .iter()
-                        .map(|s| format!("Task: {}", s))
-                        .collect(),
-                )
+                .with_evidence(seen_tasks.iter().map(|s| format!("Task: {}", s)).collect())
                 .with_severity(AntiPatternSeverity::High)
                 .with_remediation("Focus on completing one task before starting another")
                 .with_persistence(persistence),
@@ -505,7 +496,9 @@ impl AntiPatternDetector {
                 )
                 .with_evidence(evidence)
                 .with_severity(severity)
-                .with_remediation("Try a different approach - the current strategy isn't resolving these errors")
+                .with_remediation(
+                    "Try a different approach - the current strategy isn't resolving these errors",
+                )
                 .with_persistence(persistence),
             )
         } else {
@@ -808,12 +801,10 @@ mod tests {
         let mut detector = AntiPatternDetector::new();
 
         // 2 iterations without commit
-        detector.add_iteration(
-            IterationSummary::new(1).with_files_modified(vec!["a.rs".to_string()]),
-        );
-        detector.add_iteration(
-            IterationSummary::new(2).with_files_modified(vec!["b.rs".to_string()]),
-        );
+        detector
+            .add_iteration(IterationSummary::new(1).with_files_modified(vec!["a.rs".to_string()]));
+        detector
+            .add_iteration(IterationSummary::new(2).with_files_modified(vec!["b.rs".to_string()]));
 
         // Then a commit
         detector.add_iteration(
@@ -823,9 +814,8 @@ mod tests {
         );
 
         // 1 more without commit
-        detector.add_iteration(
-            IterationSummary::new(4).with_files_modified(vec!["d.rs".to_string()]),
-        );
+        detector
+            .add_iteration(IterationSummary::new(4).with_files_modified(vec!["d.rs".to_string()]));
 
         let patterns = detector.detect();
         assert!(!patterns
@@ -960,7 +950,11 @@ mod tests {
             .find(|p| p.pattern_type == AntiPatternType::RepeatingErrors);
 
         assert!(pattern.is_some());
-        assert!(pattern.unwrap().evidence.iter().any(|e| e.contains("E0308")));
+        assert!(pattern
+            .unwrap()
+            .evidence
+            .iter()
+            .any(|e| e.contains("E0308")));
     }
 
     #[test]
@@ -1028,9 +1022,8 @@ mod tests {
         assert_eq!(pattern1.persistence_count, 1);
 
         // Add another iteration, persistence should increment
-        detector.add_iteration(
-            IterationSummary::new(4).with_files_modified(vec!["b.rs".to_string()]),
-        );
+        detector
+            .add_iteration(IterationSummary::new(4).with_files_modified(vec!["b.rs".to_string()]));
 
         let patterns2 = detector.detect();
         let pattern2 = patterns2

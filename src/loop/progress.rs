@@ -122,7 +122,11 @@ impl ProgressSignals {
             parts.push(format!("{}{}  tests", sign, self.tests_added));
         }
         if self.clippy_warnings_delta != 0 {
-            let sign = if self.clippy_warnings_delta > 0 { "+" } else { "" };
+            let sign = if self.clippy_warnings_delta > 0 {
+                "+"
+            } else {
+                ""
+            };
             parts.push(format!("{}{} warnings", sign, self.clippy_warnings_delta));
         }
 
@@ -828,10 +832,7 @@ impl ProgressTracker {
             tests_added: quality_signals.tests_added,
             test_pass_delta: 0, // Would need test execution to track
             clippy_warnings_delta: quality_signals.warnings_delta,
-            unique_file_touches: git_signals
-                .modified_files
-                .into_iter()
-                .collect(),
+            unique_file_touches: git_signals.modified_files.into_iter().collect(),
             repeated_edit_count: 0, // Would need iteration history
             exploration_breadth: self.calculate_exploration_breadth(&git_signals.categories),
         })

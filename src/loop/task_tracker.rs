@@ -109,16 +109,26 @@ impl TaskId {
         // Pattern: "Na. Title" (sprint subsection) or "N. [Phase X.Y: ]Title"
         let parts: Vec<&str> = stripped.splitn(2, ". ").collect();
         if parts.len() != 2 {
-            bail!("Invalid task header format: expected 'N. Title', got: {}", header);
+            bail!(
+                "Invalid task header format: expected 'N. Title', got: {}",
+                header
+            );
         }
 
         let number_part = parts[0];
         let rest = parts[1];
 
         // Check for subsection format (e.g., "7a", "10b")
-        let (number, subsection) = if number_part.chars().last().is_some_and(|c| c.is_ascii_lowercase()) {
+        let (number, subsection) = if number_part
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_ascii_lowercase())
+        {
             // Extract numeric part and letter suffix
-            let numeric: String = number_part.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let numeric: String = number_part
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             let number: u32 = numeric
                 .parse()
                 .with_context(|| format!("Invalid task number in header: {}", header))?;
@@ -735,7 +745,10 @@ mod tasks_serde {
     use super::*;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S>(tasks: &HashMap<TaskId, Task>, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    pub fn serialize<S>(
+        tasks: &HashMap<TaskId, Task>,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -743,7 +756,9 @@ mod tasks_serde {
         tasks_vec.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> std::result::Result<HashMap<TaskId, Task>, D::Error>
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> std::result::Result<HashMap<TaskId, Task>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -801,7 +816,10 @@ impl TaskTracker {
                 // Extract sprint number from patterns like "Sprint 7" or "Sprint 7 ("
                 if let Some(sprint_idx) = line.find("Sprint ") {
                     let after_sprint = &line[sprint_idx + 7..];
-                    let num_str: String = after_sprint.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    let num_str: String = after_sprint
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit())
+                        .collect();
                     if let Ok(num) = num_str.parse() {
                         return Some(num);
                     }
@@ -815,7 +833,10 @@ impl TaskTracker {
     fn parse_sprint_from_section(line: &str) -> Option<u32> {
         // Match "## Sprint N:" patterns
         if let Some(after_sprint) = line.strip_prefix("## Sprint ") {
-            let num_str: String = after_sprint.chars().take_while(|c| c.is_ascii_digit()).collect();
+            let num_str: String = after_sprint
+                .chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
             return num_str.parse().ok();
         }
         None
@@ -823,19 +844,21 @@ impl TaskTracker {
 
     /// Validate the tracker against a plan to detect structural changes.
     #[must_use]
-        pub fn validate_against_plan(&self, plan: &str) -> ValidationResult {
+    pub fn validate_against_plan(&self, plan: &str) -> ValidationResult {
         let current_hash = Self::compute_plan_hash(plan);
         if current_hash == self.plan_structure_hash {
             ValidationResult::Valid
         } else {
             let orphaned = self.find_orphaned_tasks(plan);
-            ValidationResult::PlanChanged { orphaned_tasks: orphaned }
+            ValidationResult::PlanChanged {
+                orphaned_tasks: orphaned,
+            }
         }
     }
 
     /// Find tasks in the tracker that are not in the current plan.
     #[must_use]
-        pub fn find_orphaned_tasks(&self, plan: &str) -> Vec<TaskId> {
+    pub fn find_orphaned_tasks(&self, plan: &str) -> Vec<TaskId> {
         use regex::Regex;
         let header_re = Regex::new(r"^###\s+(\d+[a-z]?)\.\s+(.+)$").unwrap();
 
@@ -861,7 +884,7 @@ impl TaskTracker {
     }
 
     /// Mark tasks as orphaned if they are not in the given plan.
-        pub fn mark_orphaned_tasks(&mut self, plan: &str) {
+    pub fn mark_orphaned_tasks(&mut self, plan: &str) {
         let orphaned_ids = self.find_orphaned_tasks(plan);
         for id in orphaned_ids {
             if let Some(task) = self.tasks.get_mut(&id) {
@@ -873,8 +896,10 @@ impl TaskTracker {
 
     /// Check if a sprint is complete (all tasks done or blocked).
     #[must_use]
-        pub fn is_sprint_complete(&self, sprint: u32) -> bool {
-        let sprint_tasks: Vec<_> = self.tasks.values()
+    pub fn is_sprint_complete(&self, sprint: u32) -> bool {
+        let sprint_tasks: Vec<_> = self
+            .tasks
+            .values()
             .filter(|t| t.sprint == Some(sprint))
             .collect();
 
@@ -882,15 +907,16 @@ impl TaskTracker {
             return false;
         }
 
-        sprint_tasks.iter().all(|t| {
-            t.state == TaskState::Complete || t.state == TaskState::Blocked
-        })
+        sprint_tasks
+            .iter()
+            .all(|t| t.state == TaskState::Complete || t.state == TaskState::Blocked)
     }
 
     /// Get all tasks for a specific sprint.
     #[must_use]
-        pub fn tasks_for_sprint(&self, sprint: u32) -> Vec<&Task> {
-        self.tasks.values()
+    pub fn tasks_for_sprint(&self, sprint: u32) -> Vec<&Task> {
+        self.tasks
+            .values()
             .filter(|t| t.sprint == Some(sprint))
             .collect()
     }
@@ -929,8 +955,8 @@ impl TaskTracker {
             .context("Failed to compile header regex")?;
 
         // Checkbox pattern: - [ ] or - [x] followed by text
-        let checkbox_re = Regex::new(r"^-\s+\[([ xX])\]\s+(.+)$")
-            .context("Failed to compile checkbox regex")?;
+        let checkbox_re =
+            Regex::new(r"^-\s+\[([ xX])\]\s+(.+)$").context("Failed to compile checkbox regex")?;
 
         // Parse current sprint from "Current Focus" section
         self.focused_sprint = Self::parse_current_sprint(content);
@@ -1120,9 +1146,10 @@ impl TaskTracker {
     /// assert_eq!(task.state, TaskState::InProgress);
     /// ```
     pub fn start_task(&mut self, task_id: &TaskId) -> Result<()> {
-        let task = self.tasks.get_mut(task_id).ok_or_else(|| {
-            anyhow::anyhow!("Task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
 
         if !task.state.can_transition_to(TaskState::InProgress) {
             bail!(
@@ -1132,11 +1159,8 @@ impl TaskTracker {
             );
         }
 
-        let transition = TaskTransition::with_reason(
-            task.state,
-            TaskState::InProgress,
-            "Task started",
-        );
+        let transition =
+            TaskTransition::with_reason(task.state, TaskState::InProgress, "Task started");
         task.transitions.push(transition);
         task.state = TaskState::InProgress;
 
@@ -1158,13 +1182,15 @@ impl TaskTracker {
     ///
     /// Returns an error if no task is currently active.
     pub fn record_progress(&mut self, files: u32, lines: u32) -> Result<()> {
-        let task_id = self.current_task.clone().ok_or_else(|| {
-            anyhow::anyhow!("No active task to record progress for")
-        })?;
+        let task_id = self
+            .current_task
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No active task to record progress for"))?;
 
-        let task = self.tasks.get_mut(&task_id).ok_or_else(|| {
-            anyhow::anyhow!("Current task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(&task_id)
+            .ok_or_else(|| anyhow::anyhow!("Current task not found: {}", task_id))?;
 
         task.metrics.record_progress(files, lines);
         self.modified_at = Utc::now();
@@ -1180,15 +1206,17 @@ impl TaskTracker {
     ///
     /// Returns an error if no task is currently active.
     pub fn record_no_progress(&mut self) -> Result<bool> {
-        let task_id = self.current_task.clone().ok_or_else(|| {
-            anyhow::anyhow!("No active task to record no-progress for")
-        })?;
+        let task_id = self
+            .current_task
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No active task to record no-progress for"))?;
 
         let threshold = self.config.stagnation_threshold;
 
-        let task = self.tasks.get_mut(&task_id).ok_or_else(|| {
-            anyhow::anyhow!("Current task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(&task_id)
+            .ok_or_else(|| anyhow::anyhow!("Current task not found: {}", task_id))?;
 
         task.metrics.record_no_progress();
         task.metrics.record_iteration();
@@ -1215,13 +1243,15 @@ impl TaskTracker {
     ///
     /// Returns an error if no task is currently active.
     pub fn record_iteration(&mut self) -> Result<()> {
-        let task_id = self.current_task.clone().ok_or_else(|| {
-            anyhow::anyhow!("No active task")
-        })?;
+        let task_id = self
+            .current_task
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No active task"))?;
 
-        let task = self.tasks.get_mut(&task_id).ok_or_else(|| {
-            anyhow::anyhow!("Current task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(&task_id)
+            .ok_or_else(|| anyhow::anyhow!("Current task not found: {}", task_id))?;
 
         task.metrics.record_iteration();
         self.modified_at = Utc::now();
@@ -1239,9 +1269,10 @@ impl TaskTracker {
     /// - Task doesn't exist
     /// - Task cannot transition to Blocked
     pub fn block_task(&mut self, task_id: &TaskId, reason: BlockReason) -> Result<()> {
-        let task = self.tasks.get_mut(task_id).ok_or_else(|| {
-            anyhow::anyhow!("Task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
 
         if !task.state.can_transition_to(TaskState::Blocked) {
             bail!(
@@ -1275,9 +1306,10 @@ impl TaskTracker {
     /// - Task doesn't exist
     /// - Task is not blocked
     pub fn unblock_task(&mut self, task_id: &TaskId) -> Result<()> {
-        let task = self.tasks.get_mut(task_id).ok_or_else(|| {
-            anyhow::anyhow!("Task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
 
         if task.state != TaskState::Blocked {
             bail!("Task {} is not blocked (state: {})", task_id, task.state);
@@ -1307,9 +1339,10 @@ impl TaskTracker {
     /// - Task doesn't exist
     /// - Task is not InProgress
     pub fn submit_for_review(&mut self, task_id: &TaskId) -> Result<()> {
-        let task = self.tasks.get_mut(task_id).ok_or_else(|| {
-            anyhow::anyhow!("Task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
 
         if task.state != TaskState::InProgress {
             bail!(
@@ -1342,9 +1375,10 @@ impl TaskTracker {
     pub fn update_review(&mut self, task_id: &TaskId, gate: &str, passed: bool) -> Result<bool> {
         let max_failures = self.config.max_quality_failures;
 
-        let task = self.tasks.get_mut(task_id).ok_or_else(|| {
-            anyhow::anyhow!("Task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
 
         if task.state != TaskState::InReview {
             bail!("Task {} is not in review (state: {})", task_id, task.state);
@@ -1402,9 +1436,10 @@ impl TaskTracker {
     /// - Task doesn't exist
     /// - Task cannot transition to Complete
     pub fn complete_task(&mut self, task_id: &TaskId) -> Result<()> {
-        let task = self.tasks.get_mut(task_id).ok_or_else(|| {
-            anyhow::anyhow!("Task not found: {}", task_id)
-        })?;
+        let task = self
+            .tasks
+            .get_mut(task_id)
+            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
 
         if !task.state.can_transition_to(TaskState::Complete) {
             bail!(
@@ -1414,11 +1449,8 @@ impl TaskTracker {
             );
         }
 
-        let transition = TaskTransition::with_reason(
-            task.state,
-            TaskState::Complete,
-            "Task completed",
-        );
+        let transition =
+            TaskTransition::with_reason(task.state, TaskState::Complete, "Task completed");
         task.transitions.push(transition);
         task.state = TaskState::Complete;
 
@@ -1602,8 +1634,7 @@ impl TaskTracker {
         if task.metrics.no_progress_count >= stagnation_warning {
             reasons.push(format!(
                 "no progress for {} iterations (threshold: {})",
-                task.metrics.no_progress_count,
-                self.config.stagnation_threshold
+                task.metrics.no_progress_count, self.config.stagnation_threshold
             ));
         }
 
@@ -1611,8 +1642,7 @@ impl TaskTracker {
         if task.metrics.quality_failures >= quality_warning {
             reasons.push(format!(
                 "{} quality gate failures (max: {})",
-                task.metrics.quality_failures,
-                self.config.max_quality_failures
+                task.metrics.quality_failures, self.config.max_quality_failures
             ));
         }
 
@@ -1669,7 +1699,10 @@ impl TaskTracker {
             lines.push(format!("**Current Task**: {}", current.id));
             lines.push(format!("- State: {}", current.state));
             lines.push(format!("- Iterations: {}", current.metrics.iterations));
-            lines.push(format!("- Checkbox progress: {:.0}%", current.completion_percentage()));
+            lines.push(format!(
+                "- Checkbox progress: {:.0}%",
+                current.completion_percentage()
+            ));
 
             if current.metrics.no_progress_count > 0 {
                 lines.push(format!(
@@ -1701,7 +1734,9 @@ impl TaskTracker {
         }
 
         // Blocked tasks
-        let blocked: Vec<&Task> = self.tasks.values()
+        let blocked: Vec<&Task> = self
+            .tasks
+            .values()
             .filter(|t| t.state == TaskState::Blocked)
             .collect();
         if !blocked.is_empty() {
@@ -1729,15 +1764,16 @@ impl TaskTracker {
     /// Check if all workable tasks are done.
     #[must_use]
     pub fn is_all_done(&self) -> bool {
-        self.tasks.values().all(|t| {
-            t.state == TaskState::Complete || t.state == TaskState::Blocked
-        })
+        self.tasks
+            .values()
+            .all(|t| t.state == TaskState::Complete || t.state == TaskState::Blocked)
     }
 
     /// Get count of remaining tasks (not complete, not blocked).
     #[must_use]
     pub fn remaining_count(&self) -> usize {
-        self.tasks.values()
+        self.tasks
+            .values()
             .filter(|t| t.state != TaskState::Complete && t.state != TaskState::Blocked)
             .count()
     }
@@ -1772,8 +1808,8 @@ impl TaskTracker {
             }
         }
 
-        let json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize task tracker")?;
+        let json =
+            serde_json::to_string_pretty(self).context("Failed to serialize task tracker")?;
 
         std::fs::write(path, json)
             .with_context(|| format!("Failed to write task tracker to: {}", path.display()))?;
@@ -1809,8 +1845,12 @@ impl TaskTracker {
         let json = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read task tracker from: {}", path.display()))?;
 
-        let tracker: Self = serde_json::from_str(&json)
-            .with_context(|| format!("Failed to deserialize task tracker from: {}", path.display()))?;
+        let tracker: Self = serde_json::from_str(&json).with_context(|| {
+            format!(
+                "Failed to deserialize task tracker from: {}",
+                path.display()
+            )
+        })?;
 
         Ok(tracker)
     }
@@ -2084,13 +2124,18 @@ mod tests {
 
     #[test]
     fn test_block_reason_max_attempts_display() {
-        let reason = BlockReason::MaxAttempts { attempts: 5, max: 5 };
+        let reason = BlockReason::MaxAttempts {
+            attempts: 5,
+            max: 5,
+        };
         assert_eq!(reason.to_string(), "Exceeded max attempts (5/5)");
     }
 
     #[test]
     fn test_block_reason_timeout_display() {
-        let reason = BlockReason::Timeout { duration_secs: 3600 };
+        let reason = BlockReason::Timeout {
+            duration_secs: 3600,
+        };
         assert_eq!(reason.to_string(), "Timed out after 3600 seconds");
     }
 
@@ -2138,7 +2183,10 @@ mod tests {
 
     #[test]
     fn test_block_reason_serialize() {
-        let reason = BlockReason::MaxAttempts { attempts: 3, max: 5 };
+        let reason = BlockReason::MaxAttempts {
+            attempts: 3,
+            max: 5,
+        };
         let json = serde_json::to_string(&reason).unwrap();
         assert!(json.contains("MaxAttempts"));
         assert!(json.contains("\"attempts\":3"));
@@ -2149,7 +2197,12 @@ mod tests {
     fn test_block_reason_deserialize() {
         let json = r#"{"Timeout":{"duration_secs":1800}}"#;
         let reason: BlockReason = serde_json::from_str(json).unwrap();
-        assert!(matches!(reason, BlockReason::Timeout { duration_secs: 1800 }));
+        assert!(matches!(
+            reason,
+            BlockReason::Timeout {
+                duration_secs: 1800
+            }
+        ));
     }
 
     // ========================================================================
@@ -2176,7 +2229,10 @@ mod tests {
 
     #[test]
     fn test_task_transition_blocked() {
-        let block_reason = BlockReason::MaxAttempts { attempts: 5, max: 5 };
+        let block_reason = BlockReason::MaxAttempts {
+            attempts: 5,
+            max: 5,
+        };
         let transition = TaskTransition::blocked(TaskState::InProgress, block_reason.clone());
         assert_eq!(transition.from, TaskState::InProgress);
         assert_eq!(transition.to, TaskState::Blocked);
@@ -2352,10 +2408,7 @@ mod tests {
     fn test_task_completion_percentage_all_complete() {
         let id = TaskId::parse("### 1. Test task").unwrap();
         let mut task = Task::new(id);
-        task.checkboxes = vec![
-            ("Item 1".to_string(), true),
-            ("Item 2".to_string(), true),
-        ];
+        task.checkboxes = vec![("Item 1".to_string(), true), ("Item 2".to_string(), true)];
         assert_eq!(task.completion_percentage(), 100.0);
     }
 
@@ -2410,7 +2463,10 @@ mod tests {
 
         assert!(tracker.tasks.is_empty());
         assert!(tracker.current_task.is_none());
-        assert_eq!(tracker.config.max_attempts_per_task, config.max_attempts_per_task);
+        assert_eq!(
+            tracker.config.max_attempts_per_task,
+            config.max_attempts_per_task
+        );
     }
 
     #[test]
@@ -2618,12 +2674,18 @@ Some overview text.
         tracker.parse_plan(plan).unwrap();
 
         // Set various states
-        tracker.get_task_mut(&TaskId::parse("### 2. Second").unwrap())
-            .unwrap().state = TaskState::InProgress;
-        tracker.get_task_mut(&TaskId::parse("### 3. Third").unwrap())
-            .unwrap().state = TaskState::Complete;
-        tracker.get_task_mut(&TaskId::parse("### 4. Fourth").unwrap())
-            .unwrap().state = TaskState::InProgress;
+        tracker
+            .get_task_mut(&TaskId::parse("### 2. Second").unwrap())
+            .unwrap()
+            .state = TaskState::InProgress;
+        tracker
+            .get_task_mut(&TaskId::parse("### 3. Third").unwrap())
+            .unwrap()
+            .state = TaskState::Complete;
+        tracker
+            .get_task_mut(&TaskId::parse("### 4. Fourth").unwrap())
+            .unwrap()
+            .state = TaskState::InProgress;
 
         let workable = tracker.workable_tasks();
 
@@ -2649,14 +2711,22 @@ Some overview text.
         tracker.parse_plan(plan).unwrap();
 
         // Set various states
-        tracker.get_task_mut(&TaskId::parse("### 1. Task 1").unwrap())
-            .unwrap().state = TaskState::Complete;
-        tracker.get_task_mut(&TaskId::parse("### 2. Task 2").unwrap())
-            .unwrap().state = TaskState::InProgress;
-        tracker.get_task_mut(&TaskId::parse("### 3. Task 3").unwrap())
-            .unwrap().state = TaskState::Blocked;
-        tracker.get_task_mut(&TaskId::parse("### 4. Task 4").unwrap())
-            .unwrap().state = TaskState::InReview;
+        tracker
+            .get_task_mut(&TaskId::parse("### 1. Task 1").unwrap())
+            .unwrap()
+            .state = TaskState::Complete;
+        tracker
+            .get_task_mut(&TaskId::parse("### 2. Task 2").unwrap())
+            .unwrap()
+            .state = TaskState::InProgress;
+        tracker
+            .get_task_mut(&TaskId::parse("### 3. Task 3").unwrap())
+            .unwrap()
+            .state = TaskState::Blocked;
+        tracker
+            .get_task_mut(&TaskId::parse("### 4. Task 4").unwrap())
+            .unwrap()
+            .state = TaskState::InReview;
         // Task 5 stays NotStarted
 
         let counts = tracker.task_counts();
@@ -2678,10 +2748,14 @@ Some overview text.
 "#;
         tracker.parse_plan(plan).unwrap();
 
-        tracker.get_task_mut(&TaskId::parse("### 1. Task 1").unwrap())
-            .unwrap().state = TaskState::Complete;
-        tracker.get_task_mut(&TaskId::parse("### 2. Task 2").unwrap())
-            .unwrap().state = TaskState::Blocked;
+        tracker
+            .get_task_mut(&TaskId::parse("### 1. Task 1").unwrap())
+            .unwrap()
+            .state = TaskState::Complete;
+        tracker
+            .get_task_mut(&TaskId::parse("### 2. Task 2").unwrap())
+            .unwrap()
+            .state = TaskState::Blocked;
 
         let counts = tracker.task_counts();
         assert!(counts.all_done());
@@ -2704,8 +2778,10 @@ Some overview text.
         tracker.parse_plan(plan).unwrap();
 
         // Mark task 2 as complete
-        tracker.get_task_mut(&TaskId::parse("### 2. Complete task").unwrap())
-            .unwrap().state = TaskState::Complete;
+        tracker
+            .get_task_mut(&TaskId::parse("### 2. Complete task").unwrap())
+            .unwrap()
+            .state = TaskState::Complete;
 
         // Task 1: 50% checkbox completion
         // Task 2: 100% (Complete state)
@@ -2798,13 +2874,21 @@ Some overview text.
 
         // Block the task first
         tracker.start_task(&task_id).unwrap();
-        tracker.block_task(&task_id, BlockReason::Other {
-            reason: "Test block".to_string(),
-        }).unwrap();
+        tracker
+            .block_task(
+                &task_id,
+                BlockReason::Other {
+                    reason: "Test block".to_string(),
+                },
+            )
+            .unwrap();
 
         // Now start should succeed (transition from Blocked -> InProgress)
         tracker.start_task(&task_id).unwrap();
-        assert_eq!(tracker.get_task(&task_id).unwrap().state, TaskState::InProgress);
+        assert_eq!(
+            tracker.get_task(&task_id).unwrap().state,
+            TaskState::InProgress
+        );
     }
 
     #[test]
@@ -2833,7 +2917,8 @@ Some overview text.
 
     #[test]
     fn test_record_no_progress() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
@@ -2881,7 +2966,9 @@ Some overview text.
         let task_id = TaskId::parse("### 1. Test task").unwrap();
         // Task is NotStarted, cannot transition to Blocked directly
 
-        let reason = BlockReason::Other { reason: "Test".to_string() };
+        let reason = BlockReason::Other {
+            reason: "Test".to_string(),
+        };
         let result = tracker.block_task(&task_id, reason);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Cannot block"));
@@ -2896,9 +2983,14 @@ Some overview text.
         tracker.start_task(&task_id).unwrap();
 
         // Block it
-        tracker.block_task(&task_id, BlockReason::Other {
-            reason: "Test".to_string(),
-        }).unwrap();
+        tracker
+            .block_task(
+                &task_id,
+                BlockReason::Other {
+                    reason: "Test".to_string(),
+                },
+            )
+            .unwrap();
 
         // Unblock it
         tracker.unblock_task(&task_id).unwrap();
@@ -2968,7 +3060,8 @@ Some overview text.
 
     #[test]
     fn test_update_review_failed_returns_to_in_progress() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
@@ -2986,7 +3079,8 @@ Some overview text.
 
     #[test]
     fn test_update_review_max_failures_blocks() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(2));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(2));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
@@ -3108,21 +3202,30 @@ Some overview text.
 
         // Start
         tracker.start_task(&task_id).unwrap();
-        assert_eq!(tracker.get_task(&task_id).unwrap().state, TaskState::InProgress);
+        assert_eq!(
+            tracker.get_task(&task_id).unwrap().state,
+            TaskState::InProgress
+        );
 
         // Record some progress
         tracker.record_progress(3, 50).unwrap();
 
         // Submit for review
         tracker.submit_for_review(&task_id).unwrap();
-        assert_eq!(tracker.get_task(&task_id).unwrap().state, TaskState::InReview);
+        assert_eq!(
+            tracker.get_task(&task_id).unwrap().state,
+            TaskState::InReview
+        );
 
         // Review passes
         tracker.update_review(&task_id, "tests", true).unwrap();
 
         // Complete
         tracker.complete_task(&task_id).unwrap();
-        assert_eq!(tracker.get_task(&task_id).unwrap().state, TaskState::Complete);
+        assert_eq!(
+            tracker.get_task(&task_id).unwrap().state,
+            TaskState::Complete
+        );
 
         // Check transition history
         let task = tracker.get_task(&task_id).unwrap();
@@ -3137,7 +3240,14 @@ Some overview text.
         let task_id = TaskId::parse("### 1. Test task").unwrap();
 
         tracker.start_task(&task_id).unwrap();
-        tracker.block_task(&task_id, BlockReason::Other { reason: "Test".to_string() }).unwrap();
+        tracker
+            .block_task(
+                &task_id,
+                BlockReason::Other {
+                    reason: "Test".to_string(),
+                },
+            )
+            .unwrap();
         tracker.unblock_task(&task_id).unwrap();
         tracker.submit_for_review(&task_id).unwrap();
         tracker.complete_task(&task_id).unwrap();
@@ -3191,7 +3301,9 @@ Some overview text.
     #[test]
     fn test_select_next_task_prefers_in_progress() {
         let mut tracker = TaskTracker::default();
-        tracker.parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3").unwrap();
+        tracker
+            .parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3")
+            .unwrap();
 
         let task2_id = TaskId::parse("### 2. Task 2").unwrap();
         tracker.start_task(&task2_id).unwrap();
@@ -3205,7 +3317,9 @@ Some overview text.
     #[test]
     fn test_select_next_task_in_progress_by_number() {
         let mut tracker = TaskTracker::default();
-        tracker.parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3").unwrap();
+        tracker
+            .parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3")
+            .unwrap();
 
         let task2_id = TaskId::parse("### 2. Task 2").unwrap();
         let task3_id = TaskId::parse("### 3. Task 3").unwrap();
@@ -3255,16 +3369,31 @@ Some overview text.
         let task2_id = TaskId::parse("### 2. Task 2").unwrap();
 
         tracker.start_task(&task1_id).unwrap();
-        tracker.block_task(&task1_id, BlockReason::Other { reason: "X".to_string() }).unwrap();
+        tracker
+            .block_task(
+                &task1_id,
+                BlockReason::Other {
+                    reason: "X".to_string(),
+                },
+            )
+            .unwrap();
         tracker.start_task(&task2_id).unwrap();
-        tracker.block_task(&task2_id, BlockReason::Other { reason: "Y".to_string() }).unwrap();
+        tracker
+            .block_task(
+                &task2_id,
+                BlockReason::Other {
+                    reason: "Y".to_string(),
+                },
+            )
+            .unwrap();
 
         assert!(tracker.select_next_task().is_none());
     }
 
     #[test]
     fn test_is_task_stuck_not_stuck_initially() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
@@ -3273,28 +3402,38 @@ Some overview text.
 
     #[test]
     fn test_is_task_stuck_approaching_stagnation() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
         tracker.start_task(&task_id).unwrap();
 
         // Two no-progress iterations = approaching threshold (3-1=2)
-        tracker.get_task_mut(&task_id).unwrap().metrics.no_progress_count = 2;
+        tracker
+            .get_task_mut(&task_id)
+            .unwrap()
+            .metrics
+            .no_progress_count = 2;
 
         assert!(tracker.is_task_stuck(&task_id));
     }
 
     #[test]
     fn test_is_task_stuck_approaching_quality_failures() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
         tracker.start_task(&task_id).unwrap();
 
         // Two quality failures = approaching threshold (3-1=2)
-        tracker.get_task_mut(&task_id).unwrap().metrics.quality_failures = 2;
+        tracker
+            .get_task_mut(&task_id)
+            .unwrap()
+            .metrics
+            .quality_failures = 2;
 
         assert!(tracker.is_task_stuck(&task_id));
     }
@@ -3336,7 +3475,8 @@ Some overview text.
 
     #[test]
     fn test_get_stuck_reason_none_when_not_stuck() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(5));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(5));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::new_for_test(1, "Test task");
@@ -3345,12 +3485,17 @@ Some overview text.
 
     #[test]
     fn test_get_stuck_reason_stagnation() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::new_for_test(1, "Test task");
         tracker.start_task(&task_id).unwrap();
-        tracker.get_task_mut(&task_id).unwrap().metrics.no_progress_count = 2;
+        tracker
+            .get_task_mut(&task_id)
+            .unwrap()
+            .metrics
+            .no_progress_count = 2;
 
         let reason = tracker.get_stuck_reason(&task_id).unwrap();
         assert!(reason.contains("no progress for 2 iterations"));
@@ -3359,12 +3504,17 @@ Some overview text.
 
     #[test]
     fn test_get_stuck_reason_quality_failures() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_max_quality_failures(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::new_for_test(1, "Test task");
         tracker.start_task(&task_id).unwrap();
-        tracker.get_task_mut(&task_id).unwrap().metrics.quality_failures = 2;
+        tracker
+            .get_task_mut(&task_id)
+            .unwrap()
+            .metrics
+            .quality_failures = 2;
 
         let reason = tracker.get_stuck_reason(&task_id).unwrap();
         assert!(reason.contains("2 quality gate failures"));
@@ -3376,7 +3526,7 @@ Some overview text.
         let mut tracker = TaskTracker::new(
             TaskTrackerConfig::default()
                 .with_stagnation_threshold(3)
-                .with_max_quality_failures(3)
+                .with_max_quality_failures(3),
         );
         tracker.parse_plan("### 1. Test task").unwrap();
 
@@ -3426,8 +3576,16 @@ Some overview text.
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
         tracker.start_task(&task_id).unwrap();
-        tracker.get_task_mut(&task_id).unwrap().metrics.no_progress_count = 2;
-        tracker.get_task_mut(&task_id).unwrap().metrics.quality_failures = 1;
+        tracker
+            .get_task_mut(&task_id)
+            .unwrap()
+            .metrics
+            .no_progress_count = 2;
+        tracker
+            .get_task_mut(&task_id)
+            .unwrap()
+            .metrics
+            .quality_failures = 1;
 
         let summary = tracker.get_context_summary();
         assert!(summary.contains("No progress for 2 iteration(s)"));
@@ -3436,12 +3594,17 @@ Some overview text.
 
     #[test]
     fn test_get_context_summary_shows_stuck_warning() {
-        let mut tracker = TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
+        let mut tracker =
+            TaskTracker::new(TaskTrackerConfig::default().with_stagnation_threshold(3));
         tracker.parse_plan("### 1. Test task").unwrap();
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
         tracker.start_task(&task_id).unwrap();
-        tracker.get_task_mut(&task_id).unwrap().metrics.no_progress_count = 2;
+        tracker
+            .get_task_mut(&task_id)
+            .unwrap()
+            .metrics
+            .no_progress_count = 2;
 
         let summary = tracker.get_context_summary();
         assert!(summary.contains("**WARNING**: Task appears stuck"));
@@ -3454,9 +3617,14 @@ Some overview text.
 
         let task1_id = TaskId::parse("### 1. Task 1").unwrap();
         tracker.start_task(&task1_id).unwrap();
-        tracker.block_task(&task1_id, BlockReason::ExternalDependency {
-            description: "Waiting for API".to_string(),
-        }).unwrap();
+        tracker
+            .block_task(
+                &task1_id,
+                BlockReason::ExternalDependency {
+                    description: "Waiting for API".to_string(),
+                },
+            )
+            .unwrap();
 
         let summary = tracker.get_context_summary();
         assert!(summary.contains("**Blocked Tasks**: 1 task(s)"));
@@ -3530,7 +3698,14 @@ Some overview text.
 
         let task_id = TaskId::parse("### 1. Test task").unwrap();
         tracker.start_task(&task_id).unwrap();
-        tracker.block_task(&task_id, BlockReason::Other { reason: "X".to_string() }).unwrap();
+        tracker
+            .block_task(
+                &task_id,
+                BlockReason::Other {
+                    reason: "X".to_string(),
+                },
+            )
+            .unwrap();
 
         assert!(tracker.is_all_done()); // Blocked counts as "done" (no more work possible)
     }
@@ -3538,7 +3713,9 @@ Some overview text.
     #[test]
     fn test_is_all_done_mixed() {
         let mut tracker = TaskTracker::default();
-        tracker.parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3").unwrap();
+        tracker
+            .parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3")
+            .unwrap();
 
         let task1_id = TaskId::parse("### 1. Task 1").unwrap();
         let task2_id = TaskId::parse("### 2. Task 2").unwrap();
@@ -3546,7 +3723,14 @@ Some overview text.
         tracker.start_task(&task1_id).unwrap();
         tracker.complete_task(&task1_id).unwrap();
         tracker.start_task(&task2_id).unwrap();
-        tracker.block_task(&task2_id, BlockReason::Other { reason: "X".to_string() }).unwrap();
+        tracker
+            .block_task(
+                &task2_id,
+                BlockReason::Other {
+                    reason: "X".to_string(),
+                },
+            )
+            .unwrap();
         // Task 3 still NotStarted
 
         assert!(!tracker.is_all_done());
@@ -3561,14 +3745,18 @@ Some overview text.
     #[test]
     fn test_remaining_count_all_pending() {
         let mut tracker = TaskTracker::default();
-        tracker.parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3").unwrap();
+        tracker
+            .parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3")
+            .unwrap();
         assert_eq!(tracker.remaining_count(), 3);
     }
 
     #[test]
     fn test_remaining_count_excludes_complete() {
         let mut tracker = TaskTracker::default();
-        tracker.parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3").unwrap();
+        tracker
+            .parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3")
+            .unwrap();
 
         let task1_id = TaskId::parse("### 1. Task 1").unwrap();
         tracker.start_task(&task1_id).unwrap();
@@ -3580,11 +3768,20 @@ Some overview text.
     #[test]
     fn test_remaining_count_excludes_blocked() {
         let mut tracker = TaskTracker::default();
-        tracker.parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3").unwrap();
+        tracker
+            .parse_plan("### 1. Task 1\n### 2. Task 2\n### 3. Task 3")
+            .unwrap();
 
         let task1_id = TaskId::parse("### 1. Task 1").unwrap();
         tracker.start_task(&task1_id).unwrap();
-        tracker.block_task(&task1_id, BlockReason::Other { reason: "X".to_string() }).unwrap();
+        tracker
+            .block_task(
+                &task1_id,
+                BlockReason::Other {
+                    reason: "X".to_string(),
+                },
+            )
+            .unwrap();
 
         assert_eq!(tracker.remaining_count(), 2);
     }
@@ -3625,7 +3822,14 @@ Some overview text.
         tracker.start_task(&task1_id).unwrap();
         tracker.complete_task(&task1_id).unwrap();
         tracker.start_task(&task2_id).unwrap();
-        tracker.block_task(&task2_id, BlockReason::Other { reason: "X".to_string() }).unwrap();
+        tracker
+            .block_task(
+                &task2_id,
+                BlockReason::Other {
+                    reason: "X".to_string(),
+                },
+            )
+            .unwrap();
 
         assert_eq!(tracker.remaining_count(), 0);
     }
@@ -3665,7 +3869,11 @@ Some overview text.
     #[test]
     fn test_save_creates_directories() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("nested").join("dirs").join("tracker.json");
+        let path = temp_dir
+            .path()
+            .join("nested")
+            .join("dirs")
+            .join("tracker.json");
 
         let tracker = TaskTracker::default();
         tracker.save(&path).unwrap();
@@ -3760,7 +3968,10 @@ Some overview text.
         let project_dir = std::path::Path::new("/home/user/project");
         let path = TaskTracker::default_path(project_dir);
 
-        assert_eq!(path.to_string_lossy(), "/home/user/project/.ralph/task_tracker.json");
+        assert_eq!(
+            path.to_string_lossy(),
+            "/home/user/project/.ralph/task_tracker.json"
+        );
     }
 
     #[test]
@@ -3774,7 +3985,9 @@ Some overview text.
             .with_max_quality_failures(3);
         let mut tracker = TaskTracker::new(config);
 
-        tracker.parse_plan(r#"
+        tracker
+            .parse_plan(
+                r#"
 ### 1. Phase 1.1: Setup
 - [x] Create directories
 - [ ] Configure tools
@@ -3784,7 +3997,9 @@ Some overview text.
 
 ### 3. Phase 2.1: Test
 - [ ] Write tests
-"#).unwrap();
+"#,
+            )
+            .unwrap();
 
         // Add state to multiple tasks
         let task1_id = TaskId::parse("### 1. Phase 1.1: Setup").unwrap();
@@ -3797,9 +4012,14 @@ Some overview text.
         tracker.complete_task(&task1_id).unwrap();
 
         tracker.start_task(&task2_id).unwrap();
-        tracker.block_task(&task2_id, BlockReason::ExternalDependency {
-            description: "Waiting for API".to_string(),
-        }).unwrap();
+        tracker
+            .block_task(
+                &task2_id,
+                BlockReason::ExternalDependency {
+                    description: "Waiting for API".to_string(),
+                },
+            )
+            .unwrap();
 
         // Save and reload
         tracker.save(&path).unwrap();
@@ -3814,7 +4034,10 @@ Some overview text.
         // Verify task 2 state
         let t2 = loaded.get_task(&task2_id).unwrap();
         assert_eq!(t2.state, TaskState::Blocked);
-        assert!(matches!(t2.block_reason, Some(BlockReason::ExternalDependency { .. })));
+        assert!(matches!(
+            t2.block_reason,
+            Some(BlockReason::ExternalDependency { .. })
+        ));
 
         // Verify task 3 state (untouched)
         let t3 = loaded.get_task(&task3_id).unwrap();
@@ -3845,7 +4068,9 @@ Some overview text.
         let path = temp_dir.path().join("blocks.json");
 
         let mut tracker = TaskTracker::default();
-        tracker.parse_plan("### 1. Task\n### 2. Task\n### 3. Task").unwrap();
+        tracker
+            .parse_plan("### 1. Task\n### 2. Task\n### 3. Task")
+            .unwrap();
 
         // Create different block reasons
         let t1 = TaskId::parse("### 1. Task").unwrap();
@@ -3853,16 +4078,31 @@ Some overview text.
         let t3 = TaskId::parse("### 3. Task").unwrap();
 
         tracker.start_task(&t1).unwrap();
-        tracker.block_task(&t1, BlockReason::MaxAttempts { attempts: 5, max: 5 }).unwrap();
+        tracker
+            .block_task(
+                &t1,
+                BlockReason::MaxAttempts {
+                    attempts: 5,
+                    max: 5,
+                },
+            )
+            .unwrap();
 
         tracker.start_task(&t2).unwrap();
-        tracker.block_task(&t2, BlockReason::QualityGateFailure {
-            gate: "clippy".to_string(),
-            failures: 3,
-        }).unwrap();
+        tracker
+            .block_task(
+                &t2,
+                BlockReason::QualityGateFailure {
+                    gate: "clippy".to_string(),
+                    failures: 3,
+                },
+            )
+            .unwrap();
 
         tracker.start_task(&t3).unwrap();
-        tracker.block_task(&t3, BlockReason::DependsOnTask { task_number: 1 }).unwrap();
+        tracker
+            .block_task(&t3, BlockReason::DependsOnTask { task_number: 1 })
+            .unwrap();
 
         // Save and reload
         tracker.save(&path).unwrap();
@@ -3870,7 +4110,13 @@ Some overview text.
 
         // Verify block reasons
         let l1 = loaded.get_task(&t1).unwrap();
-        assert!(matches!(l1.block_reason, Some(BlockReason::MaxAttempts { attempts: 5, max: 5 })));
+        assert!(matches!(
+            l1.block_reason,
+            Some(BlockReason::MaxAttempts {
+                attempts: 5,
+                max: 5
+            })
+        ));
 
         let l2 = loaded.get_task(&t2).unwrap();
         if let Some(BlockReason::QualityGateFailure { gate, failures }) = &l2.block_reason {
@@ -3881,7 +4127,10 @@ Some overview text.
         }
 
         let l3 = loaded.get_task(&t3).unwrap();
-        assert!(matches!(l3.block_reason, Some(BlockReason::DependsOnTask { task_number: 1 })));
+        assert!(matches!(
+            l3.block_reason,
+            Some(BlockReason::DependsOnTask { task_number: 1 })
+        ));
     }
 
     // ========================================================================

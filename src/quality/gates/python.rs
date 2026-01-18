@@ -72,8 +72,7 @@ impl RuffGate {
         if let Ok(parsed) = serde_json::from_str::<Vec<RuffDiagnostic>>(stdout) {
             for diag in parsed {
                 let severity = Self::severity_from_code(&diag.code);
-                let mut issue = GateIssue::new(severity, &diag.message)
-                    .with_code(&diag.code);
+                let mut issue = GateIssue::new(severity, &diag.message).with_code(&diag.code);
 
                 if let Some(row) = diag.location.as_ref().map(|l| l.row) {
                     issue = issue.with_location(&diag.filename, row);
@@ -126,7 +125,10 @@ impl RuffGate {
 
         // Split code from message
         let (code, message) = if let Some(space_pos) = rest.find(' ') {
-            (rest[..space_pos].to_string(), rest[space_pos + 1..].to_string())
+            (
+                rest[..space_pos].to_string(),
+                rest[space_pos + 1..].to_string(),
+            )
         } else {
             (String::new(), rest.to_string())
         };
@@ -213,7 +215,10 @@ impl QualityGate for RuffGate {
                         // JSON parsing failed, try line-by-line
                         Ok(vec![GateIssue::new(
                             IssueSeverity::Error,
-                            format!("Ruff reported issues: {}", stdout.lines().next().unwrap_or("")),
+                            format!(
+                                "Ruff reported issues: {}",
+                                stdout.lines().next().unwrap_or("")
+                            ),
                         )])
                     } else {
                         Ok(issues)
@@ -228,8 +233,14 @@ impl QualityGate for RuffGate {
     }
 
     fn remediation(&self, issues: &[GateIssue]) -> String {
-        let error_count = issues.iter().filter(|i| i.severity == IssueSeverity::Error).count();
-        let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count();
+        let error_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Error)
+            .count();
+        let warning_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Warning)
+            .count();
 
         format!(
             r#"## Ruff Linting Issues
@@ -396,7 +407,11 @@ impl QualityGate for PytestGate {
             if failed_tests.is_empty() {
                 "- (unable to determine specific files)".to_string()
             } else {
-                failed_tests.iter().map(|t| format!("- {}", t)).collect::<Vec<_>>().join("\n")
+                failed_tests
+                    .iter()
+                    .map(|t| format!("- {}", t))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             }
         )
     }
@@ -561,7 +576,10 @@ impl QualityGate for MypyGate {
     }
 
     fn remediation(&self, issues: &[GateIssue]) -> String {
-        let error_count = issues.iter().filter(|i| i.severity == IssueSeverity::Error).count();
+        let error_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Error)
+            .count();
 
         format!(
             r#"## Mypy Type Errors
@@ -711,8 +729,14 @@ impl QualityGate for BanditGate {
     }
 
     fn remediation(&self, issues: &[GateIssue]) -> String {
-        let critical = issues.iter().filter(|i| i.severity == IssueSeverity::Critical).count();
-        let high = issues.iter().filter(|i| i.severity == IssueSeverity::Error).count();
+        let critical = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Critical)
+            .count();
+        let high = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Error)
+            .count();
 
         format!(
             r#"## Bandit Security Issues
@@ -919,10 +943,8 @@ FAILED tests/test_baz.py::test_qux - ValueError: invalid input
     #[test]
     fn test_pytest_gate_remediation() {
         let gate = PytestGate::new();
-        let issues = vec![
-            GateIssue::new(IssueSeverity::Error, "Test failed")
-                .with_code("pytest_failure"),
-        ];
+        let issues =
+            vec![GateIssue::new(IssueSeverity::Error, "Test failed").with_code("pytest_failure")];
         let remediation = gate.remediation(&issues);
         assert!(remediation.contains("Pytest"));
         assert!(remediation.contains("1 test(s) failed"));
@@ -986,9 +1008,7 @@ src/foo.py:30: warning: Unused variable [unused-ignore]"#;
     #[test]
     fn test_mypy_gate_remediation() {
         let gate = MypyGate::new();
-        let issues = vec![
-            GateIssue::new(IssueSeverity::Error, "type error"),
-        ];
+        let issues = vec![GateIssue::new(IssueSeverity::Error, "type error")];
         let remediation = gate.remediation(&issues);
         assert!(remediation.contains("Mypy"));
         assert!(remediation.contains("1 type errors"));

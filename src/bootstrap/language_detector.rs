@@ -379,7 +379,10 @@ mod tests {
         let detector = LanguageDetector::new(temp.path());
 
         let detected = detector.detect();
-        assert!(detected.is_empty(), "Empty project should have no languages");
+        assert!(
+            detected.is_empty(),
+            "Empty project should have no languages"
+        );
     }
 
     #[test]
@@ -421,11 +424,19 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Create Python project structure
-        fs::write(temp.path().join("pyproject.toml"), "[project]\nname = \"test\"").unwrap();
+        fs::write(
+            temp.path().join("pyproject.toml"),
+            "[project]\nname = \"test\"",
+        )
+        .unwrap();
         fs::write(temp.path().join("main.py"), "print('hello')").unwrap();
         fs::write(temp.path().join("utils.py"), "def helper(): pass").unwrap();
         fs::create_dir(temp.path().join("tests")).unwrap();
-        fs::write(temp.path().join("tests/test_main.py"), "def test_foo(): pass").unwrap();
+        fs::write(
+            temp.path().join("tests/test_main.py"),
+            "def test_foo(): pass",
+        )
+        .unwrap();
 
         let detector = LanguageDetector::new(temp.path());
         let detected = detector.detect();
@@ -501,17 +512,37 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Create a polyglot project (Python backend + TypeScript frontend)
-        fs::write(temp.path().join("pyproject.toml"), "[project]\nname = \"backend\"").unwrap();
+        fs::write(
+            temp.path().join("pyproject.toml"),
+            "[project]\nname = \"backend\"",
+        )
+        .unwrap();
         fs::create_dir(temp.path().join("backend")).unwrap();
-        fs::write(temp.path().join("backend/app.py"), "from flask import Flask").unwrap();
+        fs::write(
+            temp.path().join("backend/app.py"),
+            "from flask import Flask",
+        )
+        .unwrap();
         fs::write(temp.path().join("backend/models.py"), "class User: pass").unwrap();
-        fs::write(temp.path().join("backend/routes.py"), "def get_users(): pass").unwrap();
+        fs::write(
+            temp.path().join("backend/routes.py"),
+            "def get_users(): pass",
+        )
+        .unwrap();
 
         fs::write(temp.path().join("package.json"), "{}").unwrap();
         fs::write(temp.path().join("tsconfig.json"), "{}").unwrap();
         fs::create_dir(temp.path().join("frontend")).unwrap();
-        fs::write(temp.path().join("frontend/App.tsx"), "export default function App() {}").unwrap();
-        fs::write(temp.path().join("frontend/utils.ts"), "export function foo() {}").unwrap();
+        fs::write(
+            temp.path().join("frontend/App.tsx"),
+            "export default function App() {}",
+        )
+        .unwrap();
+        fs::write(
+            temp.path().join("frontend/utils.ts"),
+            "export function foo() {}",
+        )
+        .unwrap();
 
         let detector = LanguageDetector::new(temp.path());
         let detected = detector.detect();
@@ -602,7 +633,8 @@ mod tests {
         fs::create_dir_all(temp.path().join("node_modules/some-package")).unwrap();
         for i in 0..100 {
             fs::write(
-                temp.path().join(format!("node_modules/some-package/file{}.js", i)),
+                temp.path()
+                    .join(format!("node_modules/some-package/file{}.js", i)),
                 "",
             )
             .unwrap();
@@ -971,7 +1003,10 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let detector = LanguageDetector::new(temp.path());
         let polyglot = detector.polyglot_languages();
-        assert!(polyglot.is_empty(), "Empty project should have no polyglot languages");
+        assert!(
+            polyglot.is_empty(),
+            "Empty project should have no polyglot languages"
+        );
     }
 
     #[test]

@@ -289,7 +289,11 @@ impl ConstraintVerifier {
     /// Returns the call graph data if narsil-mcp is available and the
     /// function is found, otherwise returns None.
     pub fn get_call_graph(&self, function: &str) -> Option<serde_json::Value> {
-        self.client.as_ref()?.get_call_graph(function).ok().flatten()
+        self.client
+            .as_ref()?
+            .get_call_graph(function)
+            .ok()
+            .flatten()
     }
 
     /// Check a single constraint against function metrics.
@@ -325,10 +329,7 @@ impl ConstraintVerifier {
             let mut violation = ConstraintViolation::new(
                 &constraint.id,
                 &metrics.name,
-                format!(
-                    "Complexity {} exceeds maximum of {}",
-                    complexity, max
-                ),
+                format!("Complexity {} exceeds maximum of {}", complexity, max),
             )
             .with_suggestion(format!(
                 "Refactor into smaller functions to reduce complexity below {}",
@@ -394,10 +395,7 @@ impl ConstraintVerifier {
             let mut violation = ConstraintViolation::new(
                 &constraint.id,
                 &metrics.name,
-                format!(
-                    "Function has {} parameters, maximum is {}",
-                    parameters, max
-                ),
+                format!("Function has {} parameters, maximum is {}", parameters, max),
             )
             .with_suggestion("Consider using a struct or builder pattern to group parameters");
 
@@ -431,10 +429,7 @@ impl ConstraintVerifier {
                     let mut violation = ConstraintViolation::new(
                         &constraint.id,
                         &metrics.name,
-                        format!(
-                            "Direct call to '{}' is prohibited by constraint",
-                            call
-                        ),
+                        format!("Direct call to '{}' is prohibited by constraint", call),
                     )
                     .with_suggestion(format!(
                         "Use an abstraction layer instead of calling '{}' directly",
@@ -524,12 +519,11 @@ mod tests {
 
     #[test]
     fn test_constraint_verifier_with_constraints() {
-        let constraints = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new(
-                "test",
-                ConstraintKind::MaxComplexity,
-                "Test constraint",
-            ));
+        let constraints = ConstraintSet::new().with_constraint(CcgConstraint::new(
+            "test",
+            ConstraintKind::MaxComplexity,
+            "Test constraint",
+        ));
 
         let verifier = ConstraintVerifier::new(constraints);
         assert_eq!(verifier.constraints().len(), 1);
@@ -542,8 +536,12 @@ mod tests {
     #[test]
     fn test_verify_max_complexity_passes_when_under_limit() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                .with_value(ConstraintValue::Number(10)),
+            CcgConstraint::new(
+                "max-complexity",
+                ConstraintKind::MaxComplexity,
+                "Keep it simple",
+            )
+            .with_value(ConstraintValue::Number(10)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -557,8 +555,12 @@ mod tests {
     #[test]
     fn test_verify_max_complexity_passes_at_exact_limit() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                .with_value(ConstraintValue::Number(10)),
+            CcgConstraint::new(
+                "max-complexity",
+                ConstraintKind::MaxComplexity,
+                "Keep it simple",
+            )
+            .with_value(ConstraintValue::Number(10)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -571,8 +573,12 @@ mod tests {
     #[test]
     fn test_verify_max_complexity_fails_when_over_limit() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                .with_value(ConstraintValue::Number(10)),
+            CcgConstraint::new(
+                "max-complexity",
+                ConstraintKind::MaxComplexity,
+                "Keep it simple",
+            )
+            .with_value(ConstraintValue::Number(10)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -625,8 +631,12 @@ mod tests {
     #[test]
     fn test_verify_max_lines_passes_when_under_limit() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("max-lines", ConstraintKind::MaxLines, "Keep functions short")
-                .with_value(ConstraintValue::Number(100)),
+            CcgConstraint::new(
+                "max-lines",
+                ConstraintKind::MaxLines,
+                "Keep functions short",
+            )
+            .with_value(ConstraintValue::Number(100)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -639,8 +649,12 @@ mod tests {
     #[test]
     fn test_verify_max_lines_fails_when_over_limit() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("max-lines", ConstraintKind::MaxLines, "Keep functions short")
-                .with_value(ConstraintValue::Number(100)),
+            CcgConstraint::new(
+                "max-lines",
+                ConstraintKind::MaxLines,
+                "Keep functions short",
+            )
+            .with_value(ConstraintValue::Number(100)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -660,8 +674,12 @@ mod tests {
     #[test]
     fn test_verify_max_parameters_passes_when_under_limit() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("max-params", ConstraintKind::MaxParameters, "Limit parameters")
-                .with_value(ConstraintValue::Number(5)),
+            CcgConstraint::new(
+                "max-params",
+                ConstraintKind::MaxParameters,
+                "Limit parameters",
+            )
+            .with_value(ConstraintValue::Number(5)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -674,8 +692,12 @@ mod tests {
     #[test]
     fn test_verify_max_parameters_fails_when_over_limit() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("max-params", ConstraintKind::MaxParameters, "Limit parameters")
-                .with_value(ConstraintValue::Number(5)),
+            CcgConstraint::new(
+                "max-params",
+                ConstraintKind::MaxParameters,
+                "Limit parameters",
+            )
+            .with_value(ConstraintValue::Number(5)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -695,8 +717,12 @@ mod tests {
     #[test]
     fn test_verify_no_direct_calls_passes_when_no_prohibited_calls() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("no-db", ConstraintKind::NoDirectCalls, "Use repository pattern")
-                .with_value(ConstraintValue::String("db::query".to_string())),
+            CcgConstraint::new(
+                "no-db",
+                ConstraintKind::NoDirectCalls,
+                "Use repository pattern",
+            )
+            .with_value(ConstraintValue::String("db::query".to_string())),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -711,8 +737,12 @@ mod tests {
     #[test]
     fn test_verify_no_direct_calls_fails_with_prohibited_call() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("no-db", ConstraintKind::NoDirectCalls, "Use repository pattern")
-                .with_value(ConstraintValue::String("db::query".to_string())),
+            CcgConstraint::new(
+                "no-db",
+                ConstraintKind::NoDirectCalls,
+                "Use repository pattern",
+            )
+            .with_value(ConstraintValue::String("db::query".to_string())),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
@@ -729,16 +759,19 @@ mod tests {
     #[test]
     fn test_verify_no_direct_calls_with_list_value() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("no-raw-io", ConstraintKind::NoDirectCalls, "Use abstractions")
-                .with_value(ConstraintValue::List(vec![
-                    "std::fs::read".to_string(),
-                    "std::fs::write".to_string(),
-                ])),
+            CcgConstraint::new(
+                "no-raw-io",
+                ConstraintKind::NoDirectCalls,
+                "Use abstractions",
+            )
+            .with_value(ConstraintValue::List(vec![
+                "std::fs::read".to_string(),
+                "std::fs::write".to_string(),
+            ])),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
-        let metrics = FunctionMetrics::new("bad_handler")
-            .with_call("std::fs::read");
+        let metrics = FunctionMetrics::new("bad_handler").with_call("std::fs::read");
 
         let result = verifier.verify_function(&metrics);
         assert!(!result.compliant);
@@ -747,13 +780,16 @@ mod tests {
     #[test]
     fn test_verify_no_direct_calls_with_wildcard() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("no-raw-io", ConstraintKind::NoDirectCalls, "Use abstractions")
-                .with_value(ConstraintValue::String("std::fs::*".to_string())),
+            CcgConstraint::new(
+                "no-raw-io",
+                ConstraintKind::NoDirectCalls,
+                "Use abstractions",
+            )
+            .with_value(ConstraintValue::String("std::fs::*".to_string())),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
-        let metrics = FunctionMetrics::new("handler")
-            .with_call("std::fs::read_to_string");
+        let metrics = FunctionMetrics::new("handler").with_call("std::fs::read_to_string");
 
         let result = verifier.verify_function(&metrics);
         assert!(!result.compliant);
@@ -800,7 +836,7 @@ mod tests {
         let verifier = ConstraintVerifier::new(constraints);
         let metrics = FunctionMetrics::new("mixed_func")
             .with_complexity(15) // Fails
-            .with_lines(50);     // Passes
+            .with_lines(50); // Passes
 
         let result = verifier.verify_function(&metrics);
         assert!(!result.compliant);
@@ -823,7 +859,7 @@ mod tests {
         let verifier = ConstraintVerifier::new(constraints);
         let metrics = FunctionMetrics::new("bad_func")
             .with_complexity(15)  // Fails
-            .with_lines(150);     // Fails
+            .with_lines(150); // Fails
 
         let result = verifier.verify_function(&metrics);
         assert!(!result.compliant);
@@ -837,14 +873,17 @@ mod tests {
     #[test]
     fn test_verify_targeted_constraint_applies_to_matching_function() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("core-complexity", ConstraintKind::MaxComplexity, "Core must be simple")
-                .with_target("core::*")
-                .with_value(ConstraintValue::Number(5)),
+            CcgConstraint::new(
+                "core-complexity",
+                ConstraintKind::MaxComplexity,
+                "Core must be simple",
+            )
+            .with_target("core::*")
+            .with_value(ConstraintValue::Number(5)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
-        let metrics = FunctionMetrics::new("core::process")
-            .with_complexity(10);
+        let metrics = FunctionMetrics::new("core::process").with_complexity(10);
 
         let result = verifier.verify_function(&metrics);
         assert!(!result.compliant);
@@ -853,14 +892,17 @@ mod tests {
     #[test]
     fn test_verify_targeted_constraint_does_not_apply_to_other_functions() {
         let constraints = ConstraintSet::new().with_constraint(
-            CcgConstraint::new("core-complexity", ConstraintKind::MaxComplexity, "Core must be simple")
-                .with_target("core::*")
-                .with_value(ConstraintValue::Number(5)),
+            CcgConstraint::new(
+                "core-complexity",
+                ConstraintKind::MaxComplexity,
+                "Core must be simple",
+            )
+            .with_target("core::*")
+            .with_value(ConstraintValue::Number(5)),
         );
 
         let verifier = ConstraintVerifier::new(constraints);
-        let metrics = FunctionMetrics::new("api::handler")
-            .with_complexity(10);
+        let metrics = FunctionMetrics::new("api::handler").with_complexity(10);
 
         let result = verifier.verify_function(&metrics);
         assert!(result.compliant); // Constraint doesn't apply
@@ -943,21 +985,42 @@ mod tests {
 
     #[test]
     fn test_matches_pattern_exact() {
-        assert!(ConstraintVerifier::matches_pattern("db::query", "db::query"));
-        assert!(!ConstraintVerifier::matches_pattern("db::query", "db::execute"));
+        assert!(ConstraintVerifier::matches_pattern(
+            "db::query",
+            "db::query"
+        ));
+        assert!(!ConstraintVerifier::matches_pattern(
+            "db::query",
+            "db::execute"
+        ));
     }
 
     #[test]
     fn test_matches_pattern_wildcard() {
-        assert!(ConstraintVerifier::matches_pattern("std::fs::read", "std::fs::*"));
-        assert!(ConstraintVerifier::matches_pattern("std::fs::write", "std::fs::*"));
-        assert!(!ConstraintVerifier::matches_pattern("std::io::read", "std::fs::*"));
+        assert!(ConstraintVerifier::matches_pattern(
+            "std::fs::read",
+            "std::fs::*"
+        ));
+        assert!(ConstraintVerifier::matches_pattern(
+            "std::fs::write",
+            "std::fs::*"
+        ));
+        assert!(!ConstraintVerifier::matches_pattern(
+            "std::io::read",
+            "std::fs::*"
+        ));
     }
 
     #[test]
     fn test_matches_pattern_prefix() {
-        assert!(ConstraintVerifier::matches_pattern("core::module::func", "core::*"));
-        assert!(!ConstraintVerifier::matches_pattern("api::handler", "core::*"));
+        assert!(ConstraintVerifier::matches_pattern(
+            "core::module::func",
+            "core::*"
+        ));
+        assert!(!ConstraintVerifier::matches_pattern(
+            "api::handler",
+            "core::*"
+        ));
     }
 
     // =========================================================================

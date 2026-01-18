@@ -7,9 +7,9 @@
 //! - [`SecurityGate`] - Runs security scans via narsil-mcp and cargo-audit
 //! - [`NoTodoGate`] - Checks for TODO/FIXME comments
 
-use std::sync::OnceLock;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 
@@ -196,7 +196,11 @@ impl ClippyGate {
             .into_iter()
             .filter(|issue| {
                 if let Some(ref code) = issue.code {
-                    !self.config.allowed_lints.iter().any(|allowed| code.contains(allowed))
+                    !self
+                        .config
+                        .allowed_lints
+                        .iter()
+                        .any(|allowed| code.contains(allowed))
                 } else {
                     true
                 }
@@ -237,8 +241,14 @@ impl QualityGate for ClippyGate {
     }
 
     fn remediation(&self, issues: &[GateIssue]) -> String {
-        let error_count = issues.iter().filter(|i| i.severity == IssueSeverity::Error).count();
-        let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count();
+        let error_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Error)
+            .count();
+        let warning_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Warning)
+            .count();
 
         format!(
             r#"## Clippy Linting Issues
@@ -391,7 +401,11 @@ impl QualityGate for CargoTestGate {
 3. Run `cargo test` to verify all pass
 "#,
             failed_tests.len(),
-            failed_tests.iter().map(|t| format!("- {}", t)).collect::<Vec<_>>().join("\n")
+            failed_tests
+                .iter()
+                .map(|t| format!("- {}", t))
+                .collect::<Vec<_>>()
+                .join("\n")
         )
     }
 }
@@ -729,8 +743,14 @@ impl QualityGate for SecurityGate {
     }
 
     fn remediation(&self, issues: &[GateIssue]) -> String {
-        let critical = issues.iter().filter(|i| i.severity == IssueSeverity::Critical).count();
-        let high = issues.iter().filter(|i| i.severity == IssueSeverity::Error).count();
+        let critical = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Critical)
+            .count();
+        let high = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Error)
+            .count();
 
         format!(
             r#"## Security Vulnerabilities
@@ -999,7 +1019,9 @@ fn main() {
 
         assert_eq!(issues.len(), 2);
         assert!(issues.iter().any(|i| i.message.contains("dead_code")));
-        assert!(issues.iter().any(|i| i.message.contains("unused_variables")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("unused_variables")));
     }
 
     #[test]
@@ -1051,7 +1073,10 @@ fn unused_function() {}
         let gate = NoAllowGate::new();
         let issues = gate.run(temp_dir.path()).unwrap();
 
-        assert!(issues.is_empty(), "Gate should skip #[allow] inside raw strings");
+        assert!(
+            issues.is_empty(),
+            "Gate should skip #[allow] inside raw strings"
+        );
     }
 
     // =========================================================================
@@ -1072,10 +1097,22 @@ fn unused_function() {}
 
     #[test]
     fn test_security_gate_severity_conversion() {
-        assert_eq!(SecurityGate::convert_severity(SecuritySeverity::Critical), IssueSeverity::Critical);
-        assert_eq!(SecurityGate::convert_severity(SecuritySeverity::High), IssueSeverity::Error);
-        assert_eq!(SecurityGate::convert_severity(SecuritySeverity::Medium), IssueSeverity::Warning);
-        assert_eq!(SecurityGate::convert_severity(SecuritySeverity::Low), IssueSeverity::Info);
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::Critical),
+            IssueSeverity::Critical
+        );
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::High),
+            IssueSeverity::Error
+        );
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::Medium),
+            IssueSeverity::Warning
+        );
+        assert_eq!(
+            SecurityGate::convert_severity(SecuritySeverity::Low),
+            IssueSeverity::Info
+        );
     }
 
     // =========================================================================

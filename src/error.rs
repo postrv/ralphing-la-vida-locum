@@ -14,7 +14,10 @@ pub enum RalphError {
     // =========================================================================
     /// Failed to load configuration
     #[error("Configuration error: {message}")]
-    Config { message: String, path: Option<PathBuf> },
+    Config {
+        message: String,
+        path: Option<PathBuf>,
+    },
 
     /// Invalid configuration value
     #[error("Invalid configuration: {field} - {reason}")]
@@ -48,7 +51,10 @@ pub enum RalphError {
     // =========================================================================
     /// Command blocked by security filter
     #[error("Security violation: {message}")]
-    Security { message: String, command: Option<String> },
+    Security {
+        message: String,
+        command: Option<String>,
+    },
 
     /// Dangerous command detected
     #[error("Dangerous command blocked: {pattern}")]
@@ -355,7 +361,11 @@ mod tests {
     fn test_config_with_path() {
         let path = PathBuf::from("/test/path.toml");
         let err = RalphError::config_with_path("failed to parse", path.clone());
-        if let RalphError::Config { message, path: opt_path } = err {
+        if let RalphError::Config {
+            message,
+            path: opt_path,
+        } = err
+        {
             assert_eq!(message, "failed to parse");
             assert_eq!(opt_path, Some(path));
         } else {
@@ -387,8 +397,10 @@ mod tests {
 
     #[test]
     fn test_into_ralph_error_trait() {
-        let result: std::result::Result<(), std::io::Error> =
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "file not found"));
+        let result: std::result::Result<(), std::io::Error> = Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file not found",
+        ));
 
         let ralph_result = result.into_ralph_config();
         assert!(ralph_result.is_err());

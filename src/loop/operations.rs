@@ -105,7 +105,10 @@ impl GitOperations for RealGitOperations {
     fn push(&self, remote: &str, branch: &str) -> Result<()> {
         let output = Command::new("git")
             .args(["push", remote, branch])
-            .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=10")
+            .env(
+                "GIT_SSH_COMMAND",
+                "ssh -o BatchMode=yes -o ConnectTimeout=10",
+            )
             .current_dir(&self.project_dir)
             .output()
             .context("Failed to push to remote")?;

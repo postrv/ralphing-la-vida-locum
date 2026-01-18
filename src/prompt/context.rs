@@ -1274,7 +1274,10 @@ impl CodeIntelligenceContext {
     /// Get definition references only.
     #[must_use]
     pub fn definitions(&self) -> Vec<&SymbolReference> {
-        self.references.iter().filter(|r| r.is_definition()).collect()
+        self.references
+            .iter()
+            .filter(|r| r.is_definition())
+            .collect()
     }
 
     /// Add CCG manifest (L0) data.
@@ -1312,7 +1315,9 @@ impl CodeIntelligenceContext {
     /// Get public API symbols from CCG architecture if available.
     #[must_use]
     pub fn public_api(&self) -> Option<&[crate::narsil::PublicSymbol]> {
-        self.ccg_architecture.as_ref().map(|a| a.public_api.as_slice())
+        self.ccg_architecture
+            .as_ref()
+            .map(|a| a.public_api.as_slice())
     }
 
     /// Get module hierarchy from CCG architecture if available.
@@ -1797,9 +1802,7 @@ mod tests {
     fn test_prompt_context_with_errors() {
         let error1 = ErrorContext::new("E0308", "type mismatch", ErrorSeverity::Error);
         let error2 = ErrorContext::new("E0433", "unresolved", ErrorSeverity::Error);
-        let context = PromptContext::new()
-            .with_error(error1)
-            .with_error(error2);
+        let context = PromptContext::new().with_error(error1).with_error(error2);
         assert_eq!(context.errors.len(), 2);
     }
 
@@ -1808,8 +1811,11 @@ mod tests {
         let context = PromptContext::new();
         assert!(!context.has_critical_issues());
 
-        let context_with_error =
-            PromptContext::new().with_error(ErrorContext::new("E0308", "err", ErrorSeverity::Error));
+        let context_with_error = PromptContext::new().with_error(ErrorContext::new(
+            "E0308",
+            "err",
+            ErrorSeverity::Error,
+        ));
         assert!(context_with_error.has_critical_issues());
     }
 
@@ -1819,8 +1825,8 @@ mod tests {
             ErrorContext::new("E0308", "type mismatch", ErrorSeverity::Error).with_occurrences(5);
         let error2 =
             ErrorContext::new("E0433", "unresolved", ErrorSeverity::Error).with_occurrences(2);
-        let error3 =
-            ErrorContext::new("E0599", "method not found", ErrorSeverity::Error).with_occurrences(10);
+        let error3 = ErrorContext::new("E0599", "method not found", ErrorSeverity::Error)
+            .with_occurrences(10);
 
         let context = PromptContext::new().with_errors(vec![error1, error2, error3]);
         let sorted = context.errors_by_frequency();
@@ -1860,8 +1866,8 @@ mod tests {
 
     #[test]
     fn test_current_task_context_completion_capped() {
-        let task = CurrentTaskContext::new("1.1", "Task", TaskPhase::Implementation)
-            .with_completion(150); // Over 100
+        let task =
+            CurrentTaskContext::new("1.1", "Task", TaskPhase::Implementation).with_completion(150); // Over 100
         assert_eq!(task.completion_percentage, 100);
     }
 
@@ -2076,7 +2082,10 @@ mod tests {
     #[test]
     fn test_attempt_outcome_display() {
         assert_eq!(AttemptOutcome::Success.to_string(), "Success");
-        assert_eq!(AttemptOutcome::CompilationError.to_string(), "Compilation Error");
+        assert_eq!(
+            AttemptOutcome::CompilationError.to_string(),
+            "Compilation Error"
+        );
     }
 
     // AntiPattern tests
@@ -2126,9 +2135,15 @@ mod tests {
 
     #[test]
     fn test_anti_pattern_type_display() {
-        assert_eq!(AntiPatternType::EditWithoutCommit.to_string(), "Edit Without Commit");
+        assert_eq!(
+            AntiPatternType::EditWithoutCommit.to_string(),
+            "Edit Without Commit"
+        );
         assert_eq!(AntiPatternType::TestsNotRun.to_string(), "Tests Not Run");
-        assert_eq!(AntiPatternType::RepeatingErrors.to_string(), "Repeating Errors");
+        assert_eq!(
+            AntiPatternType::RepeatingErrors.to_string(),
+            "Repeating Errors"
+        );
     }
 
     // AntiPatternSeverity tests
@@ -2157,9 +2172,21 @@ mod tests {
     #[test]
     fn test_error_aggregator_merges_duplicates() {
         let mut aggregator = ErrorAggregator::new();
-        aggregator.add(ErrorContext::new("E0308", "type mismatch", ErrorSeverity::Error));
-        aggregator.add(ErrorContext::new("E0308", "type mismatch", ErrorSeverity::Error));
-        aggregator.add(ErrorContext::new("E0433", "unresolved", ErrorSeverity::Error));
+        aggregator.add(ErrorContext::new(
+            "E0308",
+            "type mismatch",
+            ErrorSeverity::Error,
+        ));
+        aggregator.add(ErrorContext::new(
+            "E0308",
+            "type mismatch",
+            ErrorSeverity::Error,
+        ));
+        aggregator.add(ErrorContext::new(
+            "E0433",
+            "unresolved",
+            ErrorSeverity::Error,
+        ));
 
         assert_eq!(aggregator.unique_count(), 2);
         assert_eq!(aggregator.total_occurrences(), 3);
@@ -2188,8 +2215,7 @@ mod tests {
 
     #[test]
     fn test_prompt_context_serialize() {
-        let context = PromptContext::new()
-            .with_session_stats(SessionStats::new(5, 2, 100));
+        let context = PromptContext::new().with_session_stats(SessionStats::new(5, 2, 100));
 
         let json = serde_json::to_string(&context).unwrap();
         assert!(json.contains("\"iteration_count\":5"));
@@ -2277,11 +2303,9 @@ mod tests {
 
     #[test]
     fn test_code_intelligence_context_with_call_graph() {
-        let nodes = vec![
-            CallGraphNode::new("process_request")
-                .with_callers(vec!["handle_http".to_string()])
-                .with_callees(vec!["validate_input".to_string(), "execute".to_string()]),
-        ];
+        let nodes = vec![CallGraphNode::new("process_request")
+            .with_callers(vec!["handle_http".to_string()])
+            .with_callees(vec!["validate_input".to_string(), "execute".to_string()])];
         let intel = CodeIntelligenceContext::new()
             .with_call_graph(nodes)
             .mark_available();
@@ -2294,10 +2318,8 @@ mod tests {
     #[test]
     fn test_code_intelligence_context_with_references() {
         let refs = vec![
-            SymbolReference::new("MyStruct", "src/lib.rs", 42)
-                .with_kind(ReferenceKind::Definition),
-            SymbolReference::new("MyStruct", "src/main.rs", 10)
-                .with_kind(ReferenceKind::Usage),
+            SymbolReference::new("MyStruct", "src/lib.rs", 42).with_kind(ReferenceKind::Definition),
+            SymbolReference::new("MyStruct", "src/main.rs", 10).with_kind(ReferenceKind::Usage),
         ];
         let intel = CodeIntelligenceContext::new().with_references(refs);
 
@@ -2307,11 +2329,9 @@ mod tests {
 
     #[test]
     fn test_code_intelligence_context_with_dependencies() {
-        let deps = vec![
-            ModuleDependency::new("src/lib.rs")
-                .with_imports(vec!["std::io".to_string(), "crate::util".to_string()])
-                .with_imported_by(vec!["src/main.rs".to_string()]),
-        ];
+        let deps = vec![ModuleDependency::new("src/lib.rs")
+            .with_imports(vec!["std::io".to_string(), "crate::util".to_string()])
+            .with_imported_by(vec!["src/main.rs".to_string()])];
         let intel = CodeIntelligenceContext::new().with_dependencies(deps);
 
         assert_eq!(intel.dependencies.len(), 1);
@@ -2323,18 +2343,15 @@ mod tests {
         let empty = CodeIntelligenceContext::new();
         assert!(!empty.has_data());
 
-        let with_graph = CodeIntelligenceContext::new()
-            .with_call_graph(vec![CallGraphNode::new("foo")]);
+        let with_graph =
+            CodeIntelligenceContext::new().with_call_graph(vec![CallGraphNode::new("foo")]);
         assert!(with_graph.has_data());
     }
 
     #[test]
     fn test_code_intelligence_context_relevant_functions_count() {
         let intel = CodeIntelligenceContext::new()
-            .with_call_graph(vec![
-                CallGraphNode::new("foo"),
-                CallGraphNode::new("bar"),
-            ]);
+            .with_call_graph(vec![CallGraphNode::new("foo"), CallGraphNode::new("bar")]);
         assert_eq!(intel.relevant_functions_count(), 2);
     }
 
@@ -2376,12 +2393,17 @@ mod tests {
 
     #[test]
     fn test_call_graph_node_is_hotspot() {
-        let low_connections = CallGraphNode::new("foo")
-            .with_callers(vec!["a".to_string()]);
+        let low_connections = CallGraphNode::new("foo").with_callers(vec!["a".to_string()]);
         assert!(!low_connections.is_hotspot());
 
         let high_connections = CallGraphNode::new("bar")
-            .with_callers(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()])
+            .with_callers(vec![
+                "a".into(),
+                "b".into(),
+                "c".into(),
+                "d".into(),
+                "e".into(),
+            ])
             .with_callees(vec!["x".into()]);
         assert!(high_connections.is_hotspot());
     }
@@ -2413,12 +2435,10 @@ mod tests {
 
     #[test]
     fn test_symbol_reference_is_definition() {
-        let def = SymbolReference::new("foo", "lib.rs", 1)
-            .with_kind(ReferenceKind::Definition);
+        let def = SymbolReference::new("foo", "lib.rs", 1).with_kind(ReferenceKind::Definition);
         assert!(def.is_definition());
 
-        let usage = SymbolReference::new("foo", "main.rs", 10)
-            .with_kind(ReferenceKind::Usage);
+        let usage = SymbolReference::new("foo", "main.rs", 10).with_kind(ReferenceKind::Usage);
         assert!(!usage.is_definition());
     }
 
@@ -2543,7 +2563,7 @@ mod tests {
 
     #[test]
     fn test_code_intelligence_context_with_ccg_architecture() {
-        use crate::narsil::{CcgArchitecture, PublicSymbol, SymbolKind, Module};
+        use crate::narsil::{CcgArchitecture, Module, PublicSymbol, SymbolKind};
 
         let arch = CcgArchitecture::new()
             .with_public_symbol(PublicSymbol::new("process_request", SymbolKind::Function))
@@ -2565,37 +2585,35 @@ mod tests {
         use crate::narsil::{CcgManifest, SecuritySummary};
 
         // No security issues
-        let safe_manifest = CcgManifest::new("safe-repo", "/path")
-            .with_security_summary(SecuritySummary {
+        let safe_manifest =
+            CcgManifest::new("safe-repo", "/path").with_security_summary(SecuritySummary {
                 critical: 0,
                 high: 0,
                 medium: 2,
                 low: 5,
             });
 
-        let safe_intel = CodeIntelligenceContext::new()
-            .with_ccg_manifest(safe_manifest);
+        let safe_intel = CodeIntelligenceContext::new().with_ccg_manifest(safe_manifest);
 
         assert!(!safe_intel.has_blocking_security_issues());
 
         // Critical issues
-        let unsafe_manifest = CcgManifest::new("unsafe-repo", "/path")
-            .with_security_summary(SecuritySummary {
+        let unsafe_manifest =
+            CcgManifest::new("unsafe-repo", "/path").with_security_summary(SecuritySummary {
                 critical: 1,
                 high: 0,
                 medium: 0,
                 low: 0,
             });
 
-        let unsafe_intel = CodeIntelligenceContext::new()
-            .with_ccg_manifest(unsafe_manifest);
+        let unsafe_intel = CodeIntelligenceContext::new().with_ccg_manifest(unsafe_manifest);
 
         assert!(unsafe_intel.has_blocking_security_issues());
     }
 
     #[test]
     fn test_code_intelligence_context_estimate_payload_size() {
-        use crate::narsil::{CcgManifest, CcgArchitecture, PublicSymbol, SymbolKind, Module};
+        use crate::narsil::{CcgArchitecture, CcgManifest, Module, PublicSymbol, SymbolKind};
 
         // Empty context
         let empty = CodeIntelligenceContext::new();
@@ -2612,7 +2630,7 @@ mod tests {
             .with_ccg_architecture(
                 CcgArchitecture::new()
                     .with_public_symbol(PublicSymbol::new("foo", SymbolKind::Function))
-                    .with_module(Module::new("lib", "src/lib.rs"))
+                    .with_module(Module::new("lib", "src/lib.rs")),
             );
 
         // 200 (manifest) + 80 (1 symbol) + 40 (1 module) = 320
@@ -2624,8 +2642,8 @@ mod tests {
         use crate::narsil::CcgManifest;
 
         // Only CCG manifest counts as data
-        let intel = CodeIntelligenceContext::new()
-            .with_ccg_manifest(CcgManifest::new("test", "/path"));
+        let intel =
+            CodeIntelligenceContext::new().with_ccg_manifest(CcgManifest::new("test", "/path"));
 
         assert!(intel.has_data());
         assert!(intel.has_ccg_data());
@@ -2664,11 +2682,14 @@ mod tests {
     fn test_code_intelligence_context_with_constraints() {
         use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
 
-        let constraints = ConstraintSet::new()
-            .with_constraint(
-                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                    .with_value(ConstraintValue::Number(10)),
-            );
+        let constraints = ConstraintSet::new().with_constraint(
+            CcgConstraint::new(
+                "max-complexity",
+                ConstraintKind::MaxComplexity,
+                "Keep it simple",
+            )
+            .with_value(ConstraintValue::Number(10)),
+        );
 
         let intel = CodeIntelligenceContext::new().with_constraints(constraints);
 
@@ -2702,17 +2723,19 @@ mod tests {
     fn test_code_intelligence_context_has_blocking_constraints() {
         use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintSeverity};
 
-        let non_blocking = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test"));
+        let non_blocking = ConstraintSet::new().with_constraint(CcgConstraint::new(
+            "c1",
+            ConstraintKind::MaxComplexity,
+            "Test",
+        ));
 
         let intel = CodeIntelligenceContext::new().with_constraints(non_blocking);
         assert!(!intel.has_blocking_constraints());
 
-        let blocking = ConstraintSet::new()
-            .with_constraint(
-                CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Blocking")
-                    .with_severity(ConstraintSeverity::Error),
-            );
+        let blocking = ConstraintSet::new().with_constraint(
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Blocking")
+                .with_severity(ConstraintSeverity::Error),
+        );
 
         let intel = CodeIntelligenceContext::new().with_constraints(blocking);
         assert!(intel.has_blocking_constraints());
@@ -2722,12 +2745,15 @@ mod tests {
     fn test_code_intelligence_context_constraint_warnings_for() {
         use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
 
-        let constraints = ConstraintSet::new()
-            .with_constraint(
-                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                    .with_target("process")
-                    .with_value(ConstraintValue::Number(10)),
-            );
+        let constraints = ConstraintSet::new().with_constraint(
+            CcgConstraint::new(
+                "max-complexity",
+                ConstraintKind::MaxComplexity,
+                "Keep it simple",
+            )
+            .with_target("process")
+            .with_value(ConstraintValue::Number(10)),
+        );
 
         let intel = CodeIntelligenceContext::new().with_constraints(constraints);
 
@@ -2741,7 +2767,11 @@ mod tests {
         use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet};
 
         let constraints = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test1"))
+            .with_constraint(CcgConstraint::new(
+                "c1",
+                ConstraintKind::MaxComplexity,
+                "Test1",
+            ))
             .with_constraint(CcgConstraint::new("c2", ConstraintKind::MaxLines, "Test2"));
 
         let intel = CodeIntelligenceContext::new().with_constraints(constraints);
@@ -2755,11 +2785,14 @@ mod tests {
     fn test_code_intelligence_context_constraint_serialize_roundtrip() {
         use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
 
-        let constraints = ConstraintSet::new()
-            .with_constraint(
-                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                    .with_value(ConstraintValue::Number(10)),
-            );
+        let constraints = ConstraintSet::new().with_constraint(
+            CcgConstraint::new(
+                "max-complexity",
+                ConstraintKind::MaxComplexity,
+                "Keep it simple",
+            )
+            .with_value(ConstraintValue::Number(10)),
+        );
 
         let intel = CodeIntelligenceContext::new()
             .with_constraints(constraints)

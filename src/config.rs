@@ -240,7 +240,10 @@ impl ProjectConfig {
     /// Check if a command matches a permission pattern
     fn matches_permission_pattern(pattern: &str, command: &str) -> bool {
         // Handle Bash(*) patterns
-        if let Some(bash_pattern) = pattern.strip_prefix("Bash(").and_then(|s| s.strip_suffix(")")) {
+        if let Some(bash_pattern) = pattern
+            .strip_prefix("Bash(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
             // Simple glob matching
             if bash_pattern == "*" {
                 return true;
@@ -365,7 +368,9 @@ pub fn suggest_gh_alternative(command: &str) -> Option<String> {
 
     // ssh-keygen suggestions
     if command.contains("ssh-keygen") || command.contains("ssh-add") {
-        return Some("gh CLI handles authentication - no SSH keys needed. Run 'gh auth login'".to_string());
+        return Some(
+            "gh CLI handles authentication - no SSH keys needed. Run 'gh auth login'".to_string(),
+        );
     }
 
     None
@@ -501,7 +506,9 @@ pub fn verify_git_environment() -> GitEnvironmentCheck {
             check.gh_installed = true;
         }
         _ => {
-            check.errors.push("gh CLI not installed - required for GitHub operations".to_string());
+            check
+                .errors
+                .push("gh CLI not installed - required for GitHub operations".to_string());
         }
     }
 
@@ -519,7 +526,9 @@ pub fn verify_git_environment() -> GitEnvironmentCheck {
                 ));
             }
             Err(e) => {
-                check.errors.push(format!("Failed to check gh auth status: {}", e));
+                check
+                    .errors
+                    .push(format!("Failed to check gh auth status: {}", e));
             }
         }
     }
@@ -527,9 +536,9 @@ pub fn verify_git_environment() -> GitEnvironmentCheck {
     // Check if SSH agent is running (warning - should use gh instead)
     if std::env::var("SSH_AUTH_SOCK").is_ok() {
         check.ssh_agent_running = true;
-        check.warnings.push(
-            "SSH agent detected - Ralph prefers gh CLI for GitHub operations".to_string()
-        );
+        check
+            .warnings
+            .push("SSH agent detected - Ralph prefers gh CLI for GitHub operations".to_string());
     }
 
     check
@@ -585,7 +594,8 @@ mod tests {
         std::fs::write(
             temp.path().join(".claude/settings.json"),
             r#"{"respectGitignore": false, "permissions": {"allow": ["Bash(git *)"], "deny": []}}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let config = ProjectConfig::load(temp.path()).unwrap();
         assert!(!config.respect_gitignore);
@@ -617,10 +627,7 @@ mod tests {
     fn test_is_command_allowed_glob_patterns() {
         let config = ProjectConfig {
             permissions: PermissionsConfig {
-                allow: vec![
-                    "Bash(git *)".to_string(),
-                    "Bash(npm *)".to_string(),
-                ],
+                allow: vec!["Bash(git *)".to_string(), "Bash(npm *)".to_string()],
                 deny: vec![],
             },
             ..Default::default()
@@ -644,14 +651,8 @@ mod tests {
             ProjectConfig::claude_md_path(path),
             path.join(".claude/CLAUDE.md")
         );
-        assert_eq!(
-            ProjectConfig::analytics_dir(path),
-            path.join(".ralph")
-        );
-        assert_eq!(
-            ProjectConfig::archive_dir(path),
-            path.join(".archive")
-        );
+        assert_eq!(ProjectConfig::analytics_dir(path), path.join(".ralph"));
+        assert_eq!(ProjectConfig::archive_dir(path), path.join(".archive"));
         assert_eq!(
             ProjectConfig::analysis_dir(path),
             path.join(".ralph/analysis")
@@ -667,7 +668,11 @@ mod tests {
     #[test]
     fn test_secret_patterns_valid_regex() {
         for pattern in SECRET_PATTERNS {
-            assert!(regex::Regex::new(pattern).is_ok(), "Invalid pattern: {}", pattern);
+            assert!(
+                regex::Regex::new(pattern).is_ok(),
+                "Invalid pattern: {}",
+                pattern
+            );
         }
     }
 
@@ -683,7 +688,9 @@ mod tests {
         assert!(is_ssh_command("cat ~/.ssh/id_rsa"));
         assert!(is_ssh_command("ls ~/.ssh"));
         assert!(is_ssh_command("git clone git@github.com:user/repo.git"));
-        assert!(is_ssh_command("git remote add origin git@github.com:user/repo"));
+        assert!(is_ssh_command(
+            "git remote add origin git@github.com:user/repo"
+        ));
     }
 
     #[test]
@@ -736,10 +743,22 @@ mod tests {
         assert_eq!(StagnationLevel::from_count(4, 5), StagnationLevel::None);
         assert_eq!(StagnationLevel::from_count(5, 5), StagnationLevel::Warning);
         assert_eq!(StagnationLevel::from_count(9, 5), StagnationLevel::Warning);
-        assert_eq!(StagnationLevel::from_count(10, 5), StagnationLevel::Elevated);
-        assert_eq!(StagnationLevel::from_count(14, 5), StagnationLevel::Elevated);
-        assert_eq!(StagnationLevel::from_count(15, 5), StagnationLevel::Critical);
-        assert_eq!(StagnationLevel::from_count(100, 5), StagnationLevel::Critical);
+        assert_eq!(
+            StagnationLevel::from_count(10, 5),
+            StagnationLevel::Elevated
+        );
+        assert_eq!(
+            StagnationLevel::from_count(14, 5),
+            StagnationLevel::Elevated
+        );
+        assert_eq!(
+            StagnationLevel::from_count(15, 5),
+            StagnationLevel::Critical
+        );
+        assert_eq!(
+            StagnationLevel::from_count(100, 5),
+            StagnationLevel::Critical
+        );
     }
 
     #[test]

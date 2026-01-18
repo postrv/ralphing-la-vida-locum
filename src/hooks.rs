@@ -4,9 +4,9 @@
 //! in the automation process to validate commands, scan for secrets,
 //! and enforce security policies.
 
-use ralph::config::{ProjectConfig, DANGEROUS_PATTERNS, SECRET_PATTERNS};
 use anyhow::Result;
 use clap::ValueEnum;
+use ralph::config::{ProjectConfig, DANGEROUS_PATTERNS, SECRET_PATTERNS};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -82,7 +82,8 @@ fn security_filter(input: Option<&str>) -> Result<HookResult> {
     for (pattern, description) in dangerous_checks {
         if let Ok(re) = Regex::new(pattern) {
             if re.is_match(&command) {
-                result.warnings
+                result
+                    .warnings
                     .push(format!("Potentially dangerous: {}", description));
             }
         }
@@ -121,8 +122,7 @@ fn post_edit_scan(_input: Option<&str>) -> Result<HookResult> {
                 if regex.is_match(&content) {
                     result.warnings.push(format!(
                         "Potential secret detected in {}: pattern {}",
-                        file_path,
-                        SECRET_PATTERNS[i]
+                        file_path, SECRET_PATTERNS[i]
                     ));
                 }
             }
@@ -178,7 +178,9 @@ fn end_of_turn(_input: Option<&str>) -> Result<HookResult> {
                     }
                 }
             } else if stdout.contains("HIGH") {
-                result.warnings.push("HIGH severity security findings detected".to_string());
+                result
+                    .warnings
+                    .push("HIGH severity security findings detected".to_string());
             }
         }
     }
@@ -203,7 +205,9 @@ fn session_init(_input: Option<&str>) -> Result<HookResult> {
     }
 
     // Check for uncommitted changes
-    let output = Command::new("git").args(["status", "--porcelain"]).output()?;
+    let output = Command::new("git")
+        .args(["status", "--porcelain"])
+        .output()?;
 
     if output.status.success() {
         let uncommitted = std::str::from_utf8(&output.stdout)?
@@ -212,10 +216,9 @@ fn session_init(_input: Option<&str>) -> Result<HookResult> {
             .count();
 
         if uncommitted > 0 {
-            result.warnings.push(format!(
-                "{} uncommitted changes detected",
-                uncommitted
-            ));
+            result
+                .warnings
+                .push(format!("{} uncommitted changes detected", uncommitted));
         }
     }
 
@@ -380,7 +383,10 @@ mod tests {
         // npm install should be denied
         let result = validate_command_with_config("npm install", &config).unwrap();
         assert!(result.blocked);
-        assert!(result.message.unwrap().contains("denied by project permissions"));
+        assert!(result
+            .message
+            .unwrap()
+            .contains("denied by project permissions"));
     }
 
     #[test]
@@ -480,7 +486,11 @@ mod tests {
         use tempfile::TempDir;
         let temp = TempDir::new().unwrap();
         let file_path = temp.path().join("key.pem");
-        std::fs::write(&file_path, "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----").unwrap();
+        std::fs::write(
+            &file_path,
+            "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+        )
+        .unwrap();
 
         let findings = scan_file_for_secrets(&file_path).unwrap();
         assert!(!findings.is_empty());
