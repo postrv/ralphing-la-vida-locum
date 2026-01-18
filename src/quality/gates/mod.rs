@@ -43,6 +43,7 @@
 
 pub mod python;
 pub mod rust;
+pub mod typescript;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -387,7 +388,7 @@ pub fn gates_for_language(lang: Language) -> Vec<Box<dyn QualityGate>> {
     match lang {
         Language::Rust => rust::rust_gates(),
         Language::Python => python::python_gates(),
-        // Future: Language::TypeScript | Language::JavaScript => typescript::ts_quality_gates(),
+        Language::TypeScript | Language::JavaScript => typescript::typescript_gates(),
         // Future: Language::Go => go::go_quality_gates(),
         _ => Vec::new(),
     }
@@ -1692,6 +1693,66 @@ edition = "2021"
     #[test]
     fn test_python_quality_gates_have_remediation() {
         let gates = gates_for_language(Language::Python);
+        for gate in &gates {
+            let issues = vec![GateIssue::new(IssueSeverity::Error, "test error")];
+            let remediation = gate.remediation(&issues);
+            assert!(
+                !remediation.is_empty(),
+                "Gate {} should provide remediation",
+                gate.name()
+            );
+        }
+    }
+
+    // =========================================================================
+    // TypeScript/JavaScript QualityGate tests
+    // =========================================================================
+
+    #[test]
+    fn test_gates_for_language_typescript_not_empty() {
+        let gates = gates_for_language(Language::TypeScript);
+        assert!(!gates.is_empty(), "TypeScript should have quality gates");
+    }
+
+    #[test]
+    fn test_gates_for_language_javascript_not_empty() {
+        let gates = gates_for_language(Language::JavaScript);
+        assert!(!gates.is_empty(), "JavaScript should have quality gates");
+    }
+
+    #[test]
+    fn test_gates_for_language_typescript_has_expected_gates() {
+        let gates = gates_for_language(Language::TypeScript);
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+
+        assert!(names.contains(&"ESLint"), "Should have ESLint gate");
+        assert!(names.contains(&"Jest"), "Should have Jest gate");
+        assert!(names.contains(&"TypeScript"), "Should have TypeScript gate");
+        assert!(names.contains(&"npm-audit"), "Should have npm-audit gate");
+    }
+
+    #[test]
+    fn test_gates_for_language_javascript_has_expected_gates() {
+        let gates = gates_for_language(Language::JavaScript);
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+
+        assert!(names.contains(&"ESLint"), "Should have ESLint gate");
+        assert!(names.contains(&"Jest"), "Should have Jest gate");
+        assert!(names.contains(&"npm-audit"), "Should have npm-audit gate");
+    }
+
+    #[test]
+    fn test_typescript_quality_gates_are_send_sync() {
+        let gates = gates_for_language(Language::TypeScript);
+        fn assert_send_sync<T: Send + Sync>(_: &T) {}
+        for gate in &gates {
+            assert_send_sync(gate);
+        }
+    }
+
+    #[test]
+    fn test_typescript_quality_gates_have_remediation() {
+        let gates = gates_for_language(Language::TypeScript);
         for gate in &gates {
             let issues = vec![GateIssue::new(IssueSeverity::Error, "test error")];
             let remediation = gate.remediation(&issues);
