@@ -36,16 +36,16 @@
 //! manager.run().await?;
 //! ```
 
+// Sub-modules
+mod checkpoint;
+mod iteration;
+mod prompt_handling;
+
 use super::operations::{RealClaudeProcess, RealFileSystem, RealGitOperations, RealQualityChecker};
-use super::progress::{ProgressEvaluation, ProgressSignals, ProgressTracker};
-use super::retry::{
-    FailureClass, FailureClassifier, FailureContext, FailureLocation, IntelligentRetry,
-    RecoveryStrategy, RetryAttempt, RetryConfig, RetryHistory, SubTask, TaskDecomposer,
-};
+use super::progress::ProgressTracker;
+use super::retry::{IntelligentRetry, RetryConfig, RetryHistory};
 use super::state::{LoopMode, LoopState};
-use super::task_tracker::{
-    TaskState, TaskTracker, TaskTrackerConfig, TaskTransition, ValidationResult,
-};
+use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransition};
 use crate::supervisor::predictor::{
     InterventionThresholds, PredictorConfig, PreventiveAction, RiskSignals, RiskWeights,
     StagnationPredictor,
@@ -65,24 +65,23 @@ use ralph::Analytics;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
-use tokio::process::Command as AsyncCommand;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 /// Maximum retries for transient failures (LSP crashes, etc.)
-const MAX_RETRIES: u32 = 3;
+pub(crate) const MAX_RETRIES: u32 = 3;
 
 /// Backoff delay between retries in milliseconds
-const RETRY_BACKOFF_MS: u64 = 2000;
+pub(crate) const RETRY_BACKOFF_MS: u64 = 2000;
 
 /// Estimated tokens per byte (conservative estimate for code)
-const TOKENS_PER_BYTE: f64 = 0.25;
+pub(crate) const TOKENS_PER_BYTE: f64 = 0.25;
 
 /// Warning threshold for file size (Claude's limit is ~25k tokens)
-const FILE_SIZE_WARNING_TOKENS: usize = 20_000;
+pub(crate) const FILE_SIZE_WARNING_TOKENS: usize = 20_000;
 
 /// Critical threshold - files this size will cause Claude errors
-const FILE_SIZE_CRITICAL_TOKENS: usize = 25_000;
+pub(crate) const FILE_SIZE_CRITICAL_TOKENS: usize = 25_000;
 
 /// Dependencies for the loop manager.
 ///
@@ -268,26 +267,26 @@ impl LoopManagerConfig {
 /// Supports dependency injection through `LoopDependencies` for testing.
 #[derive(Debug)]
 pub struct LoopManager {
-    project_dir: PathBuf,
-    max_iterations: u32,
-    stagnation_threshold: u32,
-    doc_sync_interval: u32,
-    state: LoopState,
-    analytics: Analytics,
-    config: ProjectConfig,
-    verbose: bool,
+    pub(crate) project_dir: PathBuf,
+    pub(crate) max_iterations: u32,
+    pub(crate) stagnation_threshold: u32,
+    pub(crate) doc_sync_interval: u32,
+    pub(crate) state: LoopState,
+    pub(crate) analytics: Analytics,
+    pub(crate) config: ProjectConfig,
+    pub(crate) verbose: bool,
     /// Injected dependencies (None = use direct calls for backward compatibility).
-    deps: Option<LoopDependencies>,
+    pub(crate) deps: Option<LoopDependencies>,
     /// Task-level progress tracker.
-    task_tracker: TaskTracker,
+    pub(crate) task_tracker: TaskTracker,
     /// Dynamic prompt assembler for context-aware prompts.
-    prompt_assembler: PromptAssembler,
+    pub(crate) prompt_assembler: PromptAssembler,
     /// Semantic progress tracker for multi-dimensional progress detection.
-    progress_tracker: ProgressTracker,
+    pub(crate) progress_tracker: ProgressTracker,
     /// Intelligent retry system for failure classification and recovery.
-    intelligent_retry: IntelligentRetry,
+    pub(crate) intelligent_retry: IntelligentRetry,
     /// Retry history for tracking and learning from retry attempts.
-    retry_history: RetryHistory,
+    pub(crate) retry_history: RetryHistory,
 }
 
 impl LoopManager {
@@ -1515,14 +1514,14 @@ impl LoopManager {
 
     /// Print the startup banner.
     fn print_banner(&self) {
-        println!("{}", "═".repeat(60).bright_blue());
+        println!("{}", "=".repeat(60).bright_blue());
         println!(
             "{}",
             "     RALPH - Claude Code Automation Suite"
                 .bright_blue()
                 .bold()
         );
-        println!("{}", "═".repeat(60).bright_blue());
+        println!("{}", "=".repeat(60).bright_blue());
         println!();
         println!("   Project: {}", self.project_dir.display());
         println!("   Mode: {}", self.state.mode);
@@ -1573,12 +1572,12 @@ impl LoopManager {
             println!();
             println!("{}", "   Allowed operations:".cyan());
             for perm in &self.config.permissions.allow {
-                println!("     ✓ {}", perm.green());
+                println!("     {} {}", "OK".green(), perm.green());
             }
             if !self.config.permissions.deny.is_empty() {
                 println!("{}", "   Safety blocks (denied):".cyan());
                 for perm in &self.config.permissions.deny {
-                    println!("     ✗ {}", perm.red());
+                    println!("     {} {}", "X".red(), perm.red());
                 }
             }
         }
@@ -1597,64 +1596,8 @@ impl LoopManager {
         );
     }
 
-    /// Get MD5 hash of IMPLEMENTATION_PLAN.md.
-    fn get_plan_hash(&self) -> Result<String> {
-        let content = if let Some(deps) = &self.deps {
-            // Use try_read to avoid blocking in async contexts
-            let fs = deps
-                .fs
-                .try_read()
-                .map_err(|_| anyhow::anyhow!("Could not acquire filesystem lock"))?;
-            fs.read_file("IMPLEMENTATION_PLAN.md")
-                .context("Failed to read IMPLEMENTATION_PLAN.md")?
-        } else {
-            let plan_path = self.project_dir.join("IMPLEMENTATION_PLAN.md");
-            std::fs::read_to_string(&plan_path).context("Failed to read IMPLEMENTATION_PLAN.md")?
-        };
-        Ok(format!("{:x}", md5::compute(content.as_bytes())))
-    }
-
-    /// Read the plan content from IMPLEMENTATION_PLAN.md.
-    fn read_plan_content(&self) -> Result<String> {
-        if let Some(deps) = &self.deps {
-            let fs = deps
-                .fs
-                .try_read()
-                .map_err(|_| anyhow::anyhow!("Could not acquire filesystem lock"))?;
-            fs.read_file("IMPLEMENTATION_PLAN.md")
-                .context("Failed to read IMPLEMENTATION_PLAN.md")
-        } else {
-            let plan_path = self.project_dir.join("IMPLEMENTATION_PLAN.md");
-            std::fs::read_to_string(&plan_path).context("Failed to read IMPLEMENTATION_PLAN.md")
-        }
-    }
-
-    /// Check for orphaned tasks when the plan structure changes.
-    ///
-    /// Validates the current task tracker against the plan and marks
-    /// any tasks that are no longer in the plan as orphaned.
-    fn check_for_orphaned_tasks(&mut self) {
-        if let Ok(plan_content) = self.read_plan_content() {
-            match self.task_tracker.validate_against_plan(&plan_content) {
-                ValidationResult::Valid => {
-                    debug!("Plan structure unchanged, no orphaned tasks");
-                }
-                ValidationResult::PlanChanged { orphaned_tasks } => {
-                    if !orphaned_tasks.is_empty() {
-                        warn!(
-                            "Plan structure changed, {} task(s) orphaned: {:?}",
-                            orphaned_tasks.len(),
-                            orphaned_tasks
-                        );
-                        self.task_tracker.mark_orphaned_tasks(&plan_content);
-                    }
-                }
-            }
-        }
-    }
-
     /// Get the current git commit hash (HEAD).
-    fn get_commit_hash(&self) -> Result<String> {
+    pub(crate) fn get_commit_hash(&self) -> Result<String> {
         if let Some(deps) = &self.deps {
             deps.git.get_commit_hash()
         } else {
@@ -1673,7 +1616,7 @@ impl LoopManager {
     }
 
     /// Count commits between two hashes.
-    fn count_commits_since(&self, old_hash: &str) -> u32 {
+    pub(crate) fn count_commits_since(&self, old_hash: &str) -> u32 {
         if old_hash.is_empty() {
             return 0;
         }
@@ -1696,435 +1639,10 @@ impl LoopManager {
         }
     }
 
-    /// Check if there's been any progress (commits or plan changes).
-    fn has_made_progress(&self) -> bool {
-        // Use semantic progress evaluation
-        match self.evaluate_progress() {
-            Ok(evaluation) => {
-                debug!(
-                    "Progress evaluation: {:?} (score: {:.2}) - {}",
-                    evaluation.verdict, evaluation.score, evaluation.explanation
-                );
-
-                // Log health status for monitoring
-                if evaluation.verdict.is_healthy() {
-                    debug!("Verdict indicates healthy activity");
-                } else {
-                    debug!("Verdict indicates unhealthy state - may need intervention");
-                }
-
-                evaluation.verdict.should_reset_stagnation()
-            }
-            Err(e) => {
-                // Fall back to simple commit check on error
-                debug!(
-                    "Progress evaluation failed ({}), falling back to commit check",
-                    e
-                );
-                let commit_count = self.count_commits_since(&self.state.last_commit_hash);
-                if commit_count > 0 {
-                    debug!("Progress detected: {} new commit(s)", commit_count);
-                    return true;
-                }
-
-                // Check for plan file changes
-                if let Ok(current_hash) = self.get_plan_hash() {
-                    if current_hash != self.state.last_plan_hash {
-                        debug!("Progress detected: IMPLEMENTATION_PLAN.md changed");
-                        return true;
-                    }
-                }
-
-                false
-            }
-        }
-    }
-
-    /// Evaluate progress using semantic signals.
-    ///
-    /// Returns a detailed evaluation including score, verdict, and explanation.
-    fn evaluate_progress(&self) -> Result<ProgressEvaluation> {
-        self.progress_tracker.evaluate(&self.state.last_commit_hash)
-    }
-
-    /// Collect detailed progress signals for logging and analysis.
-    ///
-    /// This method gathers multi-dimensional signals from git, quality checks,
-    /// and behavioral patterns to provide comprehensive progress insights.
-    pub fn collect_progress_signals(&self) -> Result<ProgressSignals> {
-        self.progress_tracker
-            .collect_signals(&self.state.last_commit_hash)
-    }
-
-    /// Log detailed progress status for the current iteration.
-    ///
-    /// Uses the progress tracker to collect and evaluate signals,
-    /// providing verbose output about the state of progress.
-    pub fn log_progress_status(&self) {
-        // Collect raw signals
-        let signals = match self.collect_progress_signals() {
-            Ok(s) => s,
-            Err(e) => {
-                debug!("Could not collect progress signals: {}", e);
-                // Return empty signals as fallback
-                ProgressSignals::new()
-            }
-        };
-
-        // Quick check for any positive activity
-        if signals.has_any_positive_signal() {
-            debug!("Progress signals detected: {}", signals.summary());
-        } else {
-            debug!("No positive progress signals detected");
-        }
-
-        // Collect and log quality signals separately
-        if let Ok(quality) = self.progress_tracker.collect_quality_signals() {
-            debug!("Quality state: {}", quality.summary());
-        }
-
-        // Evaluate the signals
-        let evaluation = self.progress_tracker().evaluate_signals(&signals);
-        debug!(
-            "Signal evaluation: {:?} (score: {:.2})",
-            evaluation.verdict, evaluation.score
-        );
-
-        // Log contribution breakdown if verbose
-        for contrib in &evaluation.contributions {
-            debug!(
-                "  - {}: raw={:.1}, weight={:.2}, contribution={:.3}",
-                contrib.signal_name, contrib.raw_value, contrib.weight, contrib.contribution
-            );
-        }
-    }
-
-    /// Update progress tracking baselines after each iteration.
-    ///
-    /// This should be called after quality checks to ensure accurate delta
-    /// calculations for the next iteration.
-    pub fn update_progress_baselines(&mut self) {
-        // Collect current quality state and update baselines
-        if let Ok(quality) = self.progress_tracker.collect_quality_signals() {
-            self.progress_tracker
-                .update_baselines(quality.test_count, quality.warning_count);
-            debug!(
-                "Updated progress baselines: {} tests, {} warnings",
-                quality.test_count, quality.warning_count
-            );
-        }
-    }
-
-    // =========================================================================
-    // Intelligent Retry Methods
-    // =========================================================================
-
-    /// Classify a failure and determine recovery strategy.
-    ///
-    /// Returns `Some((strategy, prompt))` if retry should be attempted,
-    /// `None` if retries are exhausted.
-    pub fn classify_failure(
-        &mut self,
-        error_output: &str,
-        task_id: Option<&str>,
-    ) -> Option<(RecoveryStrategy, String)> {
-        self.intelligent_retry
-            .process_failure(error_output, task_id)
-    }
-
-    /// Record a retry attempt in history.
-    pub fn record_retry_attempt(
-        &mut self,
-        failure: FailureContext,
-        strategy: RecoveryStrategy,
-        succeeded: bool,
-    ) {
-        // Capture failure class before moving
-        let failure_class = failure.class;
-        let mut attempt = RetryAttempt::new(failure, strategy);
-        if succeeded {
-            attempt.mark_success();
-        }
-        self.retry_history.record(attempt);
-        debug!(
-            "Recorded retry attempt: {:?} with strategy {:?}, success={}",
-            failure_class, strategy, succeeded
-        );
-    }
-
-    /// Get a summary of retry history for logging.
-    #[must_use]
-    pub fn retry_summary(&self) -> String {
-        let history_summary = self.retry_history.summary();
-        let intelligent_summary = self.intelligent_retry.summary();
-
-        // Include success rates for common strategies
-        let isolated_fix_rate = self
-            .retry_history
-            .success_rate(RecoveryStrategy::IsolatedFix);
-        let test_first_rate = self.retry_history.success_rate(RecoveryStrategy::TestFirst);
-
-        // Include success rates for common failure classes
-        let compile_error_rate = self
-            .retry_history
-            .class_success_rate(FailureClass::CompileError);
-        let test_failure_rate = self
-            .retry_history
-            .class_success_rate(FailureClass::TestFailure);
-
-        format!(
-            "{}; {}; Strategy success: IsolatedFix={:.0}%, TestFirst={:.0}%; Class success: CompileError={:.0}%, TestFailure={:.0}%",
-            history_summary,
-            intelligent_summary,
-            isolated_fix_rate * 100.0,
-            test_first_rate * 100.0,
-            compile_error_rate * 100.0,
-            test_failure_rate * 100.0
-        )
-    }
-
-    /// Check if retries are exhausted for a task.
-    #[must_use]
-    pub fn retries_exhausted(&self, task_id: &str) -> bool {
-        self.intelligent_retry.retries_exhausted(task_id)
-    }
-
-    /// Reset retry state for a task (e.g., after it completes).
-    pub fn reset_task_retries(&mut self, task_id: &str) {
-        self.intelligent_retry.reset_task(task_id);
-        debug!("Reset retry state for task: {}", task_id);
-    }
-
-    /// Decompose a task based on failure context.
-    ///
-    /// Returns a list of sub-tasks to tackle the failure incrementally.
-    #[must_use]
-    pub fn decompose_task_for_failure(
-        &self,
-        task_description: &str,
-        failure: &FailureContext,
-    ) -> Vec<SubTask> {
-        let decomposer = TaskDecomposer::new();
-        decomposer.decompose(task_description, failure)
-    }
-
-    /// Check if a failure is simple enough to not need decomposition.
-    #[must_use]
-    pub fn is_atomic_failure(&self, failure: &FailureContext) -> bool {
-        let decomposer = TaskDecomposer::new();
-        decomposer.is_atomic(failure)
-    }
-
-    /// Get failure classifier for manual classification if needed.
-    #[must_use]
-    pub fn failure_classifier(&self) -> &FailureClassifier {
-        self.intelligent_retry.classifier()
-    }
-
-    /// Create a failure location from file and line info.
-    #[must_use]
-    pub fn create_failure_location(file: &str, line: Option<u32>) -> FailureLocation {
-        let mut loc = FailureLocation::new(file);
-        if let Some(l) = line {
-            loc = loc.with_line(l);
-        }
-        loc
-    }
-
-    /// Clear retry history for a resolved failure.
-    ///
-    /// Call this when a previously failing operation succeeds, to reset
-    /// the strategist's memory of tried strategies for that failure.
-    pub fn clear_resolved_failure(&mut self, error_output: &str) {
-        let failure = self.failure_classifier().classify(error_output);
-        self.intelligent_retry.clear_failure_history(&failure);
-        debug!(
-            "Cleared retry history for resolved failure: {}",
-            failure.summary()
-        );
-    }
-
-    /// Log retry status for diagnostics.
-    pub fn log_retry_status(&self, task_id: &str) {
-        let retry_count = self.intelligent_retry.retry_count(task_id);
-        let exhausted = self.intelligent_retry.retries_exhausted(task_id);
-        debug!(
-            "Retry status for {}: {} retries, exhausted={}",
-            task_id, retry_count, exhausted
-        );
-    }
-
-    /// Get the prompt file for current mode.
-    fn get_prompt_path(&self) -> PathBuf {
-        self.project_dir.join(self.state.mode.prompt_filename())
-    }
-
-    /// Run a single Claude Code iteration.
-    async fn run_claude_iteration(&self) -> Result<i32> {
-        let prompt_path = self.get_prompt_path();
-
-        // Build dynamic prompt using the assembler
-        let mode_name = match self.state.mode {
-            LoopMode::Build => "build",
-            LoopMode::Debug => "debug",
-            LoopMode::Plan => "plan",
-        };
-
-        // Maximum prompt length (Claude Code has limits on stdin size)
-        // Keep prompts concise to avoid "Prompt is too long" errors
-        const MAX_PROMPT_LENGTH: usize = 12000; // ~12KB is safe
-
-        // Try to build dynamic prompt first, fall back to static file if needed
-        let prompt = match self.prompt_assembler.build_prompt(mode_name) {
-            Ok(dynamic_prompt) => {
-                debug!(
-                    "Using dynamic prompt for mode: {} ({} chars)",
-                    mode_name,
-                    dynamic_prompt.len()
-                );
-                // Dynamic prompt already includes task context via {{TASK_CONTEXT}} marker
-                // No need to duplicate with task_tracker.get_context_summary()
-                dynamic_prompt
-            }
-            Err(e) => {
-                // Fall back to static prompt file
-                debug!("Dynamic prompt failed ({}), falling back to static file", e);
-
-                let base_prompt = if let Some(deps) = &self.deps {
-                    // Use try_read to avoid blocking in async contexts
-                    let fs = deps
-                        .fs
-                        .try_read()
-                        .map_err(|_| anyhow::anyhow!("Could not acquire filesystem lock"))?;
-                    let prompt_filename = self.state.mode.prompt_filename();
-                    if !fs.exists(&prompt_filename) {
-                        bail!("Prompt file not found: {}", prompt_path.display());
-                    }
-                    fs.read_file(&prompt_filename)?
-                } else {
-                    if !prompt_path.exists() {
-                        bail!("Prompt file not found: {}", prompt_path.display());
-                    }
-                    std::fs::read_to_string(&prompt_path)?
-                };
-
-                // Add task context to static prompt (static prompts don't have {{TASK_CONTEXT}})
-                let task_context = self.task_tracker.get_context_summary();
-                if task_context.is_empty() {
-                    base_prompt
-                } else {
-                    format!(
-                        "## Current Task Context\n\n{}\n\n---\n\n{}",
-                        task_context, base_prompt
-                    )
-                }
-            }
-        };
-
-        // Truncate prompt if it exceeds the limit
-        let prompt = if prompt.len() > MAX_PROMPT_LENGTH {
-            warn!(
-                "Prompt exceeds {} chars ({} chars), truncating to avoid Claude Code limits",
-                MAX_PROMPT_LENGTH,
-                prompt.len()
-            );
-            // Truncate from the middle, keeping beginning (instructions) and end (current context)
-            let keep_start = MAX_PROMPT_LENGTH * 2 / 3;
-            let keep_end = MAX_PROMPT_LENGTH / 3;
-            let start = &prompt[..keep_start];
-            let end = &prompt[prompt.len() - keep_end..];
-            format!(
-                "{}\n\n... [truncated {} chars] ...\n\n{}",
-                start,
-                prompt.len() - MAX_PROMPT_LENGTH,
-                end
-            )
-        } else {
-            prompt
-        };
-
-        debug!(
-            "Running Claude Code with prompt for mode {} ({} chars total)",
-            mode_name,
-            prompt.len()
-        );
-
-        // Use injected Claude process if available
-        if let Some(deps) = &self.deps {
-            return deps.claude.run_iteration(&prompt).await;
-        }
-
-        // Fallback to direct command execution
-        // Build command arguments
-        let args = vec!["-p", "--dangerously-skip-permissions", "--model", "opus"];
-
-        // If we have a CLAUDE.md, reference it
-        let claude_md = ProjectConfig::claude_md_path(&self.project_dir);
-        if claude_md.exists() {
-            debug!("Using CLAUDE.md from {}", claude_md.display());
-        }
-
-        // Run claude with the prompt piped to stdin
-        let mut child = AsyncCommand::new("claude")
-            .args(&args)
-            .current_dir(&self.project_dir)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::inherit())
-            .stderr(std::process::Stdio::inherit())
-            .spawn()?;
-
-        // Write prompt to stdin, flush, and close to signal EOF
-        if let Some(mut stdin) = child.stdin.take() {
-            use tokio::io::AsyncWriteExt;
-            stdin.write_all(prompt.as_bytes()).await?;
-            stdin.flush().await?;
-            drop(stdin); // Explicitly close stdin to signal EOF
-        }
-
-        let status = child.wait().await?;
-        Ok(status.code().unwrap_or(1))
-    }
-
-    /// Run documentation sync check.
-    async fn run_doc_sync(&self) -> Result<()> {
-        println!("   {} Running documentation sync check...", "Info:".blue());
-
-        // Try to run docs-sync agent if available
-        let result = AsyncCommand::new("claude")
-            .args([
-                "--dangerously-skip-permissions",
-                "--agent",
-                "docs-sync",
-                "Check for documentation drift",
-            ])
-            .current_dir(&self.project_dir)
-            .output()
-            .await;
-
-        match result {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.contains("drift_detected") && stdout.contains("true") {
-                    println!("   {} Documentation drift detected", "Warning:".yellow());
-                    self.analytics.log_event(
-                        &self.state.session_id,
-                        "docs_drift_detected",
-                        serde_json::json!({
-                            "iteration": self.state.iteration,
-                        }),
-                    )?;
-                }
-            }
-            Err(e) => {
-                debug!("docs-sync agent not available: {}", e);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Try to push to remote (uses BatchMode to avoid SSH passphrase hang).
     async fn try_push(&self) {
+        use tokio::process::Command as AsyncCommand;
+
         // Use injected git operations if available
         if let Some(deps) = &self.deps {
             if let Ok(branch) = deps.git.get_branch() {
@@ -2185,7 +1703,7 @@ impl LoopManager {
     }
 
     /// Check if all tasks are complete.
-    fn is_complete(&self) -> Result<bool> {
+    pub(crate) fn is_complete(&self) -> Result<bool> {
         let content = if let Some(deps) = &self.deps {
             // Use try_read to avoid blocking in async contexts
             let fs = deps
@@ -2201,7 +1719,7 @@ impl LoopManager {
     }
 
     /// Get number of lines changed in recent commit.
-    fn get_recent_changes(&self) -> Result<u32> {
+    pub(crate) fn get_recent_changes(&self) -> Result<u32> {
         let output = Command::new("git")
             .args(["diff", "--stat", "HEAD~1"])
             .current_dir(&self.project_dir)
@@ -2224,50 +1742,6 @@ impl LoopManager {
         }
 
         Ok(0)
-    }
-
-    /// Run final security audit.
-    async fn run_security_audit(&self) -> Result<()> {
-        // Try narsil-mcp scan
-        let scan_result = AsyncCommand::new("narsil-mcp")
-            .arg("scan_security")
-            .current_dir(&self.project_dir)
-            .output()
-            .await;
-
-        match scan_result {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.contains("CRITICAL") {
-                    eprintln!(
-                        "   {} Critical security issues found!",
-                        "Warning:".red().bold()
-                    );
-                } else {
-                    println!("   {} Security scan complete", "OK".green());
-                }
-            }
-            Err(_) => {
-                debug!("narsil-mcp not available for security scan");
-            }
-        }
-
-        // Try to generate SBOM
-        let sbom_result = AsyncCommand::new("narsil-mcp")
-            .args(["generate_sbom", "--format", "cyclonedx"])
-            .current_dir(&self.project_dir)
-            .output()
-            .await;
-
-        if let Ok(output) = sbom_result {
-            if output.status.success() {
-                let sbom_path = self.project_dir.join("sbom.json");
-                std::fs::write(&sbom_path, &output.stdout)?;
-                println!("   {} SBOM generated: sbom.json", "OK".green());
-            }
-        }
-
-        Ok(())
     }
 
     /// Get the current project configuration.
@@ -2312,173 +1786,60 @@ impl LoopManager {
     pub fn progress_tracker(&self) -> &ProgressTracker {
         &self.progress_tracker
     }
+}
 
-    /// Clean up stale LSP processes (rust-analyzer, etc.).
-    ///
-    /// This helps prevent LSP crashes from accumulating and causing failures
-    /// in long-running automation sessions.
-    fn cleanup_lsp() {
-        // Kill any stale rust-analyzer processes
-        let _ = Command::new("pkill").args(["-f", "rust-analyzer"]).output();
+/// Convert a loop mode to its prompt name string.
+///
+/// # Example
+///
+/// ```
+/// use ralph::r#loop::manager::{LoopMode, mode_to_prompt_name};
+///
+/// assert_eq!(mode_to_prompt_name(&LoopMode::Build), "build");
+/// ```
+#[must_use]
+pub fn mode_to_prompt_name(mode: &LoopMode) -> &'static str {
+    match mode {
+        LoopMode::Build => "build",
+        LoopMode::Debug => "debug",
+        LoopMode::Plan => "plan",
+    }
+}
 
-        // Give processes time to terminate
-        std::thread::sleep(std::time::Duration::from_millis(500));
+/// Truncate a prompt to fit within max_length, preserving start and end.
+///
+/// If the prompt exceeds max_length, it will be truncated from the middle,
+/// keeping 2/3 of the start and 1/3 of the end, with a truncation marker.
+///
+/// # Example
+///
+/// ```
+/// use ralph::r#loop::manager::truncate_prompt;
+///
+/// let short = truncate_prompt("hello".to_string(), 100);
+/// assert_eq!(short, "hello");
+///
+/// let long = truncate_prompt("x".repeat(200), 100);
+/// assert!(long.contains("truncated"));
+/// ```
+#[must_use]
+pub fn truncate_prompt(prompt: String, max_length: usize) -> String {
+    if prompt.len() <= max_length {
+        return prompt;
     }
 
-    /// Check for oversized source files that might cause Claude errors.
-    ///
-    /// Scans the project for source files exceeding token thresholds.
-    /// Returns a list of (path, estimated_tokens) tuples for problematic files.
-    fn find_oversized_files(&self) -> Vec<(PathBuf, usize)> {
-        let mut oversized = Vec::new();
-        let src_dir = self.project_dir.join("src");
+    // Truncate from the middle, keeping beginning (instructions) and end (current context)
+    let keep_start = max_length * 2 / 3;
+    let keep_end = max_length / 3;
+    let start = &prompt[..keep_start];
+    let end = &prompt[prompt.len() - keep_end..];
 
-        if !src_dir.exists() {
-            return oversized;
-        }
-
-        let code_extensions = [
-            "rs", "py", "ts", "tsx", "js", "jsx", "go", "java", "cpp", "c", "h",
-        ];
-
-        for entry in walkdir::WalkDir::new(&src_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-        {
-            let path = entry.path();
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-
-            if !code_extensions.contains(&ext) {
-                continue;
-            }
-
-            if let Ok(metadata) = std::fs::metadata(path) {
-                let estimated_tokens = (metadata.len() as f64 * TOKENS_PER_BYTE) as usize;
-
-                if estimated_tokens >= FILE_SIZE_WARNING_TOKENS {
-                    oversized.push((path.to_path_buf(), estimated_tokens));
-                }
-            }
-        }
-
-        // Sort by size descending
-        oversized.sort_by(|a, b| b.1.cmp(&a.1));
-        oversized
-    }
-
-    /// Check files and print warnings for oversized ones.
-    fn check_file_sizes(&self) {
-        let oversized = self.find_oversized_files();
-
-        for (path, tokens) in oversized {
-            let rel_path = path.strip_prefix(&self.project_dir).unwrap_or(&path);
-
-            if tokens >= FILE_SIZE_CRITICAL_TOKENS {
-                eprintln!(
-                    "   {} {} (~{} tokens) - will cause Claude errors! Consider splitting.",
-                    "CRITICAL:".red().bold(),
-                    rel_path.display(),
-                    tokens
-                );
-            } else {
-                println!(
-                    "   {} {} (~{} tokens) - approaching limit, consider splitting.",
-                    "Warning:".yellow(),
-                    rel_path.display(),
-                    tokens
-                );
-            }
-        }
-    }
-
-    /// Run automatic archiving of stale markdown files.
-    fn run_auto_archive(&self) -> Result<()> {
-        let archive_manager = crate::archive::ArchiveManager::new(
-            self.project_dir.clone(),
-            90, // 90 day stale threshold
-        );
-
-        // Also check for stale markdown files in project root
-        let root_stale = self.find_stale_root_markdown()?;
-
-        if !root_stale.is_empty() {
-            println!(
-                "   {} Found {} stale .md files in project root",
-                "Archive:".cyan(),
-                root_stale.len()
-            );
-            for path in &root_stale {
-                debug!("Stale root markdown: {}", path.display());
-            }
-        }
-
-        // Run the standard archive process (dry run first to report)
-        let result = archive_manager.run(true)?;
-
-        if result.docs_archived > 0 || result.decisions_archived > 0 {
-            println!(
-                "   {} {} docs and {} decisions eligible for archiving (run 'ralph archive run')",
-                "Info:".blue(),
-                result.docs_archived,
-                result.decisions_archived
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Find stale markdown files in the project root.
-    fn find_stale_root_markdown(&self) -> Result<Vec<PathBuf>> {
-        let mut stale_files = Vec::new();
-        let threshold_secs = 90 * 24 * 60 * 60; // 90 days in seconds
-
-        // Look for markdown files directly in project root (not in subdirectories)
-        for entry in std::fs::read_dir(&self.project_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if !path.is_file() {
-                continue;
-            }
-
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if ext != "md" {
-                continue;
-            }
-
-            // Skip known important files
-            let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if [
-                "README.md",
-                "IMPLEMENTATION_PLAN.md",
-                "CLAUDE.md",
-                "CHANGELOG.md",
-            ]
-            .contains(&filename)
-            {
-                continue;
-            }
-
-            // Skip PROMPT_*.md files
-            if filename.starts_with("PROMPT_") {
-                continue;
-            }
-
-            // Check age
-            if let Ok(metadata) = std::fs::metadata(&path) {
-                if let Ok(modified) = metadata.modified() {
-                    if let Ok(duration) = std::time::SystemTime::now().duration_since(modified) {
-                        if duration.as_secs() > threshold_secs {
-                            stale_files.push(path);
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(stale_files)
-    }
+    format!(
+        "{}\n\n... [truncated {} chars] ...\n\n{}",
+        start,
+        prompt.len() - max_length,
+        end
+    )
 }
 
 #[cfg(test)]
@@ -3194,5 +2555,67 @@ Connect all components.
                 assert!(task.checkboxes[1].1); // Second checked
             }
         }
+    }
+
+    // =========================================================================
+    // truncate_prompt helper tests
+    // =========================================================================
+
+    #[test]
+    fn test_truncate_prompt_under_limit() {
+        let prompt = "Short prompt".to_string();
+        let result = truncate_prompt(prompt.clone(), 1000);
+        assert_eq!(result, prompt);
+    }
+
+    #[test]
+    fn test_truncate_prompt_at_limit() {
+        let prompt = "x".repeat(100);
+        let result = truncate_prompt(prompt.clone(), 100);
+        assert_eq!(result, prompt);
+    }
+
+    #[test]
+    fn test_truncate_prompt_over_limit() {
+        let prompt = "x".repeat(200);
+        let result = truncate_prompt(prompt, 100);
+        assert!(result.len() <= 150); // Some overhead for truncation message
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn test_truncate_prompt_preserves_start_and_end() {
+        let start = "START".repeat(20);
+        let middle = "MIDDLE".repeat(100);
+        let end = "END".repeat(20);
+        let prompt = format!("{}{}{}", start, middle, end);
+
+        let result = truncate_prompt(prompt, 300);
+
+        // Should preserve start
+        assert!(result.starts_with("START"));
+        // Should preserve end
+        assert!(result.ends_with("END"));
+        // Should indicate truncation
+        assert!(result.contains("truncated"));
+    }
+
+    // =========================================================================
+    // mode_to_prompt_name helper tests
+    // =========================================================================
+
+    #[test]
+    fn test_mode_to_prompt_name_build() {
+        assert_eq!(mode_to_prompt_name(&LoopMode::Build), "build");
+    }
+
+    #[test]
+    fn test_mode_to_prompt_name_debug() {
+        assert_eq!(mode_to_prompt_name(&LoopMode::Debug), "debug");
+    }
+
+    #[test]
+    fn test_mode_to_prompt_name_plan() {
+        assert_eq!(mode_to_prompt_name(&LoopMode::Plan), "plan");
     }
 }

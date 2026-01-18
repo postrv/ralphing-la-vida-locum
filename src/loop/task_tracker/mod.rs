@@ -34,7 +34,14 @@
 //!     └──────────────────> Complete
 //! ```
 
-use anyhow::{bail, Context, Result};
+mod parsing;
+mod persistence;
+mod state;
+
+// Re-export public types to maintain API compatibility
+pub use state::{BlockReason, TaskState, TaskTransition};
+
+use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -66,7 +73,7 @@ pub struct TaskId {
     /// Phase identifier if present (e.g., "1.1")
     phase: Option<String>,
     /// Task title without the number/phase prefix
-    title: String,
+    pub(crate) title: String,
     /// Original header text for display
     original: String,
     /// Sprint subsection identifier (e.g., "7a", "6b") for sprint-scoped tasks
@@ -103,6 +110,8 @@ impl TaskId {
     /// assert_eq!(id.title(), "Build templates");
     /// ```
     pub fn parse(header: &str) -> Result<Self> {
+        use anyhow::Context;
+
         // Strip leading hashes and whitespace
         let stripped = header.trim_start_matches('#').trim();
 
@@ -212,235 +221,6 @@ impl fmt::Display for TaskId {
             write!(f, "Task {}: Phase {}: {}", self.number, phase, self.title)
         } else {
             write!(f, "Task {}: {}", self.number, self.title)
-        }
-    }
-}
-
-// ============================================================================
-// Task State
-// ============================================================================
-
-/// Current state of a task in the state machine.
-///
-/// # State Transitions
-///
-/// - `NotStarted` -> `InProgress`: Task selected for work
-/// - `InProgress` -> `Blocked`: Task hit a blocker
-/// - `InProgress` -> `InReview`: Task submitted for quality review
-/// - `Blocked` -> `InProgress`: Blocker resolved
-/// - `InReview` -> `InProgress`: Review failed, needs more work
-/// - `InReview` -> `Complete`: Review passed
-/// - `NotStarted` -> `Complete`: Task marked complete externally
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum TaskState {
-    /// Task has not been started yet
-    #[default]
-    NotStarted,
-    /// Task is currently being worked on
-    InProgress,
-    /// Task is blocked and cannot proceed
-    Blocked,
-    /// Task is submitted for quality gate review
-    InReview,
-    /// Task is complete
-    Complete,
-}
-
-impl fmt::Display for TaskState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            TaskState::NotStarted => write!(f, "Not Started"),
-            TaskState::InProgress => write!(f, "In Progress"),
-            TaskState::Blocked => write!(f, "Blocked"),
-            TaskState::InReview => write!(f, "In Review"),
-            TaskState::Complete => write!(f, "Complete"),
-        }
-    }
-}
-
-impl TaskState {
-    /// Check if this state can transition to the target state.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use ralph::r#loop::task_tracker::TaskState;
-    ///
-    /// assert!(TaskState::NotStarted.can_transition_to(TaskState::InProgress));
-    /// assert!(!TaskState::Complete.can_transition_to(TaskState::InProgress));
-    /// ```
-    #[must_use]
-    pub fn can_transition_to(&self, target: TaskState) -> bool {
-        use TaskState::*;
-        matches!(
-            (self, target),
-            // From NotStarted
-            (NotStarted, InProgress) | (NotStarted, Complete) |
-            // From InProgress
-            (InProgress, Blocked) | (InProgress, InReview) | (InProgress, Complete) |
-            // From Blocked
-            (Blocked, InProgress) | (Blocked, Complete) |
-            // From InReview
-            (InReview, InProgress) | (InReview, Complete)
-        )
-    }
-
-    /// Check if this state represents active work.
-    #[must_use]
-    pub fn is_active(&self) -> bool {
-        matches!(self, TaskState::InProgress | TaskState::InReview)
-    }
-
-    /// Check if this state represents a terminal state.
-    #[must_use]
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, TaskState::Complete)
-    }
-}
-
-// ============================================================================
-// Block Reason
-// ============================================================================
-
-/// Reason why a task is blocked.
-///
-/// Used to provide context for debugging and to guide recovery strategies.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum BlockReason {
-    /// Exceeded maximum retry attempts without progress
-    MaxAttempts {
-        /// Number of attempts made
-        attempts: u32,
-        /// Maximum allowed attempts
-        max: u32,
-    },
-    /// Task timed out
-    Timeout {
-        /// Duration in seconds before timeout
-        duration_secs: u64,
-    },
-    /// Waiting on an external dependency
-    ExternalDependency {
-        /// Description of the dependency
-        description: String,
-    },
-    /// Quality gate failed repeatedly
-    QualityGateFailure {
-        /// Name of the failing gate
-        gate: String,
-        /// Number of consecutive failures
-        failures: u32,
-    },
-    /// Task requires manual intervention
-    ManualIntervention {
-        /// Reason manual intervention is needed
-        reason: String,
-    },
-    /// Blocked by another task
-    DependsOnTask {
-        /// ID of the blocking task
-        task_number: u32,
-    },
-    /// Unknown or custom block reason
-    Other {
-        /// Description of the block reason
-        reason: String,
-    },
-}
-
-impl fmt::Display for BlockReason {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BlockReason::MaxAttempts { attempts, max } => {
-                write!(f, "Exceeded max attempts ({}/{})", attempts, max)
-            }
-            BlockReason::Timeout { duration_secs } => {
-                write!(f, "Timed out after {} seconds", duration_secs)
-            }
-            BlockReason::ExternalDependency { description } => {
-                write!(f, "External dependency: {}", description)
-            }
-            BlockReason::QualityGateFailure { gate, failures } => {
-                write!(f, "Quality gate '{}' failed {} times", gate, failures)
-            }
-            BlockReason::ManualIntervention { reason } => {
-                write!(f, "Manual intervention required: {}", reason)
-            }
-            BlockReason::DependsOnTask { task_number } => {
-                write!(f, "Blocked by task #{}", task_number)
-            }
-            BlockReason::Other { reason } => {
-                write!(f, "{}", reason)
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Task Transition
-// ============================================================================
-
-/// Record of a state transition for a task.
-///
-/// Provides an audit trail of task progress.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskTransition {
-    /// State before the transition
-    pub from: TaskState,
-    /// State after the transition
-    pub to: TaskState,
-    /// When the transition occurred
-    pub timestamp: DateTime<Utc>,
-    /// Optional reason for the transition
-    pub reason: Option<String>,
-    /// Optional block reason (only set when transitioning to Blocked)
-    pub block_reason: Option<BlockReason>,
-}
-
-impl TaskTransition {
-    /// Create a new transition record.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use ralph::r#loop::task_tracker::{TaskTransition, TaskState};
-    ///
-    /// let transition = TaskTransition::new(TaskState::NotStarted, TaskState::InProgress);
-    /// assert_eq!(transition.from, TaskState::NotStarted);
-    /// assert_eq!(transition.to, TaskState::InProgress);
-    /// ```
-    #[must_use]
-    pub fn new(from: TaskState, to: TaskState) -> Self {
-        Self {
-            from,
-            to,
-            timestamp: Utc::now(),
-            reason: None,
-            block_reason: None,
-        }
-    }
-
-    /// Create a transition with a reason.
-    #[must_use]
-    pub fn with_reason(from: TaskState, to: TaskState, reason: &str) -> Self {
-        Self {
-            from,
-            to,
-            timestamp: Utc::now(),
-            reason: Some(reason.to_string()),
-            block_reason: None,
-        }
-    }
-
-    /// Create a blocking transition with a block reason.
-    #[must_use]
-    pub fn blocked(from: TaskState, block_reason: BlockReason) -> Self {
-        Self {
-            from,
-            to: TaskState::Blocked,
-            timestamp: Utc::now(),
-            reason: Some(block_reason.to_string()),
-            block_reason: Some(block_reason),
         }
     }
 }
@@ -698,32 +478,8 @@ impl Task {
 }
 
 // ============================================================================
-// Task Tracker (stub for Phase 1.2+)
+// Validation Result
 // ============================================================================
-
-/// Task-level progress tracker.
-///
-/// Maintains state for all tasks and provides task selection and progress tracking.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TaskTracker {
-    /// All tracked tasks keyed by ID
-    #[serde(with = "tasks_serde")]
-    pub tasks: HashMap<TaskId, Task>,
-    /// Currently active task
-    pub current_task: Option<TaskId>,
-    /// Configuration
-    pub config: TaskTrackerConfig,
-    /// When the tracker was created
-    pub created_at: DateTime<Utc>,
-    /// When the tracker was last modified
-    pub modified_at: DateTime<Utc>,
-    /// Hash of the plan structure for invalidation detection
-    #[serde(default)]
-    plan_structure_hash: String,
-    /// Current sprint number from "Current Focus" section
-    #[serde(default)]
-    focused_sprint: Option<u32>,
-}
 
 /// Result of validating the tracker against a plan.
 ///
@@ -740,31 +496,32 @@ pub enum ValidationResult {
     },
 }
 
-/// Custom serialization for HashMap<TaskId, Task> as Vec<Task>
-mod tasks_serde {
-    use super::*;
-    use serde::{Deserializer, Serializer};
+// ============================================================================
+// Task Tracker
+// ============================================================================
 
-    pub fn serialize<S>(
-        tasks: &HashMap<TaskId, Task>,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let tasks_vec: Vec<&Task> = tasks.values().collect();
-        tasks_vec.serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> std::result::Result<HashMap<TaskId, Task>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let tasks_vec: Vec<Task> = Vec::deserialize(deserializer)?;
-        Ok(tasks_vec.into_iter().map(|t| (t.id.clone(), t)).collect())
-    }
+/// Task-level progress tracker.
+///
+/// Maintains state for all tasks and provides task selection and progress tracking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskTracker {
+    /// All tracked tasks keyed by ID
+    #[serde(with = "persistence::tasks_serde")]
+    pub tasks: HashMap<TaskId, Task>,
+    /// Currently active task
+    pub current_task: Option<TaskId>,
+    /// Configuration
+    pub config: TaskTrackerConfig,
+    /// When the tracker was created
+    pub created_at: DateTime<Utc>,
+    /// When the tracker was last modified
+    pub modified_at: DateTime<Utc>,
+    /// Hash of the plan structure for invalidation detection
+    #[serde(default)]
+    pub(crate) plan_structure_hash: String,
+    /// Current sprint number from "Current Focus" section
+    #[serde(default)]
+    pub(crate) focused_sprint: Option<u32>,
 }
 
 impl TaskTracker {
@@ -795,105 +552,6 @@ impl TaskTracker {
         self.focused_sprint
     }
 
-    /// Compute a hash of the plan structure for change detection.
-    fn compute_plan_hash(content: &str) -> String {
-        // Extract only structural elements (task headers and sprint sections)
-        let structural: String = content
-            .lines()
-            .filter(|line| {
-                let trimmed = line.trim();
-                trimmed.starts_with("###") || trimmed.starts_with("## Sprint")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!("{:x}", md5::compute(structural.as_bytes()))
-    }
-
-    /// Parse the current sprint from the "Current Focus" section.
-    fn parse_current_sprint(content: &str) -> Option<u32> {
-        for line in content.lines() {
-            if line.contains("Current Focus:") && line.contains("Sprint") {
-                // Extract sprint number from patterns like "Sprint 7" or "Sprint 7 ("
-                if let Some(sprint_idx) = line.find("Sprint ") {
-                    let after_sprint = &line[sprint_idx + 7..];
-                    let num_str: String = after_sprint
-                        .chars()
-                        .take_while(|c| c.is_ascii_digit())
-                        .collect();
-                    if let Ok(num) = num_str.parse() {
-                        return Some(num);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    /// Parse the sprint number from a section header.
-    fn parse_sprint_from_section(line: &str) -> Option<u32> {
-        // Match "## Sprint N:" patterns
-        if let Some(after_sprint) = line.strip_prefix("## Sprint ") {
-            let num_str: String = after_sprint
-                .chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect();
-            return num_str.parse().ok();
-        }
-        None
-    }
-
-    /// Validate the tracker against a plan to detect structural changes.
-    #[must_use]
-    pub fn validate_against_plan(&self, plan: &str) -> ValidationResult {
-        let current_hash = Self::compute_plan_hash(plan);
-        if current_hash == self.plan_structure_hash {
-            ValidationResult::Valid
-        } else {
-            let orphaned = self.find_orphaned_tasks(plan);
-            ValidationResult::PlanChanged {
-                orphaned_tasks: orphaned,
-            }
-        }
-    }
-
-    /// Find tasks in the tracker that are not in the current plan.
-    #[must_use]
-    pub fn find_orphaned_tasks(&self, plan: &str) -> Vec<TaskId> {
-        use regex::Regex;
-        let header_re = Regex::new(r"^###\s+(\d+[a-z]?)\.\s+(.+)$").unwrap();
-
-        // Collect all task titles from the plan
-        let plan_tasks: std::collections::HashSet<String> = plan
-            .lines()
-            .filter_map(|line| {
-                let trimmed = line.trim();
-                if header_re.is_match(trimmed) {
-                    TaskId::parse(trimmed).ok().map(|id| id.title.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Find tasks in tracker not in plan
-        self.tasks
-            .keys()
-            .filter(|id| !plan_tasks.contains(&id.title))
-            .cloned()
-            .collect()
-    }
-
-    /// Mark tasks as orphaned if they are not in the given plan.
-    pub fn mark_orphaned_tasks(&mut self, plan: &str) {
-        let orphaned_ids = self.find_orphaned_tasks(plan);
-        for id in orphaned_ids {
-            if let Some(task) = self.tasks.get_mut(&id) {
-                task.mark_orphaned();
-            }
-        }
-        self.modified_at = Utc::now();
-    }
-
     /// Check if a sprint is complete (all tasks done or blocked).
     #[must_use]
     pub fn is_sprint_complete(&self, sprint: u32) -> bool {
@@ -919,115 +577,6 @@ impl TaskTracker {
             .values()
             .filter(|t| t.sprint == Some(sprint))
             .collect()
-    }
-
-    /// Parse tasks from an implementation plan.
-    ///
-    /// Extracts task headers (### N. Title) and checkboxes (- [ ] or - [x])
-    /// from markdown content. Updates existing tasks without losing state.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use ralph::r#loop::task_tracker::{TaskTracker, TaskTrackerConfig};
-    ///
-    /// let mut tracker = TaskTracker::new(TaskTrackerConfig::default());
-    /// let plan = r#"
-    /// ## Tasks
-    ///
-    /// ### 1. Setup project
-    /// - [x] Create directory structure
-    /// - [ ] Initialize git repo
-    ///
-    /// ### 2. Phase 1.1: Implement feature
-    /// - [ ] Write tests
-    /// - [ ] Write implementation
-    /// "#;
-    ///
-    /// tracker.parse_plan(plan).unwrap();
-    /// assert_eq!(tracker.tasks.len(), 2);
-    /// ```
-    pub fn parse_plan(&mut self, content: &str) -> Result<()> {
-        use regex::Regex;
-
-        // Task header pattern: ### Na. Title or ### N. [Phase X.Y: ]Title
-        let header_re = Regex::new(r"^###\s+(\d+[a-z]?)\.\s+(.+)$")
-            .context("Failed to compile header regex")?;
-
-        // Checkbox pattern: - [ ] or - [x] followed by text
-        let checkbox_re =
-            Regex::new(r"^-\s+\[([ xX])\]\s+(.+)$").context("Failed to compile checkbox regex")?;
-
-        // Parse current sprint from "Current Focus" section
-        self.focused_sprint = Self::parse_current_sprint(content);
-
-        // Compute and store plan hash
-        self.plan_structure_hash = Self::compute_plan_hash(content);
-
-        let mut current_task: Option<TaskId> = None;
-        let mut current_checkboxes: Vec<(String, bool)> = Vec::new();
-        let mut current_sprint: Option<u32> = None;
-
-        for line in content.lines() {
-            let trimmed = line.trim();
-
-            // Check for sprint section header
-            if let Some(sprint) = Self::parse_sprint_from_section(trimmed) {
-                current_sprint = Some(sprint);
-            }
-
-            // Check for task header
-            if header_re.is_match(trimmed) {
-                // Save checkboxes for previous task
-                if let Some(ref task_id) = current_task {
-                    self.update_task_checkboxes(task_id, &current_checkboxes);
-                }
-                current_checkboxes.clear();
-
-                // Parse new task header
-                if let Ok(task_id) = TaskId::parse(trimmed) {
-                    current_task = Some(task_id.clone());
-
-                    // Insert or update task with sprint affiliation
-                    if let Some(task) = self.tasks.get_mut(&task_id) {
-                        // Update sprint if not already set
-                        if task.sprint.is_none() && current_sprint.is_some() {
-                            task.sprint = current_sprint;
-                        }
-                    } else {
-                        // Create new task with sprint
-                        let task = match current_sprint {
-                            Some(sprint) => Task::new_with_sprint(task_id.clone(), sprint),
-                            None => Task::new(task_id.clone()),
-                        };
-                        self.tasks.insert(task_id, task);
-                    }
-                }
-            }
-            // Check for checkbox under current task
-            else if let Some(caps) = checkbox_re.captures(trimmed) {
-                if current_task.is_some() {
-                    let checked = &caps[1] == "x" || &caps[1] == "X";
-                    let text = caps[2].to_string();
-                    current_checkboxes.push((text, checked));
-                }
-            }
-        }
-
-        // Save checkboxes for last task
-        if let Some(ref task_id) = current_task {
-            self.update_task_checkboxes(task_id, &current_checkboxes);
-        }
-
-        self.modified_at = Utc::now();
-        Ok(())
-    }
-
-    /// Update checkboxes for a task without losing other state.
-    fn update_task_checkboxes(&mut self, task_id: &TaskId, checkboxes: &[(String, bool)]) {
-        if let Some(task) = self.tasks.get_mut(task_id) {
-            task.checkboxes = checkboxes.to_vec();
-        }
     }
 
     /// Get tasks that are ready to be worked on.
@@ -1777,122 +1326,17 @@ impl TaskTracker {
             .filter(|t| t.state != TaskState::Complete && t.state != TaskState::Blocked)
             .count()
     }
+}
 
-    // ========================================================================
-    // Persistence
-    // ========================================================================
-
-    /// Save the tracker state to a JSON file.
-    ///
-    /// Creates parent directories if they don't exist.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the JSON file
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use ralph::r#loop::task_tracker::{TaskTracker, TaskTrackerConfig};
-    /// use std::path::Path;
-    ///
-    /// let tracker = TaskTracker::new(TaskTrackerConfig::default());
-    /// tracker.save(Path::new(".ralph/task_tracker.json")).unwrap();
-    /// ```
-    pub fn save(&self, path: &std::path::Path) -> Result<()> {
-        // Create parent directories if needed
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
-            }
-        }
-
-        let json =
-            serde_json::to_string_pretty(self).context("Failed to serialize task tracker")?;
-
-        std::fs::write(path, json)
-            .with_context(|| format!("Failed to write task tracker to: {}", path.display()))?;
-
-        Ok(())
-    }
-
-    /// Load tracker state from a JSON file.
-    ///
-    /// Returns a new tracker if the file doesn't exist.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the JSON file
-    /// * `config` - Configuration to use if file doesn't exist
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use ralph::r#loop::task_tracker::{TaskTracker, TaskTrackerConfig};
-    /// use std::path::Path;
-    ///
-    /// let tracker = TaskTracker::load(
-    ///     Path::new(".ralph/task_tracker.json"),
-    ///     TaskTrackerConfig::default(),
-    /// ).unwrap();
-    /// ```
-    pub fn load(path: &std::path::Path, config: TaskTrackerConfig) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::new(config));
-        }
-
-        let json = std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read task tracker from: {}", path.display()))?;
-
-        let tracker: Self = serde_json::from_str(&json).with_context(|| {
-            format!(
-                "Failed to deserialize task tracker from: {}",
-                path.display()
-            )
-        })?;
-
-        Ok(tracker)
-    }
-
-    /// Load tracker state, or create new if file doesn't exist or is corrupted.
-    ///
-    /// This is more lenient than `load()` - it will create a fresh tracker
-    /// if the file is corrupted instead of returning an error.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the JSON file
-    /// * `config` - Configuration to use for new tracker
-    pub fn load_or_new(path: &std::path::Path, config: TaskTrackerConfig) -> Self {
-        match Self::load(path, config.clone()) {
-            Ok(tracker) => tracker,
-            Err(_) => Self::new(config),
-        }
-    }
-
-    /// Auto-save the tracker if auto_save is enabled.
-    ///
-    /// Call this after mutations if auto-save behavior is desired.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to save to
-    pub fn auto_save(&self, path: &std::path::Path) -> Result<()> {
-        if self.config.auto_save {
-            self.save(path)?;
-        }
-        Ok(())
-    }
-
-    /// Get the default persistence path for a project.
-    ///
-    /// Returns `.ralph/task_tracker.json` relative to the project root.
-    #[must_use]
-    pub fn default_path(project_dir: &std::path::Path) -> std::path::PathBuf {
-        project_dir.join(".ralph").join("task_tracker.json")
+impl Default for TaskTracker {
+    fn default() -> Self {
+        Self::new(TaskTrackerConfig::default())
     }
 }
+
+// ============================================================================
+// Task Counts
+// ============================================================================
 
 /// Summary counts of tasks by state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -1923,12 +1367,6 @@ impl TaskCounts {
     }
 }
 
-impl Default for TaskTracker {
-    fn default() -> Self {
-        Self::new(TaskTrackerConfig::default())
-    }
-}
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -1936,6 +1374,7 @@ impl Default for TaskTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     // ========================================================================
     // TaskId Tests
@@ -2029,242 +1468,33 @@ mod tests {
         assert_eq!(id.title(), "Build");
     }
 
-    // ========================================================================
-    // TaskState Tests
-    // ========================================================================
-
     #[test]
-    fn test_task_state_default() {
-        let state = TaskState::default();
-        assert_eq!(state, TaskState::NotStarted);
+    fn test_task_id_parse_with_subsection() {
+        // Format: ### 7a. Task Title (sprint task with subsection)
+        let id = TaskId::parse("### 7a. QualityGate Trait Refactor").unwrap();
+        assert_eq!(id.subsection(), Some("7a"));
+        assert_eq!(id.title(), "QualityGate Trait Refactor");
     }
 
     #[test]
-    fn test_task_state_display() {
-        assert_eq!(TaskState::NotStarted.to_string(), "Not Started");
-        assert_eq!(TaskState::InProgress.to_string(), "In Progress");
-        assert_eq!(TaskState::Blocked.to_string(), "Blocked");
-        assert_eq!(TaskState::InReview.to_string(), "In Review");
-        assert_eq!(TaskState::Complete.to_string(), "Complete");
+    fn test_task_id_parse_numeric_only() {
+        // Format: ### 1. Task Title (simple numeric task)
+        let id = TaskId::parse("### 1. Setup project").unwrap();
+        assert_eq!(id.subsection(), None);
+        assert_eq!(id.number(), 1);
     }
 
     #[test]
-    fn test_task_state_can_transition_from_not_started() {
-        assert!(TaskState::NotStarted.can_transition_to(TaskState::InProgress));
-        assert!(TaskState::NotStarted.can_transition_to(TaskState::Complete));
-        assert!(!TaskState::NotStarted.can_transition_to(TaskState::Blocked));
-        assert!(!TaskState::NotStarted.can_transition_to(TaskState::InReview));
-    }
+    fn test_task_id_subsection_various_formats() {
+        // Test various subsection formats
+        let id_a = TaskId::parse("### 6a. Language Enum").unwrap();
+        assert_eq!(id_a.subsection(), Some("6a"));
 
-    #[test]
-    fn test_task_state_can_transition_from_in_progress() {
-        assert!(TaskState::InProgress.can_transition_to(TaskState::Blocked));
-        assert!(TaskState::InProgress.can_transition_to(TaskState::InReview));
-        assert!(TaskState::InProgress.can_transition_to(TaskState::Complete));
-        assert!(!TaskState::InProgress.can_transition_to(TaskState::NotStarted));
-    }
+        let id_b = TaskId::parse("### 6b. Language Detector").unwrap();
+        assert_eq!(id_b.subsection(), Some("6b"));
 
-    #[test]
-    fn test_task_state_can_transition_from_blocked() {
-        assert!(TaskState::Blocked.can_transition_to(TaskState::InProgress));
-        assert!(TaskState::Blocked.can_transition_to(TaskState::Complete));
-        assert!(!TaskState::Blocked.can_transition_to(TaskState::NotStarted));
-        assert!(!TaskState::Blocked.can_transition_to(TaskState::InReview));
-    }
-
-    #[test]
-    fn test_task_state_can_transition_from_in_review() {
-        assert!(TaskState::InReview.can_transition_to(TaskState::InProgress));
-        assert!(TaskState::InReview.can_transition_to(TaskState::Complete));
-        assert!(!TaskState::InReview.can_transition_to(TaskState::NotStarted));
-        assert!(!TaskState::InReview.can_transition_to(TaskState::Blocked));
-    }
-
-    #[test]
-    fn test_task_state_complete_is_terminal() {
-        assert!(!TaskState::Complete.can_transition_to(TaskState::NotStarted));
-        assert!(!TaskState::Complete.can_transition_to(TaskState::InProgress));
-        assert!(!TaskState::Complete.can_transition_to(TaskState::Blocked));
-        assert!(!TaskState::Complete.can_transition_to(TaskState::InReview));
-    }
-
-    #[test]
-    fn test_task_state_is_active() {
-        assert!(!TaskState::NotStarted.is_active());
-        assert!(TaskState::InProgress.is_active());
-        assert!(!TaskState::Blocked.is_active());
-        assert!(TaskState::InReview.is_active());
-        assert!(!TaskState::Complete.is_active());
-    }
-
-    #[test]
-    fn test_task_state_is_terminal() {
-        assert!(!TaskState::NotStarted.is_terminal());
-        assert!(!TaskState::InProgress.is_terminal());
-        assert!(!TaskState::Blocked.is_terminal());
-        assert!(!TaskState::InReview.is_terminal());
-        assert!(TaskState::Complete.is_terminal());
-    }
-
-    #[test]
-    fn test_task_state_serialize() {
-        let json = serde_json::to_string(&TaskState::InProgress).unwrap();
-        assert_eq!(json, "\"InProgress\"");
-    }
-
-    #[test]
-    fn test_task_state_deserialize() {
-        let state: TaskState = serde_json::from_str("\"Blocked\"").unwrap();
-        assert_eq!(state, TaskState::Blocked);
-    }
-
-    // ========================================================================
-    // BlockReason Tests
-    // ========================================================================
-
-    #[test]
-    fn test_block_reason_max_attempts_display() {
-        let reason = BlockReason::MaxAttempts {
-            attempts: 5,
-            max: 5,
-        };
-        assert_eq!(reason.to_string(), "Exceeded max attempts (5/5)");
-    }
-
-    #[test]
-    fn test_block_reason_timeout_display() {
-        let reason = BlockReason::Timeout {
-            duration_secs: 3600,
-        };
-        assert_eq!(reason.to_string(), "Timed out after 3600 seconds");
-    }
-
-    #[test]
-    fn test_block_reason_external_dependency_display() {
-        let reason = BlockReason::ExternalDependency {
-            description: "API key needed".to_string(),
-        };
-        assert_eq!(reason.to_string(), "External dependency: API key needed");
-    }
-
-    #[test]
-    fn test_block_reason_quality_gate_display() {
-        let reason = BlockReason::QualityGateFailure {
-            gate: "clippy".to_string(),
-            failures: 3,
-        };
-        assert_eq!(reason.to_string(), "Quality gate 'clippy' failed 3 times");
-    }
-
-    #[test]
-    fn test_block_reason_manual_intervention_display() {
-        let reason = BlockReason::ManualIntervention {
-            reason: "Need code review".to_string(),
-        };
-        assert_eq!(
-            reason.to_string(),
-            "Manual intervention required: Need code review"
-        );
-    }
-
-    #[test]
-    fn test_block_reason_depends_on_task_display() {
-        let reason = BlockReason::DependsOnTask { task_number: 5 };
-        assert_eq!(reason.to_string(), "Blocked by task #5");
-    }
-
-    #[test]
-    fn test_block_reason_other_display() {
-        let reason = BlockReason::Other {
-            reason: "Custom reason".to_string(),
-        };
-        assert_eq!(reason.to_string(), "Custom reason");
-    }
-
-    #[test]
-    fn test_block_reason_serialize() {
-        let reason = BlockReason::MaxAttempts {
-            attempts: 3,
-            max: 5,
-        };
-        let json = serde_json::to_string(&reason).unwrap();
-        assert!(json.contains("MaxAttempts"));
-        assert!(json.contains("\"attempts\":3"));
-        assert!(json.contains("\"max\":5"));
-    }
-
-    #[test]
-    fn test_block_reason_deserialize() {
-        let json = r#"{"Timeout":{"duration_secs":1800}}"#;
-        let reason: BlockReason = serde_json::from_str(json).unwrap();
-        assert!(matches!(
-            reason,
-            BlockReason::Timeout {
-                duration_secs: 1800
-            }
-        ));
-    }
-
-    // ========================================================================
-    // TaskTransition Tests
-    // ========================================================================
-
-    #[test]
-    fn test_task_transition_new() {
-        let transition = TaskTransition::new(TaskState::NotStarted, TaskState::InProgress);
-        assert_eq!(transition.from, TaskState::NotStarted);
-        assert_eq!(transition.to, TaskState::InProgress);
-        assert!(transition.reason.is_none());
-        assert!(transition.block_reason.is_none());
-    }
-
-    #[test]
-    fn test_task_transition_with_reason() {
-        let transition =
-            TaskTransition::with_reason(TaskState::InProgress, TaskState::Complete, "All done");
-        assert_eq!(transition.from, TaskState::InProgress);
-        assert_eq!(transition.to, TaskState::Complete);
-        assert_eq!(transition.reason, Some("All done".to_string()));
-    }
-
-    #[test]
-    fn test_task_transition_blocked() {
-        let block_reason = BlockReason::MaxAttempts {
-            attempts: 5,
-            max: 5,
-        };
-        let transition = TaskTransition::blocked(TaskState::InProgress, block_reason.clone());
-        assert_eq!(transition.from, TaskState::InProgress);
-        assert_eq!(transition.to, TaskState::Blocked);
-        assert!(transition.reason.is_some());
-        assert_eq!(transition.block_reason, Some(block_reason));
-    }
-
-    #[test]
-    fn test_task_transition_timestamp_is_recent() {
-        let before = Utc::now();
-        let transition = TaskTransition::new(TaskState::NotStarted, TaskState::InProgress);
-        let after = Utc::now();
-
-        assert!(transition.timestamp >= before);
-        assert!(transition.timestamp <= after);
-    }
-
-    #[test]
-    fn test_task_transition_serialize() {
-        let transition = TaskTransition::new(TaskState::NotStarted, TaskState::InProgress);
-        let json = serde_json::to_string(&transition).unwrap();
-        assert!(json.contains("\"from\":\"NotStarted\""));
-        assert!(json.contains("\"to\":\"InProgress\""));
-    }
-
-    #[test]
-    fn test_task_transition_deserialize() {
-        let json = r#"{"from":"InProgress","to":"Complete","timestamp":"2024-01-01T00:00:00Z","reason":"Done","block_reason":null}"#;
-        let transition: TaskTransition = serde_json::from_str(json).unwrap();
-        assert_eq!(transition.from, TaskState::InProgress);
-        assert_eq!(transition.to, TaskState::Complete);
-        assert_eq!(transition.reason, Some("Done".to_string()));
+        let id_c = TaskId::parse("### 10a. Polyglot Prompt").unwrap();
+        assert_eq!(id_c.subsection(), Some("10a"));
     }
 
     // ========================================================================
@@ -2453,7 +1683,7 @@ mod tests {
     }
 
     // ========================================================================
-    // TaskTracker Tests (basic structure)
+    // TaskTracker Tests
     // ========================================================================
 
     #[test]
@@ -2495,172 +1725,33 @@ mod tests {
     }
 
     // ========================================================================
-    // Plan Parser Tests
+    // TaskCounts Tests
     // ========================================================================
 
     #[test]
-    fn test_parse_plan_empty() {
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan("").unwrap();
-        assert!(tracker.tasks.is_empty());
+    fn test_task_counts_default() {
+        let counts = TaskCounts::default();
+        assert_eq!(counts.total(), 0);
+        assert!(counts.all_done());
     }
 
     #[test]
-    fn test_parse_plan_no_tasks() {
-        let mut tracker = TaskTracker::default();
-        let plan = r#"
-# Implementation Plan
-
-This is the introduction.
-
-## Overview
-
-Some overview text.
-"#;
-        tracker.parse_plan(plan).unwrap();
-        assert!(tracker.tasks.is_empty());
+    fn test_task_counts_serialize() {
+        let counts = TaskCounts {
+            not_started: 1,
+            in_progress: 2,
+            blocked: 3,
+            in_review: 4,
+            complete: 5,
+        };
+        let json = serde_json::to_string(&counts).unwrap();
+        assert!(json.contains("\"not_started\":1"));
+        assert!(json.contains("\"complete\":5"));
     }
 
-    #[test]
-    fn test_parse_plan_single_task() {
-        let mut tracker = TaskTracker::default();
-        let plan = r#"
-## Tasks
-
-### 1. Setup project
-- [ ] Create directory
-- [ ] Initialize git
-"#;
-        tracker.parse_plan(plan).unwrap();
-        assert_eq!(tracker.tasks.len(), 1);
-
-        let task = tracker.get_task_by_number(1).unwrap();
-        assert_eq!(task.id.title(), "Setup project");
-        assert_eq!(task.checkboxes.len(), 2);
-        assert_eq!(task.checkboxes[0].0, "Create directory");
-        assert!(!task.checkboxes[0].1);
-        assert_eq!(task.checkboxes[1].0, "Initialize git");
-        assert!(!task.checkboxes[1].1);
-    }
-
-    #[test]
-    fn test_parse_plan_multiple_tasks() {
-        let mut tracker = TaskTracker::default();
-        let plan = r#"
-## Tasks
-
-### 1. Phase 1.1: Setup
-- [x] Done item
-
-### 2. Phase 1.2: Build
-- [ ] Not done item
-
-### 3. Phase 2.1: Test
-- [ ] Item 1
-- [x] Item 2
-- [ ] Item 3
-"#;
-        tracker.parse_plan(plan).unwrap();
-        assert_eq!(tracker.tasks.len(), 3);
-
-        // Check task 1
-        let task1 = tracker.get_task_by_number(1).unwrap();
-        assert_eq!(task1.id.phase(), Some("1.1"));
-        assert_eq!(task1.checkboxes.len(), 1);
-        assert!(task1.checkboxes[0].1); // checked
-
-        // Check task 2
-        let task2 = tracker.get_task_by_number(2).unwrap();
-        assert_eq!(task2.id.phase(), Some("1.2"));
-        assert_eq!(task2.checkboxes.len(), 1);
-        assert!(!task2.checkboxes[0].1); // unchecked
-
-        // Check task 3
-        let task3 = tracker.get_task_by_number(3).unwrap();
-        assert_eq!(task3.id.phase(), Some("2.1"));
-        assert_eq!(task3.checkboxes.len(), 3);
-    }
-
-    #[test]
-    fn test_parse_plan_checkbox_uppercase_x() {
-        let mut tracker = TaskTracker::default();
-        let plan = r#"
-### 1. Test task
-- [X] Checked with uppercase X
-- [x] Checked with lowercase x
-- [ ] Not checked
-"#;
-        tracker.parse_plan(plan).unwrap();
-
-        let task = tracker.get_task_by_number(1).unwrap();
-        assert!(task.checkboxes[0].1); // uppercase X
-        assert!(task.checkboxes[1].1); // lowercase x
-        assert!(!task.checkboxes[2].1); // not checked
-    }
-
-    #[test]
-    fn test_parse_plan_incremental_preserves_state() {
-        let mut tracker = TaskTracker::default();
-
-        // First parse
-        let plan1 = r#"
-### 1. Task one
-- [ ] Item 1
-"#;
-        tracker.parse_plan(plan1).unwrap();
-
-        // Modify task state
-        if let Some(task) = tracker.get_task_mut(&TaskId::parse("### 1. Task one").unwrap()) {
-            task.state = TaskState::InProgress;
-            task.metrics.iterations = 5;
-        }
-
-        // Re-parse with updated checkboxes
-        let plan2 = r#"
-### 1. Task one
-- [x] Item 1
-- [ ] Item 2
-"#;
-        tracker.parse_plan(plan2).unwrap();
-
-        // Verify state was preserved
-        let task = tracker.get_task_by_number(1).unwrap();
-        assert_eq!(task.state, TaskState::InProgress);
-        assert_eq!(task.metrics.iterations, 5);
-        // But checkboxes were updated
-        assert_eq!(task.checkboxes.len(), 2);
-        assert!(task.checkboxes[0].1); // Item 1 now checked
-    }
-
-    #[test]
-    fn test_parse_plan_completion_percentage() {
-        let mut tracker = TaskTracker::default();
-        let plan = r#"
-### 1. Half done
-- [x] Done 1
-- [x] Done 2
-- [ ] Not done 1
-- [ ] Not done 2
-
-### 2. All done
-- [x] A
-- [x] B
-
-### 3. None done
-- [ ] X
-- [ ] Y
-"#;
-        tracker.parse_plan(plan).unwrap();
-
-        let task1 = tracker.get_task_by_number(1).unwrap();
-        assert_eq!(task1.completion_percentage(), 50.0);
-
-        let task2 = tracker.get_task_by_number(2).unwrap();
-        assert_eq!(task2.completion_percentage(), 100.0);
-
-        let task3 = tracker.get_task_by_number(3).unwrap();
-        assert_eq!(task3.completion_percentage(), 0.0);
-    }
+    // ========================================================================
+    // Workable Tasks Tests
+    // ========================================================================
 
     #[test]
     fn test_workable_tasks_priority_order() {
@@ -2795,31 +1886,6 @@ Some overview text.
     fn test_overall_completion_empty() {
         let tracker = TaskTracker::default();
         assert_eq!(tracker.overall_completion(), 0.0);
-    }
-
-    // ========================================================================
-    // TaskCounts Tests
-    // ========================================================================
-
-    #[test]
-    fn test_task_counts_default() {
-        let counts = TaskCounts::default();
-        assert_eq!(counts.total(), 0);
-        assert!(counts.all_done());
-    }
-
-    #[test]
-    fn test_task_counts_serialize() {
-        let counts = TaskCounts {
-            not_started: 1,
-            in_progress: 2,
-            blocked: 3,
-            in_review: 4,
-            complete: 5,
-        };
-        let json = serde_json::to_string(&counts).unwrap();
-        assert!(json.contains("\"not_started\":1"));
-        assert!(json.contains("\"complete\":5"));
     }
 
     // ========================================================================
@@ -3264,7 +2330,7 @@ Some overview text.
     }
 
     // ========================================================================
-    // Task Selection Algorithm Tests
+    // Task Selection Tests
     // ========================================================================
 
     #[test]
@@ -3835,514 +2901,7 @@ Some overview text.
     }
 
     // ========================================================================
-    // Persistence Tests
-    // ========================================================================
-
-    #[test]
-    fn test_save_and_load_roundtrip() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("tracker.json");
-
-        // Create and populate a tracker
-        let mut original = TaskTracker::default();
-        original.parse_plan("### 1. Task one\n- [ ] Item").unwrap();
-
-        let task_id = TaskId::parse("### 1. Task one").unwrap();
-        original.start_task(&task_id).unwrap();
-        original.record_progress(5, 100).unwrap();
-
-        // Save it
-        original.save(&path).unwrap();
-        assert!(path.exists());
-
-        // Load it back
-        let loaded = TaskTracker::load(&path, TaskTrackerConfig::default()).unwrap();
-
-        // Verify state preserved
-        assert_eq!(loaded.tasks.len(), original.tasks.len());
-        let loaded_task = loaded.get_task(&task_id).unwrap();
-        assert_eq!(loaded_task.state, TaskState::InProgress);
-        assert_eq!(loaded_task.metrics.files_modified, 5);
-        assert_eq!(loaded_task.metrics.lines_changed, 100);
-    }
-
-    #[test]
-    fn test_save_creates_directories() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir
-            .path()
-            .join("nested")
-            .join("dirs")
-            .join("tracker.json");
-
-        let tracker = TaskTracker::default();
-        tracker.save(&path).unwrap();
-
-        assert!(path.exists());
-    }
-
-    #[test]
-    fn test_load_nonexistent_returns_new() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("nonexistent.json");
-
-        let config = TaskTrackerConfig::default().with_stagnation_threshold(10);
-        let tracker = TaskTracker::load(&path, config).unwrap();
-
-        assert!(tracker.tasks.is_empty());
-        assert_eq!(tracker.config.stagnation_threshold, 10);
-    }
-
-    #[test]
-    fn test_load_corrupted_returns_error() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("corrupted.json");
-
-        // Write invalid JSON
-        std::fs::write(&path, "not valid json {{{").unwrap();
-
-        let result = TaskTracker::load(&path, TaskTrackerConfig::default());
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_or_new_with_corrupted() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("corrupted.json");
-
-        // Write invalid JSON
-        std::fs::write(&path, "not valid json {{{").unwrap();
-
-        let config = TaskTrackerConfig::default().with_stagnation_threshold(7);
-        let tracker = TaskTracker::load_or_new(&path, config);
-
-        // Should return a new tracker, not error
-        assert!(tracker.tasks.is_empty());
-        assert_eq!(tracker.config.stagnation_threshold, 7);
-    }
-
-    #[test]
-    fn test_load_or_new_with_valid() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("valid.json");
-
-        // Create and save a tracker
-        let mut original = TaskTracker::default();
-        original.parse_plan("### 1. Test").unwrap();
-        original.save(&path).unwrap();
-
-        // Load it back with different config
-        let config = TaskTrackerConfig::default().with_stagnation_threshold(99);
-        let tracker = TaskTracker::load_or_new(&path, config);
-
-        // Should load the existing tracker, not create new
-        assert_eq!(tracker.tasks.len(), 1);
-    }
-
-    #[test]
-    fn test_auto_save_when_enabled() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("auto.json");
-
-        let config = TaskTrackerConfig::default().with_auto_save(true);
-        let tracker = TaskTracker::new(config);
-
-        tracker.auto_save(&path).unwrap();
-        assert!(path.exists());
-    }
-
-    #[test]
-    fn test_auto_save_when_disabled() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("auto.json");
-
-        let config = TaskTrackerConfig::default().with_auto_save(false);
-        let tracker = TaskTracker::new(config);
-
-        tracker.auto_save(&path).unwrap();
-        assert!(!path.exists());
-    }
-
-    #[test]
-    fn test_default_path() {
-        let project_dir = std::path::Path::new("/home/user/project");
-        let path = TaskTracker::default_path(project_dir);
-
-        assert_eq!(
-            path.to_string_lossy(),
-            "/home/user/project/.ralph/task_tracker.json"
-        );
-    }
-
-    #[test]
-    fn test_save_preserves_all_state() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("full.json");
-
-        // Create a tracker with complex state
-        let config = TaskTrackerConfig::default()
-            .with_stagnation_threshold(5)
-            .with_max_quality_failures(3);
-        let mut tracker = TaskTracker::new(config);
-
-        tracker
-            .parse_plan(
-                r#"
-### 1. Phase 1.1: Setup
-- [x] Create directories
-- [ ] Configure tools
-
-### 2. Phase 1.2: Build
-- [ ] Write code
-
-### 3. Phase 2.1: Test
-- [ ] Write tests
-"#,
-            )
-            .unwrap();
-
-        // Add state to multiple tasks
-        let task1_id = TaskId::parse("### 1. Phase 1.1: Setup").unwrap();
-        let task2_id = TaskId::parse("### 2. Phase 1.2: Build").unwrap();
-        let task3_id = TaskId::parse("### 3. Phase 2.1: Test").unwrap();
-
-        tracker.start_task(&task1_id).unwrap();
-        tracker.record_progress(2, 50).unwrap();
-        tracker.submit_for_review(&task1_id).unwrap();
-        tracker.complete_task(&task1_id).unwrap();
-
-        tracker.start_task(&task2_id).unwrap();
-        tracker
-            .block_task(
-                &task2_id,
-                BlockReason::ExternalDependency {
-                    description: "Waiting for API".to_string(),
-                },
-            )
-            .unwrap();
-
-        // Save and reload
-        tracker.save(&path).unwrap();
-        let loaded = TaskTracker::load(&path, TaskTrackerConfig::default()).unwrap();
-
-        // Verify task 1 state
-        let t1 = loaded.get_task(&task1_id).unwrap();
-        assert_eq!(t1.state, TaskState::Complete);
-        assert_eq!(t1.metrics.files_modified, 2);
-        assert!(t1.transitions.len() >= 3);
-
-        // Verify task 2 state
-        let t2 = loaded.get_task(&task2_id).unwrap();
-        assert_eq!(t2.state, TaskState::Blocked);
-        assert!(matches!(
-            t2.block_reason,
-            Some(BlockReason::ExternalDependency { .. })
-        ));
-
-        // Verify task 3 state (untouched)
-        let t3 = loaded.get_task(&task3_id).unwrap();
-        assert_eq!(t3.state, TaskState::NotStarted);
-
-        // Verify config was saved
-        assert_eq!(loaded.config.stagnation_threshold, 5);
-        assert_eq!(loaded.config.max_quality_failures, 3);
-    }
-
-    #[test]
-    fn test_save_preserves_timestamps() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("timestamps.json");
-
-        let tracker = TaskTracker::default();
-        let original_created = tracker.created_at;
-
-        tracker.save(&path).unwrap();
-        let loaded = TaskTracker::load(&path, TaskTrackerConfig::default()).unwrap();
-
-        assert_eq!(loaded.created_at, original_created);
-    }
-
-    #[test]
-    fn test_persistence_roundtrip_with_block_reasons() {
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let path = temp_dir.path().join("blocks.json");
-
-        let mut tracker = TaskTracker::default();
-        tracker
-            .parse_plan("### 1. Task\n### 2. Task\n### 3. Task")
-            .unwrap();
-
-        // Create different block reasons
-        let t1 = TaskId::parse("### 1. Task").unwrap();
-        let t2 = TaskId::parse("### 2. Task").unwrap();
-        let t3 = TaskId::parse("### 3. Task").unwrap();
-
-        tracker.start_task(&t1).unwrap();
-        tracker
-            .block_task(
-                &t1,
-                BlockReason::MaxAttempts {
-                    attempts: 5,
-                    max: 5,
-                },
-            )
-            .unwrap();
-
-        tracker.start_task(&t2).unwrap();
-        tracker
-            .block_task(
-                &t2,
-                BlockReason::QualityGateFailure {
-                    gate: "clippy".to_string(),
-                    failures: 3,
-                },
-            )
-            .unwrap();
-
-        tracker.start_task(&t3).unwrap();
-        tracker
-            .block_task(&t3, BlockReason::DependsOnTask { task_number: 1 })
-            .unwrap();
-
-        // Save and reload
-        tracker.save(&path).unwrap();
-        let loaded = TaskTracker::load(&path, TaskTrackerConfig::default()).unwrap();
-
-        // Verify block reasons
-        let l1 = loaded.get_task(&t1).unwrap();
-        assert!(matches!(
-            l1.block_reason,
-            Some(BlockReason::MaxAttempts {
-                attempts: 5,
-                max: 5
-            })
-        ));
-
-        let l2 = loaded.get_task(&t2).unwrap();
-        if let Some(BlockReason::QualityGateFailure { gate, failures }) = &l2.block_reason {
-            assert_eq!(gate, "clippy");
-            assert_eq!(*failures, 3);
-        } else {
-            panic!("Expected QualityGateFailure block reason");
-        }
-
-        let l3 = loaded.get_task(&t3).unwrap();
-        assert!(matches!(
-            l3.block_reason,
-            Some(BlockReason::DependsOnTask { task_number: 1 })
-        ));
-    }
-
-    // ========================================================================
-    // Fix 1: Sprint-Aware Task Selection Tests
-    // ========================================================================
-
-    #[test]
-    fn test_task_id_parse_with_subsection() {
-        // Format: ### 7a. Task Title (sprint task with subsection)
-        let id = TaskId::parse("### 7a. QualityGate Trait Refactor").unwrap();
-        assert_eq!(id.subsection(), Some("7a"));
-        assert_eq!(id.title(), "QualityGate Trait Refactor");
-    }
-
-    #[test]
-    fn test_task_id_parse_numeric_only() {
-        // Format: ### 1. Task Title (simple numeric task)
-        let id = TaskId::parse("### 1. Setup project").unwrap();
-        assert_eq!(id.subsection(), None);
-        assert_eq!(id.number(), 1);
-    }
-
-    #[test]
-    fn test_task_id_subsection_various_formats() {
-        // Test various subsection formats
-        let id_a = TaskId::parse("### 6a. Language Enum").unwrap();
-        assert_eq!(id_a.subsection(), Some("6a"));
-
-        let id_b = TaskId::parse("### 6b. Language Detector").unwrap();
-        assert_eq!(id_b.subsection(), Some("6b"));
-
-        let id_c = TaskId::parse("### 10a. Polyglot Prompt").unwrap();
-        assert_eq!(id_c.subsection(), Some("10a"));
-    }
-
-    #[test]
-    fn test_task_tracker_stores_sprint_affiliation() {
-        let plan = r#"
-## Current Focus: Sprint 7 (Language-Specific Quality Gates)
-
-## Sprint 7: Language-Specific Quality Gates
-
-### 7a. QualityGate Trait Refactor
-- [ ] Create QualityGate trait
-
-### 7b. Python Quality Gates
-- [ ] Implement RuffGate
-"#;
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan).unwrap();
-
-        let task_a = TaskId::parse("### 7a. QualityGate Trait Refactor").unwrap();
-        let task = tracker.get_task(&task_a).unwrap();
-        assert_eq!(task.sprint(), Some(7));
-    }
-
-    #[test]
-    fn test_task_tracker_parses_current_focus_sprint() {
-        let plan = r#"
-## Current Focus: Sprint 7 (Language-Specific Quality Gates)
-
-### 7a. Task A
-"#;
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan).unwrap();
-
-        assert_eq!(tracker.current_sprint(), Some(7));
-    }
-
-    // ========================================================================
-    // Fix 2: Task Tracker Invalidation Tests
-    // ========================================================================
-
-    #[test]
-    fn test_task_tracker_computes_plan_hash() {
-        let plan = "### 1. Task A\n### 2. Task B";
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan).unwrap();
-
-        let hash = tracker.plan_hash();
-        assert!(!hash.is_empty());
-    }
-
-    #[test]
-    fn test_task_tracker_hash_changes_with_structure() {
-        let plan1 = "### 1. Task A\n### 2. Task B";
-        let plan2 = "### 1. Task A\n### 2. Task B\n### 3. Task C";
-
-        let mut tracker1 = TaskTracker::default();
-        tracker1.parse_plan(plan1).unwrap();
-
-        let mut tracker2 = TaskTracker::default();
-        tracker2.parse_plan(plan2).unwrap();
-
-        assert_ne!(tracker1.plan_hash(), tracker2.plan_hash());
-    }
-
-    #[test]
-    fn test_task_tracker_hash_stable_for_same_structure() {
-        let plan = "### 1. Task A\n### 2. Task B";
-
-        let mut tracker1 = TaskTracker::default();
-        tracker1.parse_plan(plan).unwrap();
-
-        let mut tracker2 = TaskTracker::default();
-        tracker2.parse_plan(plan).unwrap();
-
-        assert_eq!(tracker1.plan_hash(), tracker2.plan_hash());
-    }
-
-    #[test]
-    fn test_validate_against_plan_detects_change() {
-        let plan_v1 = "### 1. Task A\n### 2. Task B";
-        let plan_v2 = "### 1. Task A\n### 3. New Task";
-
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan_v1).unwrap();
-
-        let result = tracker.validate_against_plan(plan_v2);
-        assert!(matches!(result, ValidationResult::PlanChanged { .. }));
-    }
-
-    #[test]
-    fn test_validate_against_plan_valid_when_unchanged() {
-        let plan = "### 1. Task A\n### 2. Task B";
-
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan).unwrap();
-
-        let result = tracker.validate_against_plan(plan);
-        assert!(matches!(result, ValidationResult::Valid));
-    }
-
-    // ========================================================================
-    // Fix 3: Orphaned Task Detection Tests
-    // ========================================================================
-
-    #[test]
-    fn test_find_orphaned_tasks_detects_orphans() {
-        let plan_v1 = "### 1. Task A\n### 2. Task B\n### 3. Enterprise Feature";
-        let plan_v2 = "### 1. Task A\n### 2. Task B"; // Task 3 removed
-
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan_v1).unwrap();
-
-        let orphaned = tracker.find_orphaned_tasks(plan_v2);
-        assert_eq!(orphaned.len(), 1);
-        assert_eq!(orphaned[0].title(), "Enterprise Feature");
-    }
-
-    #[test]
-    fn test_find_orphaned_tasks_empty_when_all_present() {
-        let plan = "### 1. Task A\n### 2. Task B";
-
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan).unwrap();
-
-        let orphaned = tracker.find_orphaned_tasks(plan);
-        assert!(orphaned.is_empty());
-    }
-
-    #[test]
-    fn test_select_next_task_skips_orphaned() {
-        let plan_v1 = r#"
-## Current Focus: Sprint 7
-
-## Sprint 6: Old Sprint
-### 6a. Old Task
-- [ ] Item
-
-## Sprint 7: Current Sprint
-### 7a. Current Task
-- [ ] Item
-"#;
-        let plan_v2 = r#"
-## Current Focus: Sprint 7
-
-## Sprint 7: Current Sprint
-### 7a. Current Task
-- [ ] Item
-"#;
-
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan_v1).unwrap();
-
-        // Mark orphaned tasks
-        tracker.mark_orphaned_tasks(plan_v2);
-
-        // Select should skip orphaned task 6a
-        let selected = tracker.select_next_task();
-        if let Some(id) = selected {
-            assert_eq!(id.subsection(), Some("7a"));
-        }
-    }
-
-    #[test]
-    fn test_task_marked_as_orphaned() {
-        let plan_v1 = "### 1. Old Task\n### 2. Current Task";
-        let plan_v2 = "### 2. Current Task"; // Task 1 removed
-
-        let mut tracker = TaskTracker::default();
-        tracker.parse_plan(plan_v1).unwrap();
-
-        tracker.mark_orphaned_tasks(plan_v2);
-
-        let old_task = TaskId::parse("### 1. Old Task").unwrap();
-        let task = tracker.get_task(&old_task).unwrap();
-        assert!(task.is_orphaned());
-    }
-
-    // ========================================================================
-    // Fix 4: Sprint Completion Gate Tests
+    // Sprint Tests
     // ========================================================================
 
     #[test]
@@ -4462,5 +3021,39 @@ Some overview text.
         let task = tracker.get_task(id).unwrap();
         assert_eq!(task.sprint(), Some(7));
         assert_ne!(task.sprint(), Some(8)); // Must not jump to future sprint
+    }
+
+    #[test]
+    fn test_select_next_task_skips_orphaned() {
+        let plan_v1 = r#"
+## Current Focus: Sprint 7
+
+## Sprint 6: Old Sprint
+### 6a. Old Task
+- [ ] Item
+
+## Sprint 7: Current Sprint
+### 7a. Current Task
+- [ ] Item
+"#;
+        let plan_v2 = r#"
+## Current Focus: Sprint 7
+
+## Sprint 7: Current Sprint
+### 7a. Current Task
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        // Mark orphaned tasks
+        tracker.mark_orphaned_tasks(plan_v2);
+
+        // Select should skip orphaned task 6a
+        let selected = tracker.select_next_task();
+        if let Some(id) = selected {
+            assert_eq!(id.subsection(), Some("7a"));
+        }
     }
 }
