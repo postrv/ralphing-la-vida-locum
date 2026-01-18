@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Start Sprint 8b-8e** - Create language-specific templates (Python, TypeScript, Go, Java)
+2. **Start Sprint 9** - Multi-Language CLI & Settings
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 8b-8e - Language Templates (Python, TypeScript, Go, Java)
+**Current task:** Sprint 9a - CLI Language Override
 
 ---
 
@@ -39,8 +39,8 @@
 |--------|-------|--------|
 | 1-6 | Foundation (State Machine, Prompts, Gates, Checkpoints, narsil-mcp, Language Detection) | Complete |
 | 7 | Language-Specific Quality Gates | Complete |
-| **8** | **Language-Specific Prompts** | **NEXT** |
-| 9 | Multi-Language CLI & Settings | Pending |
+| 8 | Language-Specific Prompts | Complete |
+| **9** | **Multi-Language CLI & Settings** | **NEXT** |
 | 10 | Polyglot & Advanced Features | Pending |
 | 11 | CCG-Aware Prompts | Pending |
 | 12-13 | Retry & Stagnation Prevention | Complete |
@@ -109,11 +109,12 @@
 - Files: `src/bootstrap/templates.rs`
 - Acceptance: Registry loads all templates, get() with fallback works, 32 tests pass
 
-### 8b-8e. Language Templates (Python, TypeScript, Go, Java)
-- [ ] Create `templates/{language}/PROMPT_build.md` for each
-- [ ] Create `templates/{language}/CLAUDE.md` for each
-- [ ] Include language-specific workflows and hard rules
+### 8b-8e. Language Templates (Python, TypeScript, Go, Java) ✓ COMPLETE
+- [x] Create `templates/{language}/PROMPT_build.md` for each
+- [x] Create `templates/{language}/CLAUDE.md` for each
+- [x] Include language-specific workflows and hard rules
 - Files: `src/templates/{python,typescript,go,java}/`
+- Acceptance: 55 template tests pass, each language has proper tooling references
 
 ---
 
