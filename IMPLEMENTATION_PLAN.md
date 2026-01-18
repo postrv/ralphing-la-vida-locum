@@ -55,10 +55,10 @@ Ralph should work on **Sprint 6: Language Detection** - the foundation for multi
 **Goal:** Auto-detect project languages using file extensions and manifest files.
 
 ### 6a. Language Enum & Extensions
-- [ ] Create `Language` enum with all 32 narsil-mcp languages
-- [ ] Implement `extensions()` method for each language
-- [ ] Implement `manifest_files()` method for each language
-- [ ] Add `Display` and `FromStr` traits
+- [x] Create `Language` enum with all 32 narsil-mcp languages
+- [x] Implement `extensions()` method for each language
+- [x] Implement `manifest_files()` method for each language
+- [x] Add `Display` and `FromStr` traits
 - Files: `src/bootstrap/language.rs`
 - Acceptance: All languages have correct extensions and manifests
 

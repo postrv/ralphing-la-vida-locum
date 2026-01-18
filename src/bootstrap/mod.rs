@@ -2,6 +2,12 @@
 //!
 //! This module creates all necessary directories, configuration files,
 //! prompts, and scripts needed for the automation suite.
+//!
+//! # Submodules
+//!
+//! - [`language`] - Language detection and representation for multi-language support
+
+pub mod language;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -106,12 +112,12 @@ impl Bootstrap {
         let settings_json = self.project_dir.join(".claude/settings.json");
 
         if !claude_md.exists() || force {
-            fs::write(&claude_md, include_str!("templates/CLAUDE.md"))?;
+            fs::write(&claude_md, include_str!("../templates/CLAUDE.md"))?;
             println!("   Created: .claude/CLAUDE.md");
         }
 
         if !settings_json.exists() || force {
-            fs::write(&settings_json, include_str!("templates/settings.json"))?;
+            fs::write(&settings_json, include_str!("../templates/settings.json"))?;
             println!("   Created: .claude/settings.json");
         }
 
@@ -123,7 +129,7 @@ impl Bootstrap {
         let mcp_json = self.project_dir.join(".claude/mcp.json");
 
         if !mcp_json.exists() || force {
-            fs::write(&mcp_json, include_str!("templates/mcp.json"))?;
+            fs::write(&mcp_json, include_str!("../templates/mcp.json"))?;
             println!("   Created: .claude/mcp.json");
         }
 
@@ -133,10 +139,10 @@ impl Bootstrap {
     /// Create hook scripts
     fn create_hooks(&self, force: bool) -> Result<()> {
         let hooks = [
-            ("security-filter.sh", include_str!("templates/hooks/security-filter.sh")),
-            ("post-edit-scan.sh", include_str!("templates/hooks/post-edit-scan.sh")),
-            ("end-of-turn.sh", include_str!("templates/hooks/end-of-turn.sh")),
-            ("session-init.sh", include_str!("templates/hooks/session-init.sh")),
+            ("security-filter.sh", include_str!("../templates/hooks/security-filter.sh")),
+            ("post-edit-scan.sh", include_str!("../templates/hooks/post-edit-scan.sh")),
+            ("end-of-turn.sh", include_str!("../templates/hooks/end-of-turn.sh")),
+            ("session-init.sh", include_str!("../templates/hooks/session-init.sh")),
         ];
 
         for (name, content) in hooks {
@@ -160,8 +166,8 @@ impl Bootstrap {
     /// Create skill definitions
     fn create_skills(&self, force: bool) -> Result<()> {
         let skills = [
-            ("docs-sync.md", include_str!("templates/skills/docs-sync.md")),
-            ("project-analyst.md", include_str!("templates/skills/project-analyst.md")),
+            ("docs-sync.md", include_str!("../templates/skills/docs-sync.md")),
+            ("project-analyst.md", include_str!("../templates/skills/project-analyst.md")),
         ];
 
         for (name, content) in skills {
@@ -178,9 +184,9 @@ impl Bootstrap {
     /// Create agent definitions
     fn create_agents(&self, force: bool) -> Result<()> {
         let agents = [
-            ("adversarial-reviewer.md", include_str!("templates/agents/adversarial-reviewer.md")),
-            ("security-auditor.md", include_str!("templates/agents/security-auditor.md")),
-            ("supervisor.md", include_str!("templates/agents/supervisor.md")),
+            ("adversarial-reviewer.md", include_str!("../templates/agents/adversarial-reviewer.md")),
+            ("security-auditor.md", include_str!("../templates/agents/security-auditor.md")),
+            ("supervisor.md", include_str!("../templates/agents/supervisor.md")),
         ];
 
         for (name, content) in agents {
@@ -197,9 +203,9 @@ impl Bootstrap {
     /// Create prompt templates
     fn create_prompts(&self, force: bool) -> Result<()> {
         let prompts = [
-            ("PROMPT_plan.md", include_str!("templates/PROMPT_plan.md")),
-            ("PROMPT_build.md", include_str!("templates/PROMPT_build.md")),
-            ("PROMPT_debug.md", include_str!("templates/PROMPT_debug.md")),
+            ("PROMPT_plan.md", include_str!("../templates/PROMPT_plan.md")),
+            ("PROMPT_build.md", include_str!("../templates/PROMPT_build.md")),
+            ("PROMPT_debug.md", include_str!("../templates/PROMPT_debug.md")),
         ];
 
         for (name, content) in prompts {
@@ -260,8 +266,8 @@ ralph bootstrap  # Set up project structure
     /// Create documentation templates
     fn create_doc_templates(&self, force: bool) -> Result<()> {
         let templates = [
-            ("adr-template.md", include_str!("templates/docs/adr-template.md")),
-            ("implementation-template.md", include_str!("templates/docs/implementation-template.md")),
+            ("adr-template.md", include_str!("../templates/docs/adr-template.md")),
+            ("implementation-template.md", include_str!("../templates/docs/implementation-template.md")),
         ];
 
         for (name, content) in templates {
@@ -275,13 +281,13 @@ ralph bootstrap  # Set up project structure
         // Create architecture.md and api.md stubs
         let arch_path = self.project_dir.join("docs/architecture.md");
         if !arch_path.exists() {
-            fs::write(&arch_path, include_str!("templates/docs/architecture.md"))?;
+            fs::write(&arch_path, include_str!("../templates/docs/architecture.md"))?;
             println!("   Created: docs/architecture.md");
         }
 
         let api_path = self.project_dir.join("docs/api.md");
         if !api_path.exists() {
-            fs::write(&api_path, include_str!("templates/docs/api.md"))?;
+            fs::write(&api_path, include_str!("../templates/docs/api.md"))?;
             println!("   Created: docs/api.md");
         }
 
@@ -292,7 +298,7 @@ ralph bootstrap  # Set up project structure
     fn create_implementation_plan(&self) -> Result<()> {
         let path = self.project_dir.join("IMPLEMENTATION_PLAN.md");
         if !path.exists() {
-            fs::write(&path, include_str!("templates/IMPLEMENTATION_PLAN.md"))?;
+            fs::write(&path, include_str!("../templates/IMPLEMENTATION_PLAN.md"))?;
             println!("   Created: IMPLEMENTATION_PLAN.md");
         }
 
@@ -343,8 +349,8 @@ sbom.json
         }
 
         let hooks = [
-            ("pre-commit", include_str!("templates/git-hooks/pre-commit")),
-            ("post-commit", include_str!("templates/git-hooks/post-commit")),
+            ("pre-commit", include_str!("../templates/git-hooks/pre-commit")),
+            ("post-commit", include_str!("../templates/git-hooks/post-commit")),
         ];
 
         for (name, content) in hooks {

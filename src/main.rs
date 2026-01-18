@@ -8,15 +8,14 @@ use colored::Colorize;
 use std::path::PathBuf;
 
 mod archive;
-mod bootstrap;
 mod context;
 mod hooks;
 mod r#loop;
 mod supervisor;
 
+use ralph::bootstrap::Bootstrap;
 use ralph::Analytics;
 use crate::archive::ArchiveManager;
-use crate::bootstrap::Bootstrap;
 use crate::context::ContextBuilder;
 use crate::hooks::HookType;
 use crate::r#loop::{LoopManager, LoopManagerConfig, LoopMode};
