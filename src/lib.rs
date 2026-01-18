@@ -93,6 +93,7 @@ pub use analytics::{
 
 // Re-export bootstrap types
 pub use bootstrap::language::{Language, ParseLanguageError};
+pub use bootstrap::language_detector::{DetectedLanguage, LanguageDetector};
 
 // Re-export reporting types
 pub use reporting::{ExportFormat, QualityExporter, ReportConfig, ReportData, ReportGenerator};
