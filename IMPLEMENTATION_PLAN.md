@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Start Sprint 9** - Multi-Language CLI & Settings
+2. **Start Sprint 10** - Polyglot & Advanced Features
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 9b-9d - Language Settings Templates
+**Current task:** Sprint 10 - Polyglot & Advanced Features
 
 ---
 
@@ -40,8 +40,8 @@
 | 1-6 | Foundation (State Machine, Prompts, Gates, Checkpoints, narsil-mcp, Language Detection) | Complete |
 | 7 | Language-Specific Quality Gates | Complete |
 | 8 | Language-Specific Prompts | Complete |
-| **9** | **Multi-Language CLI & Settings** | **NEXT** |
-| 10 | Polyglot & Advanced Features | Pending |
+| 9 | Multi-Language CLI & Settings | Complete |
+| **10** | **Polyglot & Advanced Features** | **NEXT** |
 | 11 | CCG-Aware Prompts | Pending |
 | 12-13 | Retry & Stagnation Prevention | Complete |
 
@@ -118,7 +118,7 @@
 
 ---
 
-## Sprint 9: Multi-Language CLI & Settings (Priority: P1)
+## Sprint 9: Multi-Language CLI & Settings (Priority: P1) - COMPLETE
 
 ### 9a. CLI Language Override ✓ COMPLETE
 - [x] Add `--language` flag to bootstrap command
@@ -127,9 +127,10 @@
 - Files: `src/main.rs`, `src/bootstrap/mod.rs`
 - Acceptance: CLI tests pass, language override works with aliases (ts, py, etc.)
 
-### 9b-9d. Language Settings Templates
-- [ ] Create `templates/{language}/settings.json` with safe permissions
+### 9b-9d. Language Settings Templates ✓ COMPLETE
+- [x] Create `templates/{language}/settings.json` with safe permissions
 - Files: `src/templates/{python,typescript,go}/settings.json`
+- Acceptance: 22 settings_json tests pass, each language has appropriate tool permissions
 
 ---
 
