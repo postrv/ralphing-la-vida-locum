@@ -11,6 +11,11 @@ env:
   RUSTFLAGS: -Dwarnings
   RUST_BACKTRACE: 1
 
+# Grant write permissions for security audit check runs
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   # Check formatting
   fmt:
