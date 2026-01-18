@@ -3,8 +3,19 @@ name = "ralph"
 version = "0.1.0"
 edition = "2021"
 description = "Claude Code Automation Suite - Autonomous coding with bombproof reliability"
-authors = ["Laurence"]
+authors = ["Laurence Avent"]
 license = "MIT"
+repository = "https://github.com/postrv/ralphing-la-vida-locum"
+keywords = ["claude", "automation", "ai", "coding", "mcp"]
+categories = ["development-tools", "command-line-utilities"]
+
+# Feature flags for optional integrations
+# Ralph works standalone by default - all integrations gracefully degrade at runtime
+[features]
+default = []
+# Note: narsil-mcp integration is detected at runtime, not compile-time
+# This allows ralph to work seamlessly whether narsil-mcp is installed or not
+# Future: Add compile-time feature flags for smaller binary when narsil not needed
 
 [lib]
 name = "ralph"

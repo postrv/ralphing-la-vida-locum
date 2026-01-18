@@ -124,29 +124,49 @@ ralph --project . loop --phase build --max-iterations 50
 
 ## MCP SERVERS
 
-### narsil-mcp (76 tools for code intelligence)
+### narsil-mcp (Code Intelligence - Optional)
 
-**Always run before committing:**
+narsil-mcp is optional. All Ralph features gracefully degrade when unavailable.
+
+**Security (run before committing, if available):**
 ```bash
-narsil-mcp scan_security
-narsil-mcp find_injection_vulnerabilities
+scan_security           # Find vulnerabilities
+find_injection_vulnerabilities  # SQL/XSS/command injection
+check_cwe_top25        # CWE Top 25 checks
 ```
 
-**Use for context gathering:**
+**Context Gathering:**
 ```bash
-narsil-mcp get_call_graph <function>
-narsil-mcp find_references <symbol>
-narsil-mcp find_similar_code <query>
-narsil-mcp get_function_hotspots
-narsil-mcp find_dead_code
+get_call_graph <function>   # Function relationships
+find_references <symbol>    # Impact analysis
+get_dependencies <path>     # Module dependencies
+find_similar_code <query>   # Find related code
+get_function_hotspots       # High-impact functions
 ```
 
-**Use for refactoring:**
+**CCG (Code Context Graph) - Requires `--features graph`:**
 ```bash
-narsil-mcp get_import_graph
-narsil-mcp find_circular_imports
-narsil-mcp find_semantic_clones --threshold 0.7
+get_ccg_manifest            # L0: Manifest (~1-2KB JSON-LD)
+export_ccg_architecture     # L1: Architecture (~10-50KB JSON-LD)
+export_ccg_index            # L2: Symbol Index (N-Quads gzipped)
+export_ccg                  # Export all layers to directory
+query_ccg <sparql>          # Query CCG via SPARQL
 ```
+
+**Refactoring:**
+```bash
+get_import_graph
+find_circular_imports
+find_dead_code
+```
+
+### Graceful Degradation Policy
+
+When narsil-mcp is unavailable:
+- Security gates are skipped (log warning)
+- Code intelligence returns empty results
+- CCG queries return None
+- Ralph continues to function normally
 
 ---
 
@@ -191,16 +211,21 @@ Ralph monitors for stagnation and will escalate:
 
 ## QUALITY GATES (Pre-Commit Checklist)
 
+**Mandatory (always enforced):**
 ```
 [ ] cargo clippy --all-targets -- -D warnings  → 0 warnings
 [ ] cargo test                                  → all pass
-[ ] narsil-mcp scan_security                    → 0 CRITICAL/HIGH
-[ ] narsil-mcp find_injection_vulnerabilities   → 0 findings
 [ ] No #[allow(...)] annotations added
 [ ] No TODO/FIXME comments in new code
 [ ] All new public APIs documented
 [ ] All new types have tests
 [ ] gh auth status                              → authenticated
+```
+
+**Optional (if narsil-mcp available):**
+```
+[ ] scan_security                              → 0 CRITICAL/HIGH
+[ ] find_injection_vulnerabilities             → 0 findings
 ```
 
 ---
