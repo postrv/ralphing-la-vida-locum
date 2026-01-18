@@ -13,7 +13,6 @@
 //! - [`narsil`] - narsil-mcp integration for code intelligence
 //! - [`prompt`] - Dynamic prompt generation and context management
 //! - [`quality`] - Quality gate enforcement and remediation
-//! - [`reporting`] - Quality reporting and data export
 //! - [`testing`] - Testing infrastructure (traits, mocks, fixtures)
 //!
 //! # Example
@@ -41,12 +40,10 @@ pub mod analytics;
 pub mod bootstrap;
 pub mod checkpoint;
 pub mod config;
-pub mod enterprise;
 pub mod error;
 pub mod narsil;
 pub mod prompt;
 pub mod quality;
-pub mod reporting;
 pub mod testing;
 
 // Re-export commonly used types
@@ -87,23 +84,13 @@ pub use narsil::{
 
 // Re-export analytics types
 pub use analytics::{
-    AggregateStats, Analytics, AnalyticsEvent, AuditAction, AuditEvent, AuditExportFormat,
-    AuditSeverity, CampaignOutcome, QualityMetricsSnapshot, QualityTrend, SessionSummary,
-    TrendDirection,
+    AggregateStats, Analytics, AnalyticsEvent, QualityMetricsSnapshot, QualityTrend,
+    SessionSummary, TrendDirection,
 };
 
 // Re-export bootstrap types
 pub use bootstrap::language::{Language, ParseLanguageError};
 pub use bootstrap::language_detector::{DetectedLanguage, LanguageDetector};
-
-// Re-export reporting types
-pub use reporting::{ExportFormat, QualityExporter, ReportConfig, ReportData, ReportGenerator};
-
-// Re-export enterprise types
-pub use enterprise::rbac::{
-    can_access, CustomRole, ParsePermissionError, ParseRoleError, Permission, PermissionCheck,
-    Resource, Role, RoleBuilder, RolePermissions,
-};
 
 // TestFixture is only available in test builds
 #[cfg(test)]
