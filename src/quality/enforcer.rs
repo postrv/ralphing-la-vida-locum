@@ -507,4 +507,84 @@ fn unused() {}
         assert!(enforcer.config.run_security);
         assert!(enforcer.config.check_no_allow);
     }
+
+    #[test]
+    fn test_can_commit_passes_with_clean_code() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+
+        // Create a minimal clean Rust project
+        let src_dir = project_dir.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+/// Clean function that passes all gates.
+pub fn clean_function() -> i32 {
+    42
+}
+"#,
+        )
+        .unwrap();
+
+        // Create Cargo.toml
+        std::fs::write(
+            project_dir.join("Cargo.toml"),
+            r#"
+[package]
+name = "test_project"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+
+        // Use minimal config (only clippy, no tests/security)
+        let config = EnforcerConfig::new()
+            .with_clippy(false) // Skip clippy for speed
+            .with_tests(false)
+            .with_security(false)
+            .with_no_allow(true);
+
+        let enforcer = QualityGateEnforcer::with_config(project_dir, config);
+        let result = enforcer.can_commit();
+
+        assert!(result.is_ok(), "can_commit should pass with clean code");
+    }
+
+    #[test]
+    fn test_can_commit_fails_with_allow_annotation() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_dir = temp_dir.path();
+
+        // Create code with forbidden #[allow] annotation
+        let src_dir = project_dir.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+#[allow(dead_code)]
+fn unused_function() {}
+"#,
+        )
+        .unwrap();
+
+        // Use no_allow check only
+        let config = EnforcerConfig::new()
+            .with_clippy(false)
+            .with_tests(false)
+            .with_security(false)
+            .with_no_allow(true);
+
+        let enforcer = QualityGateEnforcer::with_config(project_dir, config);
+        let result = enforcer.can_commit();
+
+        assert!(result.is_err(), "can_commit should fail with #[allow] annotation");
+        let failures = result.unwrap_err();
+        assert!(!failures.is_empty(), "Should have at least one failure");
+        assert!(
+            failures.iter().any(|f| f.gate_name == "NoAllow"),
+            "Failure should be from NoAllow gate"
+        );
+    }
 }
