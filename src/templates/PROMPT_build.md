@@ -3,7 +3,12 @@
 ## Phase 1: PLAN
 - Read IMPLEMENTATION_PLAN.md
 - Select highest-priority incomplete task
-- Use narsil-mcp for context: `get_call_graph`, `get_dependencies`, `find_references`
+- **Context Gathering (narsil-mcp - optional, degrades gracefully):**
+  - `get_call_graph` - understand function relationships
+  - `get_dependencies` - understand module dependencies
+  - `find_references` - impact analysis for changes
+  - `get_ccg_manifest` - get codebase overview (if CCG available)
+  - `export_ccg_architecture` - understand public API surface
 - Identify all types/functions that will be affected
 
 ## Phase 2: TEST FIRST (TDD)
@@ -39,11 +44,17 @@
 ## Phase 5: REVIEW
 - Run `cargo clippy --all-targets -- -D warnings` (treat warnings as errors)
 - Run `cargo test` (all tests must pass)
-- Run narsil-mcp security scans:
+- Run narsil-mcp security scans (if available):
   - `scan_security` - resolve all CRITICAL/HIGH
   - `find_injection_vulnerabilities` - must be zero findings
   - `check_cwe_top25` - review any new findings
 - Check documentation drift - update docs/ if API changed
+
+**Graceful Degradation Rule:**
+All narsil-mcp integration code MUST work when narsil-mcp is unavailable:
+- Return `None` or empty collections when tool not found
+- Use `NarsilClient::is_available()` to check before invoking
+- Never panic if narsil-mcp is missing
 
 ## Phase 6: COMMIT
 - Run full test suite one more time
