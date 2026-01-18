@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Start Sprint 7a** - Refactor `Gate` trait to `QualityGate` with `gates_for_language()` factory
+2. **Start Sprint 7b** - Implement Python quality gates (RuffGate, PytestGate, MypyGate, BanditGate)
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 7a - QualityGate Trait Refactor
+**Current task:** Sprint 7b - Python Quality Gates
 
 ---
 
@@ -53,21 +53,21 @@
 
 **Reference:** `further_dev_plans/ralph-multilang-bootstrap.md` for full design.
 
-**Key existing code:** `src/quality/gates.rs` (current Rust-only `Gate` trait)
+**Key existing code:** `src/quality/gates/mod.rs` (QualityGate trait + gates_for_language factory), `src/quality/gates/rust.rs` (Rust gates)
 
-### 7a. QualityGate Trait Refactor ← START HERE
-- [ ] Create `QualityGate` trait with `name()`, `run()`, `is_blocking()`, `remediation()`
-- [ ] Migrate existing Rust gates (ClippyGate, TestGate, etc.) to new trait
-- [ ] Create `gates_for_language(Language) -> Vec<Box<dyn QualityGate>>` factory function
-- [ ] Add unit tests for trait and factory
+### 7a. QualityGate Trait Refactor ✓ COMPLETE
+- [x] Create `QualityGate` trait with `name()`, `run()`, `is_blocking()`, `remediation()`
+- [x] Migrate existing Rust gates (ClippyGate, TestGate, etc.) to new trait
+- [x] Create `gates_for_language(Language) -> Vec<Box<dyn QualityGate>>` factory function
+- [x] Add unit tests for trait and factory
 - Files: `src/quality/gates/mod.rs`, `src/quality/gates/rust.rs`
 - Acceptance: Trait-based gate system working for Rust, all existing tests pass
 
-### 7b. Python Quality Gates
-- [ ] Implement `RuffGate` (with flake8 fallback detection)
-- [ ] Implement `PytestGate`
-- [ ] Implement `MypyGate`
-- [ ] Implement `BanditGate` (security)
+### 7b. Python Quality Gates ✓ COMPLETE
+- [x] Implement `RuffGate` (with flake8 fallback detection)
+- [x] Implement `PytestGate`
+- [x] Implement `MypyGate`
+- [x] Implement `BanditGate` (security)
 - Files: `src/quality/gates/python.rs`
 - Acceptance: Python projects get appropriate linting/testing gates
 
