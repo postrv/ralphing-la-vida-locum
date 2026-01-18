@@ -626,7 +626,6 @@ impl Task {
 
     /// Create a new task with sprint affiliation.
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
     pub fn new_with_sprint(id: TaskId, sprint: u32) -> Self {
         Self {
             id,
@@ -642,7 +641,6 @@ impl Task {
 
     /// Get the sprint number this task belongs to.
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
     pub fn sprint(&self) -> Option<u32> {
         self.sprint
     }
@@ -654,7 +652,6 @@ impl Task {
     }
 
     /// Mark this task as orphaned.
-    #[allow(dead_code)] // Public API awaiting manager integration
     pub fn mark_orphaned(&mut self) {
         self.orphaned = true;
     }
@@ -723,7 +720,6 @@ pub struct TaskTracker {
 /// Used by the manager to detect when the plan structure has changed
 /// and identify tasks that are no longer in the current plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // Public API awaiting manager integration
 pub enum ValidationResult {
     /// Plan structure matches the tracker
     Valid,
@@ -774,14 +770,12 @@ impl TaskTracker {
 
     /// Get the hash of the plan structure.
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
     pub fn plan_hash(&self) -> &str {
         &self.plan_structure_hash
     }
 
     /// Get the current sprint from the "Current Focus" section.
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
     pub fn current_sprint(&self) -> Option<u32> {
         self.focused_sprint
     }
@@ -829,8 +823,7 @@ impl TaskTracker {
 
     /// Validate the tracker against a plan to detect structural changes.
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
-    pub fn validate_against_plan(&self, plan: &str) -> ValidationResult {
+        pub fn validate_against_plan(&self, plan: &str) -> ValidationResult {
         let current_hash = Self::compute_plan_hash(plan);
         if current_hash == self.plan_structure_hash {
             ValidationResult::Valid
@@ -842,8 +835,7 @@ impl TaskTracker {
 
     /// Find tasks in the tracker that are not in the current plan.
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
-    pub fn find_orphaned_tasks(&self, plan: &str) -> Vec<TaskId> {
+        pub fn find_orphaned_tasks(&self, plan: &str) -> Vec<TaskId> {
         use regex::Regex;
         let header_re = Regex::new(r"^###\s+(\d+[a-z]?)\.\s+(.+)$").unwrap();
 
@@ -869,8 +861,7 @@ impl TaskTracker {
     }
 
     /// Mark tasks as orphaned if they are not in the given plan.
-    #[allow(dead_code)] // Public API awaiting manager integration
-    pub fn mark_orphaned_tasks(&mut self, plan: &str) {
+        pub fn mark_orphaned_tasks(&mut self, plan: &str) {
         let orphaned_ids = self.find_orphaned_tasks(plan);
         for id in orphaned_ids {
             if let Some(task) = self.tasks.get_mut(&id) {
@@ -882,8 +873,7 @@ impl TaskTracker {
 
     /// Check if a sprint is complete (all tasks done or blocked).
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
-    pub fn is_sprint_complete(&self, sprint: u32) -> bool {
+        pub fn is_sprint_complete(&self, sprint: u32) -> bool {
         let sprint_tasks: Vec<_> = self.tasks.values()
             .filter(|t| t.sprint == Some(sprint))
             .collect();
@@ -899,8 +889,7 @@ impl TaskTracker {
 
     /// Get all tasks for a specific sprint.
     #[must_use]
-    #[allow(dead_code)] // Public API awaiting manager integration
-    pub fn tasks_for_sprint(&self, sprint: u32) -> Vec<&Task> {
+        pub fn tasks_for_sprint(&self, sprint: u32) -> Vec<&Task> {
         self.tasks.values()
             .filter(|t| t.sprint == Some(sprint))
             .collect()
@@ -981,8 +970,10 @@ impl TaskTracker {
                         }
                     } else {
                         // Create new task with sprint
-                        let mut task = Task::new(task_id.clone());
-                        task.sprint = current_sprint;
+                        let task = match current_sprint {
+                            Some(sprint) => Task::new_with_sprint(task_id.clone(), sprint),
+                            None => Task::new(task_id.clone()),
+                        };
                         self.tasks.insert(task_id, task);
                     }
                 }
