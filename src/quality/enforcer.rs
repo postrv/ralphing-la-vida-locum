@@ -41,9 +41,9 @@ pub struct EnforcerConfig {
     pub run_tests: bool,
     /// Test configuration.
     pub test_config: TestConfig,
-    /// Whether to check for #[allow] annotations.
+    /// Whether to check for `#[allow]` annotations.
     pub check_no_allow: bool,
-    /// Patterns to allow in #[allow] checks.
+    /// Patterns to allow in `#[allow]` checks.
     pub allowed_patterns: Vec<String>,
     /// Whether to run security scans.
     pub run_security: bool,
@@ -118,7 +118,7 @@ impl EnforcerConfig {
         self
     }
 
-    /// Add allowed patterns for #[allow] checks.
+    /// Add allowed patterns for `#[allow]` checks.
     #[must_use]
     pub fn with_allowed_patterns(mut self, patterns: Vec<String>) -> Self {
         self.allowed_patterns = patterns;

@@ -390,7 +390,7 @@ pub struct RegressionThresholds {
     /// Maximum allowed increase in security issues.
     pub max_security_increase: u32,
 
-    /// Maximum allowed increase in #[allow] annotations.
+    /// Maximum allowed increase in `#[allow]` annotations.
     pub max_allow_increase: u32,
 
     /// Maximum allowed drop in test pass rate (percentage points).
