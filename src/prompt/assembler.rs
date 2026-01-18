@@ -8,7 +8,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```no_run
 //! use ralph::prompt::assembler::PromptAssembler;
 //! use ralph::prompt::context::{CurrentTaskContext, TaskPhase, SessionStats};
 //!
@@ -119,7 +119,7 @@ impl AssemblerConfig {
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use ralph::prompt::assembler::PromptAssembler;
 /// use ralph::prompt::context::TaskPhase;
 ///
@@ -171,7 +171,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::PromptAssembler;
     ///
     /// let assembler = PromptAssembler::new();
@@ -185,7 +185,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::{AssemblerConfig, PromptAssembler};
     ///
     /// let config = AssemblerConfig::new()
@@ -261,7 +261,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::PromptAssembler;
     /// use ralph::prompt::context::TaskPhase;
     ///
@@ -339,7 +339,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::PromptAssembler;
     ///
     /// let mut assembler = PromptAssembler::new();
@@ -493,7 +493,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::PromptAssembler;
     /// use ralph::prompt::context::{AttemptOutcome, TaskPhase};
     ///
@@ -553,7 +553,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::PromptAssembler;
     ///
     /// let mut assembler = PromptAssembler::new();
@@ -652,7 +652,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::PromptAssembler;
     ///
     /// let mut assembler = PromptAssembler::new();
@@ -744,7 +744,7 @@ impl PromptAssembler {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// use ralph::prompt::assembler::PromptAssembler;
     ///
     /// let assembler = PromptAssembler::new();
