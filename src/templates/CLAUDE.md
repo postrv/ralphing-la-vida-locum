@@ -6,6 +6,17 @@
 - narsil-mcp for code intelligence and security
 - Ralph automation suite for autonomous execution
 
+## Current Work: Multi-Language Bootstrap
+
+Ralph is being enhanced to support all 32 languages in narsil-mcp. Key areas:
+
+- **Language Detection**: `src/bootstrap/language.rs`, `src/bootstrap/language_detector.rs`
+- **Quality Gates**: `src/quality/gates/` (trait-based, per-language)
+- **Templates**: `src/templates/{rust,python,typescript,go,java,...}/`
+- **Reference Design**: `further_dev_plans/ralph-multilang-bootstrap.md`
+
+When implementing, follow the existing patterns in Rust code and adapt for new languages.
+
 ---
 
 ## GIT AUTHENTICATION (CRITICAL)
