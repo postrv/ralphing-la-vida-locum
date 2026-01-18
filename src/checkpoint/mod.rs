@@ -512,6 +512,9 @@ pub struct Checkpoint {
 
     /// Optional tags for categorization.
     pub tags: Vec<String>,
+
+    /// List of files modified since the previous checkpoint.
+    pub files_modified: Vec<String>,
 }
 
 impl Checkpoint {
@@ -559,6 +562,7 @@ impl Checkpoint {
             iteration,
             verified: false,
             tags: Vec::new(),
+            files_modified: Vec::new(),
         }
     }
 
@@ -587,6 +591,36 @@ impl Checkpoint {
     #[must_use]
     pub fn with_tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.tags.extend(tags.into_iter().map(Into::into));
+        self
+    }
+
+    /// Set the list of files modified since the previous checkpoint.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::checkpoint::{Checkpoint, QualityMetrics};
+    ///
+    /// let checkpoint = Checkpoint::new(
+    ///     "Fixed bug",
+    ///     "abc123",
+    ///     "main",
+    ///     QualityMetrics::new(),
+    ///     1,
+    /// ).with_files_modified(vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]);
+    ///
+    /// assert_eq!(checkpoint.files_modified.len(), 2);
+    /// ```
+    #[must_use]
+    pub fn with_files_modified(mut self, files: Vec<String>) -> Self {
+        self.files_modified = files;
+        self
+    }
+
+    /// Add a single file to the modified list.
+    #[must_use]
+    pub fn with_file_modified(mut self, file: impl Into<String>) -> Self {
+        self.files_modified.push(file.into());
         self
     }
 
@@ -924,6 +958,33 @@ mod tests {
         assert!(checkpoint.has_tag("stable"));
         assert!(checkpoint.has_tag("v1.0"));
         assert!(!checkpoint.has_tag("beta"));
+    }
+
+    #[test]
+    fn test_checkpoint_with_files_modified() {
+        let checkpoint = Checkpoint::new("Bug fix", "def456", "main", QualityMetrics::new(), 2)
+            .with_files_modified(vec!["src/lib.rs".to_string(), "src/main.rs".to_string()]);
+
+        assert_eq!(checkpoint.files_modified.len(), 2);
+        assert!(checkpoint.files_modified.contains(&"src/lib.rs".to_string()));
+        assert!(checkpoint.files_modified.contains(&"src/main.rs".to_string()));
+    }
+
+    #[test]
+    fn test_checkpoint_with_file_modified_single() {
+        let checkpoint = Checkpoint::new("Fix", "abc", "main", QualityMetrics::new(), 1)
+            .with_file_modified("src/lib.rs")
+            .with_file_modified("src/test.rs");
+
+        assert_eq!(checkpoint.files_modified.len(), 2);
+        assert_eq!(checkpoint.files_modified[0], "src/lib.rs");
+        assert_eq!(checkpoint.files_modified[1], "src/test.rs");
+    }
+
+    #[test]
+    fn test_checkpoint_files_modified_empty_by_default() {
+        let checkpoint = Checkpoint::new("Test", "abc", "main", QualityMetrics::new(), 1);
+        assert!(checkpoint.files_modified.is_empty());
     }
 
     #[test]
