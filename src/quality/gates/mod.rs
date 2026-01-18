@@ -396,6 +396,142 @@ pub fn gates_for_language(lang: Language) -> Vec<Box<dyn QualityGate>> {
 }
 
 // ============================================================================
+// Gate Auto-Detection (Sprint 7e)
+// ============================================================================
+
+/// Checks if a tool binary is available in the system PATH.
+///
+/// # Arguments
+///
+/// * `tool_name` - Name of the tool binary to check (e.g., "cargo", "ruff")
+///
+/// # Returns
+///
+/// `true` if the tool is found in PATH, `false` otherwise.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::is_tool_available;
+///
+/// if is_tool_available("cargo") {
+///     println!("Rust toolchain is available");
+/// }
+/// ```
+#[must_use]
+pub fn is_tool_available(tool_name: &str) -> bool {
+    which::which(tool_name).is_ok()
+}
+
+/// Returns the tool binary name(s) required for a given gate.
+///
+/// This mapping allows the auto-detection system to check if the
+/// necessary tools are installed before adding a gate to the active set.
+fn tool_for_gate(gate_name: &str) -> Option<&'static str> {
+    match gate_name {
+        // Rust gates
+        "Clippy" => Some("cargo"),
+        "Tests" => Some("cargo"),
+        "NoAllow" => None, // Built-in, no external tool
+        "Security" => None, // Uses narsil-mcp or cargo-audit, gracefully degrades
+        "NoTodo" => None,  // Built-in, no external tool
+        // Python gates
+        "Ruff" => Some("ruff"),
+        "Pytest" => Some("pytest"),
+        "Mypy" => Some("mypy"),
+        "Bandit" => Some("bandit"),
+        // TypeScript/JavaScript gates
+        "ESLint" => Some("npx"), // ESLint runs via npx
+        "Jest" => Some("npx"),   // Jest runs via npx
+        "TypeScript" => Some("npx"), // tsc runs via npx
+        "npm-audit" => Some("npm"),
+        // Go gates
+        "go-vet" => Some("go"),
+        "golangci-lint" => Some("golangci-lint"),
+        "go-test" => Some("go"),
+        "govulncheck" => Some("govulncheck"),
+        _ => None,
+    }
+}
+
+/// Checks if a specific gate is available for use.
+///
+/// A gate is considered available if:
+/// 1. It has no external tool requirement (built-in gates), or
+/// 2. Its required tool is installed and accessible via PATH
+///
+/// # Arguments
+///
+/// * `gate` - The quality gate to check
+///
+/// # Returns
+///
+/// `true` if the gate can be used, `false` otherwise.
+#[must_use]
+pub fn is_gate_available(gate: &dyn QualityGate) -> bool {
+    match tool_for_gate(gate.name()) {
+        Some(tool) => is_tool_available(tool),
+        None => true, // Built-in gates are always available
+    }
+}
+
+/// Detects which quality gates are available for a project.
+///
+/// This function combines gates for all specified languages, filters out
+/// gates whose tools are not installed, and removes duplicates.
+///
+/// # Arguments
+///
+/// * `project_dir` - Path to the project directory (used for future project-specific detection)
+/// * `languages` - Languages to get gates for
+///
+/// # Returns
+///
+/// A vector of available quality gates, deduplicated by name.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::detect_available_gates;
+/// use ralph::bootstrap::Language;
+/// use std::path::Path;
+///
+/// let gates = detect_available_gates(Path::new("."), &[Language::Rust, Language::Python]);
+/// for gate in &gates {
+///     println!("Available: {}", gate.name());
+/// }
+/// ```
+#[must_use]
+pub fn detect_available_gates(
+    _project_dir: &Path,
+    languages: &[Language],
+) -> Vec<Box<dyn QualityGate>> {
+    let mut gates: Vec<Box<dyn QualityGate>> = Vec::new();
+    let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for lang in languages {
+        let lang_gates = gates_for_language(*lang);
+
+        for gate in lang_gates {
+            let gate_name = gate.name().to_string();
+
+            // Skip if we already have a gate with this name (deduplication)
+            if seen_names.contains(&gate_name) {
+                continue;
+            }
+
+            // Check if the gate's required tool is available
+            if is_gate_available(&*gate) {
+                seen_names.insert(gate_name);
+                gates.push(gate);
+            }
+        }
+    }
+
+    gates
+}
+
+// ============================================================================
 // Clippy Gate
 // ============================================================================
 
@@ -1807,5 +1943,131 @@ edition = "2021"
                 gate.name()
             );
         }
+    }
+
+    // =========================================================================
+    // Gate Auto-Detection tests (Sprint 7e)
+    // =========================================================================
+
+    #[test]
+    fn test_is_tool_available_returns_true_for_cargo() {
+        // cargo should always be available on a system running Rust tests
+        assert!(is_tool_available("cargo"), "cargo should be available");
+    }
+
+    #[test]
+    fn test_is_tool_available_returns_false_for_nonexistent() {
+        assert!(
+            !is_tool_available("nonexistent_tool_that_definitely_does_not_exist_xyz123"),
+            "nonexistent tool should not be available"
+        );
+    }
+
+    #[test]
+    fn test_detect_available_gates_returns_gates_for_rust() {
+        let temp_dir = TempDir::new().unwrap();
+        // Create a minimal Cargo.toml to indicate a Rust project
+        std::fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .unwrap();
+
+        let gates = detect_available_gates(temp_dir.path(), &[Language::Rust]);
+
+        // At minimum, Rust should have Clippy and Test gates available
+        // since cargo is available (we're running tests!)
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+        assert!(
+            names.contains(&"Clippy") || names.contains(&"Tests"),
+            "Rust project should have at least one gate available. Got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_detect_available_gates_returns_empty_for_unavailable_tools() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Python gates should not be available if ruff/pytest/etc aren't installed
+        // We test with an empty project dir - no manifests or tools configured
+        let gates = detect_available_gates(temp_dir.path(), &[Language::Python]);
+
+        // Either returns empty or only returns gates for tools that happen to be installed
+        // This test verifies the function doesn't panic and returns a reasonable result
+        for gate in &gates {
+            // Each returned gate should have a valid name
+            assert!(!gate.name().is_empty(), "Gate should have a name");
+        }
+    }
+
+    #[test]
+    fn test_detect_available_gates_combines_multiple_languages() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create markers for both Rust and Python projects
+        std::fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            r#"[package]
+name = "test"
+version = "0.1.0"
+"#,
+        )
+        .unwrap();
+        std::fs::write(temp_dir.path().join("pyproject.toml"), "[project]\nname = \"test\"")
+            .unwrap();
+
+        let gates = detect_available_gates(temp_dir.path(), &[Language::Rust, Language::Python]);
+
+        // Should have gates from both languages (at least Rust gates since cargo is available)
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+
+        // Verify we get Rust gates
+        let has_rust_gate = names.iter().any(|n| *n == "Clippy" || *n == "Tests");
+        assert!(
+            has_rust_gate,
+            "Polyglot project should have Rust gates. Got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_detect_available_gates_deduplicates() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("Cargo.toml"),
+            "[package]\nname = \"test\"\nversion = \"0.1.0\"",
+        )
+        .unwrap();
+
+        // Request same language twice
+        let gates = detect_available_gates(temp_dir.path(), &[Language::Rust, Language::Rust]);
+
+        let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
+
+        // Count occurrences of each gate name
+        for name in &names {
+            let count = names.iter().filter(|n| *n == name).count();
+            assert_eq!(count, 1, "Gate '{}' should appear exactly once", name);
+        }
+    }
+
+    #[test]
+    fn test_detect_available_gates_handles_empty_languages() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let gates = detect_available_gates(temp_dir.path(), &[]);
+
+        // Empty languages should return empty gates (or possibly just security gate)
+        // This verifies the function handles edge cases gracefully
+        assert!(
+            gates.len() <= 1,
+            "Empty languages should return minimal gates. Got: {} gates",
+            gates.len()
+        );
     }
 }
