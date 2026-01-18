@@ -36,6 +36,7 @@
 //! let fixture = TestFixture::minimal_project();
 //! ```
 
+pub mod analytics;
 pub mod checkpoint;
 pub mod config;
 pub mod error;
@@ -78,6 +79,12 @@ pub use checkpoint::{
 pub use narsil::{
     Dependency, NarsilClient, NarsilConfig, NarsilError, Reference, SecurityFinding,
     SecuritySeverity, ToolResponse,
+};
+
+// Re-export analytics types
+pub use analytics::{
+    AggregateStats, Analytics, AnalyticsEvent, QualityMetricsSnapshot, QualityTrend,
+    SessionSummary, TrendDirection,
 };
 
 // TestFixture is only available in test builds

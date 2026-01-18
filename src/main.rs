@@ -7,7 +7,6 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use std::path::PathBuf;
 
-mod analytics;
 mod archive;
 mod bootstrap;
 mod context;
@@ -15,7 +14,7 @@ mod hooks;
 mod r#loop;
 mod supervisor;
 
-use crate::analytics::Analytics;
+use ralph::Analytics;
 use crate::archive::ArchiveManager;
 use crate::bootstrap::Bootstrap;
 use crate::context::ContextBuilder;
