@@ -11,11 +11,11 @@
 **Ralph, do this NOW:**
 
 1. **`reindex`** - Refresh narsil-mcp index before starting
-2. **Start Sprint 8a** - Implement Template Registry
+2. **Start Sprint 8b-8e** - Create language-specific templates (Python, TypeScript, Go, Java)
 3. **Follow TDD** - Write failing tests FIRST, then implement, then commit
 4. **`reindex`** - Refresh narsil-mcp index after completing
 
-**Current task:** Sprint 8a - Template Registry
+**Current task:** Sprint 8b-8e - Language Templates (Python, TypeScript, Go, Java)
 
 ---
 
@@ -101,12 +101,13 @@
 
 **Goal:** Generate language-appropriate build prompts and CLAUDE.md.
 
-### 8a. Template Registry
-- [ ] Create `TemplateRegistry` struct
-- [ ] Implement `TemplateKind` enum (PromptBuild, ClaudeMd, etc.)
-- [ ] Load templates via `include_str!`
-- [ ] Implement `get(kind, language)` with generic fallback
-- Files: `src/bootstrap/templates/mod.rs`
+### 8a. Template Registry ✓ COMPLETE
+- [x] Create `TemplateRegistry` struct
+- [x] Implement `TemplateKind` enum (PromptBuild, ClaudeMd, etc.)
+- [x] Load templates via `include_str!`
+- [x] Implement `get(kind, language)` with generic fallback
+- Files: `src/bootstrap/templates.rs`
+- Acceptance: Registry loads all templates, get() with fallback works, 32 tests pass
 
 ### 8b-8e. Language Templates (Python, TypeScript, Go, Java)
 - [ ] Create `templates/{language}/PROMPT_build.md` for each
