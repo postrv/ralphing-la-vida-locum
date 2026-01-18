@@ -253,13 +253,9 @@ fn count_stale_docs(docs_dir: &str, threshold_days: u64) -> Result<usize> {
     Ok(count)
 }
 
-/// Validate a command against security rules (uses default project config)
-///
-/// This is a convenience wrapper for [`validate_command_with_config`] that uses
-/// default project permissions. Useful for scripts and hooks that don't have
-/// access to project-specific configuration.
-#[allow(dead_code)] // Public API - used in tests and by library consumers
-pub fn validate_command(command: &str) -> Result<HookResult> {
+/// Test helper: Validate a command using default project config.
+#[cfg(test)]
+fn validate_command(command: &str) -> Result<HookResult> {
     validate_command_with_config(command, &ProjectConfig::default())
 }
 
