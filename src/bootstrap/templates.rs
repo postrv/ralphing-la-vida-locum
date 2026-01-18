@@ -153,7 +153,10 @@ impl TemplateRegistry {
 
         // Load language-specific templates
         registry.load_rust_templates();
-        // Future: load_python_templates(), load_typescript_templates(), etc.
+        registry.load_python_templates();
+        registry.load_typescript_templates();
+        registry.load_go_templates();
+        registry.load_java_templates();
 
         registry
     }
@@ -197,11 +200,8 @@ impl TemplateRegistry {
 
     /// Loads Rust-specific templates.
     ///
-    /// For now, Rust uses the default templates. In the future, Rust-specific
-    /// variations may be added.
+    /// Rust uses the default templates which are already Rust-focused.
     fn load_rust_templates(&mut self) {
-        // Rust currently uses defaults - language-specific templates will be
-        // added in Sprint 8b-8e
         self.register(
             Language::Rust,
             TemplateKind::PromptBuild,
@@ -226,6 +226,70 @@ impl TemplateRegistry {
             Language::Rust,
             TemplateKind::SettingsJson,
             include_str!("../templates/settings.json"),
+        );
+    }
+
+    /// Loads Python-specific templates.
+    ///
+    /// Python templates include pytest, ruff/flake8, mypy, and bandit workflows.
+    fn load_python_templates(&mut self) {
+        self.register(
+            Language::Python,
+            TemplateKind::PromptBuild,
+            include_str!("../templates/python/PROMPT_build.md"),
+        );
+        self.register(
+            Language::Python,
+            TemplateKind::ClaudeMd,
+            include_str!("../templates/python/CLAUDE.md"),
+        );
+    }
+
+    /// Loads TypeScript-specific templates.
+    ///
+    /// TypeScript templates include npm/yarn, ESLint, Jest/Vitest, and tsc workflows.
+    fn load_typescript_templates(&mut self) {
+        self.register(
+            Language::TypeScript,
+            TemplateKind::PromptBuild,
+            include_str!("../templates/typescript/PROMPT_build.md"),
+        );
+        self.register(
+            Language::TypeScript,
+            TemplateKind::ClaudeMd,
+            include_str!("../templates/typescript/CLAUDE.md"),
+        );
+    }
+
+    /// Loads Go-specific templates.
+    ///
+    /// Go templates include go test, go vet, golangci-lint, and govulncheck workflows.
+    fn load_go_templates(&mut self) {
+        self.register(
+            Language::Go,
+            TemplateKind::PromptBuild,
+            include_str!("../templates/go/PROMPT_build.md"),
+        );
+        self.register(
+            Language::Go,
+            TemplateKind::ClaudeMd,
+            include_str!("../templates/go/CLAUDE.md"),
+        );
+    }
+
+    /// Loads Java-specific templates.
+    ///
+    /// Java templates include Maven/Gradle, JUnit, Checkstyle, and SpotBugs workflows.
+    fn load_java_templates(&mut self) {
+        self.register(
+            Language::Java,
+            TemplateKind::PromptBuild,
+            include_str!("../templates/java/PROMPT_build.md"),
+        );
+        self.register(
+            Language::Java,
+            TemplateKind::ClaudeMd,
+            include_str!("../templates/java/CLAUDE.md"),
         );
     }
 
@@ -560,10 +624,10 @@ mod tests {
     }
 
     #[test]
-    fn test_has_language_specific_python_false() {
+    fn test_has_language_specific_python_true() {
         let registry = TemplateRegistry::new();
-        // Python templates not yet registered
-        assert!(!registry.has_language_specific(TemplateKind::PromptBuild, Language::Python));
+        // Python templates are now registered (Sprint 8b)
+        assert!(registry.has_language_specific(TemplateKind::PromptBuild, Language::Python));
     }
 
     // ============================================================
@@ -621,5 +685,285 @@ mod tests {
         // Should parse as valid JSON
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(template);
         assert!(parsed.is_ok(), "settings.json should be valid JSON");
+    }
+
+    // ============================================================
+    // Python template tests (Sprint 8b)
+    // ============================================================
+
+    #[test]
+    fn test_python_has_specific_prompt_build() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::PromptBuild, Language::Python),
+            "Python should have a specific PromptBuild template"
+        );
+    }
+
+    #[test]
+    fn test_python_has_specific_claude_md() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::ClaudeMd, Language::Python),
+            "Python should have a specific ClaudeMd template"
+        );
+    }
+
+    #[test]
+    fn test_python_prompt_build_contains_pytest() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Python);
+        assert!(
+            template.contains("pytest") || template.contains("Pytest"),
+            "Python build prompt should reference pytest"
+        );
+    }
+
+    #[test]
+    fn test_python_prompt_build_contains_ruff_or_flake8() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Python);
+        assert!(
+            template.contains("ruff") || template.contains("flake8") || template.contains("Ruff"),
+            "Python build prompt should reference ruff or flake8"
+        );
+    }
+
+    #[test]
+    fn test_python_claude_md_contains_python_standards() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::ClaudeMd, Language::Python);
+        assert!(
+            template.contains("Python") || template.contains("python"),
+            "Python CLAUDE.md should reference Python"
+        );
+    }
+
+    // ============================================================
+    // TypeScript template tests (Sprint 8c)
+    // ============================================================
+
+    #[test]
+    fn test_typescript_has_specific_prompt_build() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::PromptBuild, Language::TypeScript),
+            "TypeScript should have a specific PromptBuild template"
+        );
+    }
+
+    #[test]
+    fn test_typescript_has_specific_claude_md() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::ClaudeMd, Language::TypeScript),
+            "TypeScript should have a specific ClaudeMd template"
+        );
+    }
+
+    #[test]
+    fn test_typescript_prompt_build_contains_npm_or_yarn() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::TypeScript);
+        assert!(
+            template.contains("npm") || template.contains("yarn") || template.contains("pnpm"),
+            "TypeScript build prompt should reference npm, yarn, or pnpm"
+        );
+    }
+
+    #[test]
+    fn test_typescript_prompt_build_contains_eslint() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::TypeScript);
+        assert!(
+            template.contains("eslint") || template.contains("ESLint"),
+            "TypeScript build prompt should reference ESLint"
+        );
+    }
+
+    #[test]
+    fn test_typescript_claude_md_contains_typescript_standards() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::ClaudeMd, Language::TypeScript);
+        assert!(
+            template.contains("TypeScript") || template.contains("typescript"),
+            "TypeScript CLAUDE.md should reference TypeScript"
+        );
+    }
+
+    // ============================================================
+    // Go template tests (Sprint 8d)
+    // ============================================================
+
+    #[test]
+    fn test_go_has_specific_prompt_build() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::PromptBuild, Language::Go),
+            "Go should have a specific PromptBuild template"
+        );
+    }
+
+    #[test]
+    fn test_go_has_specific_claude_md() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::ClaudeMd, Language::Go),
+            "Go should have a specific ClaudeMd template"
+        );
+    }
+
+    #[test]
+    fn test_go_prompt_build_contains_go_test() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Go);
+        assert!(
+            template.contains("go test") || template.contains("Go test"),
+            "Go build prompt should reference go test"
+        );
+    }
+
+    #[test]
+    fn test_go_prompt_build_contains_go_vet() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Go);
+        assert!(
+            template.contains("go vet") || template.contains("golangci-lint"),
+            "Go build prompt should reference go vet or golangci-lint"
+        );
+    }
+
+    #[test]
+    fn test_go_claude_md_contains_go_standards() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::ClaudeMd, Language::Go);
+        assert!(
+            template.contains("Go") || template.contains("golang"),
+            "Go CLAUDE.md should reference Go"
+        );
+    }
+
+    // ============================================================
+    // Java template tests (Sprint 8e)
+    // ============================================================
+
+    #[test]
+    fn test_java_has_specific_prompt_build() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::PromptBuild, Language::Java),
+            "Java should have a specific PromptBuild template"
+        );
+    }
+
+    #[test]
+    fn test_java_has_specific_claude_md() {
+        let registry = TemplateRegistry::new();
+        assert!(
+            registry.has_language_specific(TemplateKind::ClaudeMd, Language::Java),
+            "Java should have a specific ClaudeMd template"
+        );
+    }
+
+    #[test]
+    fn test_java_prompt_build_contains_build_tool() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Java);
+        assert!(
+            template.contains("maven") || template.contains("Maven")
+                || template.contains("gradle") || template.contains("Gradle"),
+            "Java build prompt should reference Maven or Gradle"
+        );
+    }
+
+    #[test]
+    fn test_java_prompt_build_contains_junit() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::PromptBuild, Language::Java);
+        assert!(
+            template.contains("JUnit") || template.contains("junit") || template.contains("test"),
+            "Java build prompt should reference JUnit or testing"
+        );
+    }
+
+    #[test]
+    fn test_java_claude_md_contains_java_standards() {
+        let registry = TemplateRegistry::new();
+        let template = registry.get(TemplateKind::ClaudeMd, Language::Java);
+        assert!(
+            template.contains("Java") || template.contains("java"),
+            "Java CLAUDE.md should reference Java"
+        );
+    }
+
+    // ============================================================
+    // Cross-language template tests
+    // ============================================================
+
+    #[test]
+    fn test_all_major_languages_have_templates() {
+        let registry = TemplateRegistry::new();
+        let major_languages = [
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+            Language::Go,
+            Language::Java,
+        ];
+
+        for lang in major_languages {
+            assert!(
+                registry.has_language_specific(TemplateKind::PromptBuild, lang),
+                "{:?} should have PromptBuild template",
+                lang
+            );
+            assert!(
+                registry.has_language_specific(TemplateKind::ClaudeMd, lang),
+                "{:?} should have ClaudeMd template",
+                lang
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_language_templates_contain_tdd() {
+        let registry = TemplateRegistry::new();
+        let languages = [
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+            Language::Go,
+            Language::Java,
+        ];
+
+        for lang in languages {
+            let template = registry.get(TemplateKind::PromptBuild, lang);
+            assert!(
+                template.contains("TDD") || template.contains("Test") || template.contains("test"),
+                "{:?} build prompt should reference testing",
+                lang
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_language_templates_contain_quality_gates() {
+        let registry = TemplateRegistry::new();
+        let languages = [
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+            Language::Go,
+            Language::Java,
+        ];
+
+        for lang in languages {
+            let template = registry.get(TemplateKind::PromptBuild, lang);
+            assert!(
+                template.contains("Quality") || template.contains("gate") || template.contains("Gate"),
+                "{:?} build prompt should reference quality gates",
+                lang
+            );
+        }
     }
 }
