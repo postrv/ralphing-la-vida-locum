@@ -5,9 +5,11 @@
 //!
 //! # Submodules
 //!
-//! - [`language`] - Language detection and representation for multi-language support
+//! - [`language`] - Language enum and representation for multi-language support
+//! - [`language_detector`] - Automatic language detection for projects
 
 pub mod language;
+pub mod language_detector;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
