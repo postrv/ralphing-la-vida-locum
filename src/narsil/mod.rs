@@ -33,8 +33,10 @@ mod client;
 mod intelligence;
 
 pub use ccg::{
-    CcgArchitecture, CcgCache, CcgManifest, DependencyKind, EntryPoint, EntryPointKind,
-    LanguageStats, Module, ModuleDependency, PublicSymbol, SecuritySummary, SymbolKind, Visibility,
+    CcgArchitecture, CcgCache, CcgConstraint, CcgManifest, ComplianceResult, ConstraintKind,
+    ConstraintSet, ConstraintSeverity, ConstraintValue, ConstraintViolation, DependencyKind,
+    EntryPoint, EntryPointKind, LanguageStats, Module, ModuleDependency, PublicSymbol,
+    SecuritySummary, SymbolKind, Visibility,
 };
 pub use client::{
     Dependency, NarsilClient, NarsilConfig, NarsilError, Reference, SecurityFinding,

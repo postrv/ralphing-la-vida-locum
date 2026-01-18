@@ -817,6 +817,101 @@ impl SectionBuilder {
         lines.join("\n")
     }
 
+    /// Build a constraints section showing active code constraints.
+    ///
+    /// Displays constraints from CCG L2 that apply to the codebase. This helps
+    /// the model understand architectural boundaries and quality requirements.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::builder::SectionBuilder;
+    /// use ralph::prompt::context::CodeIntelligenceContext;
+    /// use ralph::narsil::{ConstraintSet, CcgConstraint, ConstraintKind, ConstraintValue};
+    ///
+    /// let constraints = ConstraintSet::new()
+    ///     .with_constraint(
+    ///         CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep functions simple")
+    ///             .with_value(ConstraintValue::Number(10)),
+    ///     );
+    ///
+    /// let intel = CodeIntelligenceContext::new()
+    ///     .with_constraints(constraints)
+    ///     .mark_available();
+    ///
+    /// let section = SectionBuilder::build_constraint_section(&intel);
+    /// assert!(section.contains("Active Constraints"));
+    /// ```
+    #[must_use]
+    pub fn build_constraint_section(intel: &CodeIntelligenceContext) -> String {
+        if !intel.is_available || !intel.has_constraints() {
+            return String::new();
+        }
+
+        intel.constraints.to_prompt_section()
+    }
+
+    /// Build a constraint warning section for a specific target.
+    ///
+    /// Shows warnings for constraints that apply to a specific function or module.
+    /// Use this when the user is working on constrained code.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::builder::SectionBuilder;
+    /// use ralph::prompt::context::CodeIntelligenceContext;
+    /// use ralph::narsil::{ConstraintSet, CcgConstraint, ConstraintKind, ConstraintValue};
+    ///
+    /// let constraints = ConstraintSet::new()
+    ///     .with_constraint(
+    ///         CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep simple")
+    ///             .with_target("process_request")
+    ///             .with_value(ConstraintValue::Number(10)),
+    ///     );
+    ///
+    /// let intel = CodeIntelligenceContext::new()
+    ///     .with_constraints(constraints)
+    ///     .mark_available();
+    ///
+    /// let warnings = SectionBuilder::build_constraint_warnings_for(&intel, "process_request");
+    /// assert!(warnings.contains("maxComplexity"));
+    /// ```
+    #[must_use]
+    pub fn build_constraint_warnings_for(intel: &CodeIntelligenceContext, target: &str) -> String {
+        if !intel.is_available || !intel.has_constraints() {
+            return String::new();
+        }
+
+        let constraints = intel.constraints_for_target(target);
+        if constraints.is_empty() {
+            return String::new();
+        }
+
+        let mut lines = vec![
+            format!("### Constraints for `{}`", target),
+            String::new(),
+        ];
+
+        for constraint in constraints.iter().take(5) {
+            lines.push(constraint.to_prompt_string());
+        }
+
+        if constraints.len() > 5 {
+            lines.push(format!("\n*...and {} more constraints*", constraints.len() - 5));
+        }
+
+        // Add suggestion for constraint compliance
+        lines.push(String::new());
+        lines.push("**When modifying this code:**".to_string());
+        lines.push("- Ensure changes comply with the above constraints".to_string());
+        lines.push("- Use small, focused functions to maintain low complexity".to_string());
+        lines.push("- Add tests to verify constraint compliance".to_string());
+
+        lines.push(String::new());
+        lines.join("\n")
+    }
+
     /// Build a combined intelligence section with both call graph and CCG data.
     ///
     /// This combines `build_intelligence_section` and `build_ccg_section` into
@@ -833,6 +928,12 @@ impl SectionBuilder {
         let ccg_section = Self::build_ccg_section(intel);
         if !ccg_section.is_empty() {
             sections.push(ccg_section);
+        }
+
+        // Add constraints section (important for guiding implementation)
+        let constraint_section = Self::build_constraint_section(intel);
+        if !constraint_section.is_empty() {
+            sections.push(constraint_section);
         }
 
         // Add intelligence section (call graph, refs, deps)
@@ -1676,5 +1777,134 @@ mod tests {
 
         let prompt = result.unwrap();
         assert!(prompt.contains("test_func") || prompt.contains("Code Intelligence"));
+    }
+
+    // ==========================================================================
+    // SectionBuilder constraint section tests
+    // ==========================================================================
+
+    #[test]
+    fn test_build_constraint_section_empty() {
+        let intel = CodeIntelligenceContext::new().mark_available();
+        let section = SectionBuilder::build_constraint_section(&intel);
+        assert!(section.is_empty());
+    }
+
+    #[test]
+    fn test_build_constraint_section_not_available() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new().with_constraint(
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test")
+                .with_value(ConstraintValue::Number(10)),
+        );
+
+        // Not marked as available - should return empty
+        let intel = CodeIntelligenceContext::new().with_constraints(constraints);
+        let section = SectionBuilder::build_constraint_section(&intel);
+        assert!(section.is_empty());
+    }
+
+    #[test]
+    fn test_build_constraint_section_with_constraints() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new()
+            .with_constraint(
+                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
+                    .with_value(ConstraintValue::Number(10)),
+            )
+            .with_constraint(
+                CcgConstraint::new("max-lines", ConstraintKind::MaxLines, "Short functions")
+                    .with_value(ConstraintValue::Number(50)),
+            );
+
+        let intel = CodeIntelligenceContext::new()
+            .with_constraints(constraints)
+            .mark_available();
+
+        let section = SectionBuilder::build_constraint_section(&intel);
+
+        assert!(section.contains("Active Constraints"));
+        assert!(section.contains("maxComplexity"));
+        assert!(section.contains("maxLines"));
+    }
+
+    #[test]
+    fn test_build_constraint_warnings_for_empty() {
+        let intel = CodeIntelligenceContext::new().mark_available();
+        let warnings = SectionBuilder::build_constraint_warnings_for(&intel, "some_function");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn test_build_constraint_warnings_for_targeted() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new()
+            .with_constraint(
+                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
+                    .with_target("process_request")
+                    .with_value(ConstraintValue::Number(10)),
+            )
+            .with_constraint(
+                CcgConstraint::new("no-direct-calls", ConstraintKind::NoDirectCalls, "Use interfaces")
+                    .with_target("database::*"),
+            );
+
+        let intel = CodeIntelligenceContext::new()
+            .with_constraints(constraints)
+            .mark_available();
+
+        // process_request should show the complexity constraint
+        let warnings = SectionBuilder::build_constraint_warnings_for(&intel, "process_request");
+        assert!(warnings.contains("process_request"));
+        assert!(warnings.contains("maxComplexity"));
+        assert!(!warnings.contains("noDirectCalls"));
+
+        // database::query should show the noDirectCalls constraint
+        let db_warnings = SectionBuilder::build_constraint_warnings_for(&intel, "database::query");
+        assert!(db_warnings.contains("database::query"));
+        assert!(db_warnings.contains("noDirectCalls"));
+    }
+
+    #[test]
+    fn test_build_constraint_warnings_includes_guidance() {
+        use crate::narsil::{CcgConstraint, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new().with_constraint(
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test")
+                .with_value(ConstraintValue::Number(10)),
+        );
+
+        let intel = CodeIntelligenceContext::new()
+            .with_constraints(constraints)
+            .mark_available();
+
+        let warnings = SectionBuilder::build_constraint_warnings_for(&intel, "any_function");
+
+        assert!(warnings.contains("When modifying this code"));
+        assert!(warnings.contains("comply with"));
+    }
+
+    #[test]
+    fn test_build_combined_intelligence_section_with_constraints() {
+        use crate::narsil::{CcgConstraint, CcgManifest, ConstraintKind, ConstraintSet, ConstraintValue};
+
+        let constraints = ConstraintSet::new().with_constraint(
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep simple")
+                .with_value(ConstraintValue::Number(10)),
+        );
+
+        let intel = CodeIntelligenceContext::new()
+            .with_ccg_manifest(CcgManifest::new("test", ".").with_counts(10, 50))
+            .with_constraints(constraints)
+            .mark_available();
+
+        let section = SectionBuilder::build_combined_intelligence_section(&intel, 2048);
+
+        // Should include both CCG overview and constraints
+        assert!(section.contains("Project Overview") || section.contains("project"));
+        assert!(section.contains("Active Constraints") || section.contains("maxComplexity"));
     }
 }
