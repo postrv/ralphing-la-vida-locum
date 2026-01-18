@@ -25,11 +25,16 @@
 //! let json = generator.export_quality_metrics(ExportFormat::Json)?;
 //! ```
 
-mod generator;
+mod certification;
 mod export;
+mod generator;
 
-pub use generator::{ReportGenerator, ReportConfig, ReportData};
+pub use certification::{
+    CertificationHistory, CertificationLevel, CertificationMetrics, QualityCertification,
+    QualityCertifier,
+};
 pub use export::{ExportFormat, QualityExporter};
+pub use generator::{ReportConfig, ReportData, ReportGenerator};
 
 #[cfg(test)]
 mod tests {
