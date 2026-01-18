@@ -43,7 +43,7 @@ use super::retry::{
     RecoveryStrategy, RetryAttempt, RetryConfig, RetryHistory, SubTask, TaskDecomposer,
 };
 use super::state::{LoopMode, LoopState};
-use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransition};
+use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransition, ValidationResult};
 use ralph::Analytics;
 use crate::supervisor::predictor::{
     InterventionThresholds, PreventiveAction, PredictorConfig, RiskSignals, RiskWeights,
@@ -609,6 +609,30 @@ impl LoopManager {
                 0, // tokens_used - not tracked directly yet
             );
 
+            // Log sprint status if verbose
+            if self.verbose {
+                if let Some(sprint_num) = self.task_tracker.current_sprint() {
+                    let sprint_tasks = self.task_tracker.tasks_for_sprint(sprint_num);
+                    let sprint_complete = self.task_tracker.is_sprint_complete(sprint_num);
+                    debug!(
+                        "Current sprint {}: {} tasks, complete={}",
+                        sprint_num,
+                        sprint_tasks.len(),
+                        sprint_complete
+                    );
+                    // Log individual task sprint info
+                    for task in sprint_tasks.iter().take(3) {
+                        debug!(
+                            "  Sprint {} task: {} (sprint={:?})",
+                            sprint_num,
+                            task.id,
+                            task.sprint()
+                        );
+                    }
+                }
+                debug!("Plan hash: {}", self.task_tracker.plan_hash());
+            }
+
             // Check for progress using multiple indicators (commits AND plan changes)
             let made_progress = self.has_made_progress();
 
@@ -626,6 +650,9 @@ impl LoopManager {
                 self.state.update_plan_hash(self.get_plan_hash()?);
                 self.state
                     .update_commit_hash(self.get_commit_hash().unwrap_or_default());
+
+                // Check for orphaned tasks when plan changes
+                self.check_for_orphaned_tasks();
 
                 // Record progress on the current task
                 // We use (1, 0) to indicate progress was made (actual counts tracked separately)
@@ -1554,6 +1581,45 @@ impl LoopManager {
                 .context("Failed to read IMPLEMENTATION_PLAN.md")?
         };
         Ok(format!("{:x}", md5::compute(content.as_bytes())))
+    }
+
+    /// Read the plan content from IMPLEMENTATION_PLAN.md.
+    fn read_plan_content(&self) -> Result<String> {
+        if let Some(deps) = &self.deps {
+            let fs = deps.fs.try_read().map_err(|_| {
+                anyhow::anyhow!("Could not acquire filesystem lock")
+            })?;
+            fs.read_file("IMPLEMENTATION_PLAN.md")
+                .context("Failed to read IMPLEMENTATION_PLAN.md")
+        } else {
+            let plan_path = self.project_dir.join("IMPLEMENTATION_PLAN.md");
+            std::fs::read_to_string(&plan_path)
+                .context("Failed to read IMPLEMENTATION_PLAN.md")
+        }
+    }
+
+    /// Check for orphaned tasks when the plan structure changes.
+    ///
+    /// Validates the current task tracker against the plan and marks
+    /// any tasks that are no longer in the plan as orphaned.
+    fn check_for_orphaned_tasks(&mut self) {
+        if let Ok(plan_content) = self.read_plan_content() {
+            match self.task_tracker.validate_against_plan(&plan_content) {
+                ValidationResult::Valid => {
+                    debug!("Plan structure unchanged, no orphaned tasks");
+                }
+                ValidationResult::PlanChanged { orphaned_tasks } => {
+                    if !orphaned_tasks.is_empty() {
+                        warn!(
+                            "Plan structure changed, {} task(s) orphaned: {:?}",
+                            orphaned_tasks.len(),
+                            orphaned_tasks
+                        );
+                        self.task_tracker.mark_orphaned_tasks(&plan_content);
+                    }
+                }
+            }
+        }
     }
 
     /// Get the current git commit hash (HEAD).
