@@ -64,7 +64,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Process management
-which = "7.0"
+which = "8.0"
 
 # Async traits
 async-trait = "0.1"
