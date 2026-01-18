@@ -566,8 +566,15 @@ impl SectionBuilder {
     /// ```
     #[must_use]
     pub fn build_intelligence_section(intel: &CodeIntelligenceContext) -> String {
-        // Don't show if not available or no data
-        if !intel.is_available || !intel.has_data() {
+        // Show section if narsil-mcp is available with data, OR if we have constraints
+        // (constraints can be loaded from project config without narsil-mcp)
+        let has_narsil_data = intel.is_available
+            && (!intel.call_graph.is_empty()
+                || !intel.references.is_empty()
+                || !intel.dependencies.is_empty());
+        let has_constraints = intel.has_constraints();
+
+        if !has_narsil_data && !has_constraints {
             return String::new();
         }
 
@@ -651,6 +658,15 @@ impl SectionBuilder {
                 }
             }
             lines.push(String::new());
+        }
+
+        // Constraints section
+        if intel.has_constraints() {
+            let constraint_section = intel.constraints.to_prompt_section();
+            if !constraint_section.is_empty() {
+                lines.push(constraint_section);
+                lines.push(String::new());
+            }
         }
 
         lines.join("\n")

@@ -30,6 +30,7 @@
 
 mod ccg;
 mod client;
+mod constraint_loader;
 mod intelligence;
 
 pub use ccg::{
@@ -42,6 +43,7 @@ pub use client::{
     Dependency, NarsilClient, NarsilConfig, NarsilError, Reference, SecurityFinding,
     SecuritySeverity, ToolResponse,
 };
+pub use constraint_loader::{ConstraintLoadError, ConstraintLoader, DEFAULT_CONSTRAINTS_PATH};
 pub use intelligence::CodeIntelligenceBuilder;
 
 #[cfg(test)]
