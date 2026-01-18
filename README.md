@@ -22,7 +22,7 @@ Ralph is a Rust CLI tool that orchestrates Claude Code for autonomous software d
 ### Autonomous Execution
 - **Intelligent Loop** - Run Claude Code autonomously with stagnation detection and phase-based prompts
 - **Task-Level Tracking** - Fine-grained state machine for individual task progress (NotStarted → InProgress → Complete)
-- **Dynamic Prompts** - Context-aware prompt assembly with antipattern injection and remediation hints
+- **Dynamic Prompts** - Context-aware prompt assembly with CCG intelligence, antipattern injection, and remediation hints
 - **Supervisor System** - "Chief Wiggum" monitors loop health with automatic intervention
 
 ### Quality Enforcement
@@ -31,7 +31,8 @@ Ralph is a Rust CLI tool that orchestrates Claude Code for autonomous software d
 - **TDD Methodology** - RED → GREEN → REFACTOR → CHECKPOINT → REVIEW → COMMIT
 
 ### Code Intelligence
-- **narsil-mcp Integration** - Security scanning, call graph analysis, dependency tracking
+- **narsil-mcp Integration** - Security scanning, call graph analysis, dependency tracking, CCG support
+- **CCG (Compact Code Graph)** - Layered code intelligence (L0 manifest, L1 architecture) for prompt enrichment
 - **Antipattern Detection** - Detects repeated file editing, missing tests, task oscillation
 - **Predictive Prevention** - Pattern-based risk scoring to prevent stagnation
 
@@ -39,7 +40,7 @@ Ralph is a Rust CLI tool that orchestrates Claude Code for autonomous software d
 - **Bootstrap** - Initialize projects with Claude Code configuration, hooks, skills, and templates
 - **Context Builder** - Generate LLM-optimized context bundles respecting gitignore and token limits
 - **Security Hooks** - Pre-validate commands, scan for secrets, enforce allow/deny permissions
-- **Analytics** - Track sessions, iterations, and events for analysis
+- **Analytics** - Track sessions, iterations, events, and quality trends (test rates, warnings, security findings)
 
 ## Installation
 
@@ -267,22 +268,85 @@ The internal supervisor ("Chief Wiggum") monitors loop health:
 
 ## narsil-mcp Integration
 
-Ralph integrates with [narsil-mcp](https://github.com/postrv/narsil-mcp) for code intelligence:
+Ralph integrates with [narsil-mcp](https://github.com/postrv/narsil-mcp) for code intelligence. All narsil-mcp features **gracefully degrade** when unavailable—Ralph continues to function normally, returning `None` or empty collections.
 
 ```rust
 let client = NarsilClient::new(NarsilConfig::default());
 
 // Security scanning
-let findings = client.scan_security(".").await?;
+let findings = client.scan_security(".")?;
 
 // Call graph analysis
-let graph = client.get_call_graph(".", Some("main")).await?;
+let graph = client.get_call_graph(".", Some("main"))?;
 
 // Dependency tracking
-let deps = client.get_dependencies(".", "src/lib.rs").await?;
+let deps = client.get_dependencies(".", "src/lib.rs")?;
 
 // Reference finding
-let refs = client.find_references(".", "MyStruct").await?;
+let refs = client.find_references(".", "MyStruct")?;
+
+// CCG integration (requires narsil-mcp --features graph)
+let manifest = client.get_ccg_manifest()?;      // L0 layer
+let arch = client.get_ccg_architecture()?;       // L1 layer
+client.export_ccg("./ccg_output")?;              // Export all layers
+```
+
+### CCG (Compact Code Graph)
+
+Ralph supports narsil-mcp's CCG format—a layered code intelligence protocol designed for LLM context windows:
+
+| Layer | Name | Size | Contents |
+|-------|------|------|----------|
+| **L0** | Manifest | ~1-2KB | Repo metadata, language stats, security summary |
+| **L1** | Architecture | ~10-50KB | Module hierarchy, public API, entry points |
+| **L2** | Symbol Index | Variable | Full symbol graph (N-Quads, gzipped) |
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    CCG DATA FLOW IN RALPH                        │
+├─────────────────────────────────────────────────────────────────┤
+│   narsil-mcp CLI                                                 │
+│   ┌────────────────────────────────┐                            │
+│   │ get_ccg_manifest               │ → L0 JSON (~1-2KB)         │
+│   │ export_ccg_architecture        │ → L1 JSON (~10-50KB)       │
+│   │ export_ccg                     │ → All layers bundled       │
+│   └──────────────┬─────────────────┘                            │
+│                  ▼                                               │
+│   NarsilClient → CodeIntelligenceContext → DynamicPromptBuilder  │
+│                                                                  │
+│   Prompt output includes:                                        │
+│   • Project name and primary language                            │
+│   • Symbol/file counts                                           │
+│   • Security summary with severity icons                         │
+│   • Entry points (limited to 5)                                  │
+│   • Public API symbols (limited to 8)                            │
+│   • Module structure (limited to 5)                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**What CCG Enables:**
+- **Architecture-Aware Prompts** - Claude sees module structure, public API, entry points
+- **Security-Aware Development** - Security summary injected into every prompt
+- **Size-Constrained Intelligence** - CCG data fits in prompt context (<1KB)
+
+### Graceful Degradation
+
+All narsil-mcp integration code works when narsil-mcp is unavailable:
+
+```rust
+// Check availability before expensive operations
+if client.is_available() {
+    let manifest = client.get_ccg_manifest()?;
+    // ... use CCG data
+} else {
+    // Continue without CCG - Ralph still functions
+}
+
+// Or rely on Option returns
+match client.get_ccg_manifest()? {
+    Some(manifest) => enrich_prompt_with_ccg(&manifest),
+    None => use_basic_prompt(),
+}
 ```
 
 ## Security
@@ -364,6 +428,7 @@ src/
 │
 ├── narsil/              # narsil-mcp integration
 │   ├── client.rs        # MCP client for tool invocation
+│   ├── ccg.rs           # CCG data structures (CcgManifest, CcgArchitecture)
 │   └── intelligence.rs  # Code intelligence queries
 │
 ├── supervisor/          # Chief Wiggum health monitoring
@@ -415,7 +480,7 @@ See [docs/LICENSING.md](docs/LICENSING.md) for details.
 - Rust 1.70+
 - Claude Code 2.1.0+ (for skill hot-reload)
 - GitHub CLI (`gh`) for authentication
-- Optional: [narsil-mcp](https://github.com/postrv/narsil-mcp) for code intelligence
+- Optional: [narsil-mcp](https://github.com/postrv/narsil-mcp) for code intelligence (use `--features graph` for CCG support)
 
 ## License
 
