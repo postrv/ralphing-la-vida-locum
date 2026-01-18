@@ -296,7 +296,9 @@ impl SectionBuilder {
                     stats.iteration_count,
                     stats.max_iterations.unwrap_or(0)
                 ));
-                lines.push("   ⚠️ Prioritize completing current task or commit progress!".to_string());
+                lines.push(
+                    "   ⚠️ Prioritize completing current task or commit progress!".to_string(),
+                );
             } else if budget_percent >= 80 {
                 lines.push(format!(
                     "🟡 **Budget warning:** {}% used ({}/{} iterations)",
@@ -321,7 +323,10 @@ impl SectionBuilder {
                     "🔴 **Stagnation alert:** {} iterations without progress",
                     stats.stagnation_count
                 ));
-                lines.push("   Consider: Is the current approach working? Try a different strategy.".to_string());
+                lines.push(
+                    "   Consider: Is the current approach working? Try a different strategy."
+                        .to_string(),
+                );
             } else {
                 lines.push(format!(
                     "🟡 **Note:** {} iteration(s) without progress",
@@ -332,7 +337,10 @@ impl SectionBuilder {
 
         if !stats.is_progressing() && stats.iteration_count > 3 {
             lines.push(String::new());
-            lines.push("⚠️ **Low commit rate** - Consider making smaller, incremental commits.".to_string());
+            lines.push(
+                "⚠️ **Low commit rate** - Consider making smaller, incremental commits."
+                    .to_string(),
+            );
         }
 
         lines.push(String::new());
@@ -414,7 +422,10 @@ impl SectionBuilder {
         }
 
         // Add insights based on patterns
-        let failed_attempts: Vec<_> = attempts.iter().filter(|a| !a.outcome.is_success()).collect();
+        let failed_attempts: Vec<_> = attempts
+            .iter()
+            .filter(|a| !a.outcome.is_success())
+            .collect();
         if failed_attempts.len() >= 2 {
             lines.push("### ⚠️ Pattern Analysis".to_string());
 
@@ -596,7 +607,11 @@ impl SectionBuilder {
             }
 
             // Show other functions
-            let regular: Vec<_> = intel.call_graph.iter().filter(|n| !n.is_hotspot()).collect();
+            let regular: Vec<_> = intel
+                .call_graph
+                .iter()
+                .filter(|n| !n.is_hotspot())
+                .collect();
             if !regular.is_empty() {
                 lines.push("**Functions:**".to_string());
                 for node in regular.iter().take(5) {
@@ -605,7 +620,10 @@ impl SectionBuilder {
             }
 
             if intel.call_graph.len() > 8 {
-                lines.push(format!("... and {} more functions", intel.call_graph.len() - 8));
+                lines.push(format!(
+                    "... and {} more functions",
+                    intel.call_graph.len() - 8
+                ));
             }
             lines.push(String::new());
         }
@@ -616,17 +634,24 @@ impl SectionBuilder {
             lines.push(String::new());
 
             // Group by symbol
-            let mut symbols_seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+            let mut symbols_seen: std::collections::HashSet<&str> =
+                std::collections::HashSet::new();
             for reference in intel.references.iter().take(10) {
                 if symbols_seen.insert(&reference.symbol) {
                     let location = format!("{}:{}", reference.file, reference.line);
                     let kind_str = format!(" ({})", reference.kind);
-                    lines.push(format!("- `{}` at `{}`{}", reference.symbol, location, kind_str));
+                    lines.push(format!(
+                        "- `{}` at `{}`{}",
+                        reference.symbol, location, kind_str
+                    ));
                 }
             }
 
             if intel.references.len() > 10 {
-                lines.push(format!("... and {} more references", intel.references.len() - 10));
+                lines.push(format!(
+                    "... and {} more references",
+                    intel.references.len() - 10
+                ));
             }
             lines.push(String::new());
         }
@@ -640,18 +665,34 @@ impl SectionBuilder {
                 lines.push(format!("**`{}`**", dep.module_path));
                 if !dep.imports.is_empty() {
                     let imports_preview: Vec<_> = dep.imports.iter().take(5).collect();
-                    let imports_str = imports_preview.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                    let imports_str = imports_preview
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     if dep.imports.len() > 5 {
-                        lines.push(format!("  - Imports: {} ... (+{} more)", imports_str, dep.imports.len() - 5));
+                        lines.push(format!(
+                            "  - Imports: {} ... (+{} more)",
+                            imports_str,
+                            dep.imports.len() - 5
+                        ));
                     } else {
                         lines.push(format!("  - Imports: {}", imports_str));
                     }
                 }
                 if !dep.imported_by.is_empty() {
                     let importers_preview: Vec<_> = dep.imported_by.iter().take(3).collect();
-                    let importers_str = importers_preview.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                    let importers_str = importers_preview
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     if dep.imported_by.len() > 3 {
-                        lines.push(format!("  - Used by: {} ... (+{} more)", importers_str, dep.imported_by.len() - 3));
+                        lines.push(format!(
+                            "  - Used by: {} ... (+{} more)",
+                            importers_str,
+                            dep.imported_by.len() - 3
+                        ));
                     } else {
                         lines.push(format!("  - Used by: {}", importers_str));
                     }
@@ -695,9 +736,17 @@ impl SectionBuilder {
         // Show callers (limited)
         if !node.callers.is_empty() {
             let callers_preview: Vec<_> = node.callers.iter().take(5).collect();
-            let callers_str = callers_preview.iter().map(|s| format!("`{}`", s)).collect::<Vec<_>>().join(", ");
+            let callers_str = callers_preview
+                .iter()
+                .map(|s| format!("`{}`", s))
+                .collect::<Vec<_>>()
+                .join(", ");
             if node.callers.len() > 5 {
-                lines.push(format!("    ← Called by: {} ... (+{} more)", callers_str, node.callers.len() - 5));
+                lines.push(format!(
+                    "    ← Called by: {} ... (+{} more)",
+                    callers_str,
+                    node.callers.len() - 5
+                ));
             } else {
                 lines.push(format!("    ← Called by: {}", callers_str));
             }
@@ -706,9 +755,17 @@ impl SectionBuilder {
         // Show callees (limited)
         if !node.callees.is_empty() {
             let callees_preview: Vec<_> = node.callees.iter().take(5).collect();
-            let callees_str = callees_preview.iter().map(|s| format!("`{}`", s)).collect::<Vec<_>>().join(", ");
+            let callees_str = callees_preview
+                .iter()
+                .map(|s| format!("`{}`", s))
+                .collect::<Vec<_>>()
+                .join(", ");
             if node.callees.len() > 5 {
-                lines.push(format!("    → Calls: {} ... (+{} more)", callees_str, node.callees.len() - 5));
+                lines.push(format!(
+                    "    → Calls: {} ... (+{} more)",
+                    callees_str,
+                    node.callees.len() - 5
+                ));
             } else {
                 lines.push(format!("    → Calls: {}", callees_str));
             }
@@ -760,7 +817,10 @@ impl SectionBuilder {
             }
 
             // Symbol count
-            lines.push(format!("**Symbols:** {} across {} files", manifest.symbol_count, manifest.file_count));
+            lines.push(format!(
+                "**Symbols:** {} across {} files",
+                manifest.symbol_count, manifest.file_count
+            ));
 
             // Security summary (if there are any issues)
             let sec = &manifest.security_summary;
@@ -793,13 +853,22 @@ impl SectionBuilder {
                 for entry in arch.entry_points.iter().take(5) {
                     let location = entry.file.display();
                     if let Some(line) = entry.line {
-                        lines.push(format!("- `{}` ({}) at `{}:{}`", entry.name, entry.kind, location, line));
+                        lines.push(format!(
+                            "- `{}` ({}) at `{}:{}`",
+                            entry.name, entry.kind, location, line
+                        ));
                     } else {
-                        lines.push(format!("- `{}` ({}) in `{}`", entry.name, entry.kind, location));
+                        lines.push(format!(
+                            "- `{}` ({}) in `{}`",
+                            entry.name, entry.kind, location
+                        ));
                     }
                 }
                 if arch.entry_points.len() > 5 {
-                    lines.push(format!("... and {} more entry points", arch.entry_points.len() - 5));
+                    lines.push(format!(
+                        "... and {} more entry points",
+                        arch.entry_points.len() - 5
+                    ));
                 }
                 lines.push(String::new());
             }
@@ -816,7 +885,10 @@ impl SectionBuilder {
                     }
                 }
                 if arch.public_api.len() > 8 {
-                    lines.push(format!("... and {} more public symbols", arch.public_api.len() - 8));
+                    lines.push(format!(
+                        "... and {} more public symbols",
+                        arch.public_api.len() - 8
+                    ));
                 }
                 lines.push(String::new());
             }
@@ -827,7 +899,10 @@ impl SectionBuilder {
                 for module in arch.modules.iter().take(5) {
                     let children_count = module.children.len();
                     if children_count > 0 {
-                        lines.push(format!("- `{}` ({} submodules)", module.name, children_count));
+                        lines.push(format!(
+                            "- `{}` ({} submodules)",
+                            module.name, children_count
+                        ));
                     } else {
                         lines.push(format!("- `{}`", module.name));
                     }
@@ -913,17 +988,17 @@ impl SectionBuilder {
             return String::new();
         }
 
-        let mut lines = vec![
-            format!("### Constraints for `{}`", target),
-            String::new(),
-        ];
+        let mut lines = vec![format!("### Constraints for `{}`", target), String::new()];
 
         for constraint in constraints.iter().take(5) {
             lines.push(constraint.to_prompt_string());
         }
 
         if constraints.len() > 5 {
-            lines.push(format!("\n*...and {} more constraints*", constraints.len() - 5));
+            lines.push(format!(
+                "\n*...and {} more constraints*",
+                constraints.len() - 5
+            ));
         }
 
         // Add suggestion for constraint compliance
@@ -1023,7 +1098,10 @@ impl SectionBuilder {
     /// This combines `build_intelligence_section` and `build_ccg_section` into
     /// a single coherent section, respecting the < 1KB size constraint.
     #[must_use]
-    pub fn build_combined_intelligence_section(intel: &CodeIntelligenceContext, max_bytes: usize) -> String {
+    pub fn build_combined_intelligence_section(
+        intel: &CodeIntelligenceContext,
+        max_bytes: usize,
+    ) -> String {
         if !intel.is_available {
             return String::new();
         }
@@ -1056,9 +1134,16 @@ impl SectionBuilder {
             let truncated = &combined[..max_bytes.saturating_sub(50)];
             // Find last newline to avoid cutting mid-line
             if let Some(pos) = truncated.rfind('\n') {
-                format!("{}\n\n... (intelligence section truncated to {}B)", &combined[..pos], max_bytes)
+                format!(
+                    "{}\n\n... (intelligence section truncated to {}B)",
+                    &combined[..pos],
+                    max_bytes
+                )
             } else {
-                format!("{}... (truncated)", &combined[..max_bytes.saturating_sub(20)])
+                format!(
+                    "{}... (truncated)",
+                    &combined[..max_bytes.saturating_sub(20)]
+                )
             }
         } else {
             combined
@@ -1143,8 +1228,7 @@ impl DynamicPromptBuilder {
         let attempt_section = SectionBuilder::build_attempt_section(&context.attempt_summaries);
         substitutions.insert(TemplateMarker::AttemptHistory, attempt_section);
 
-        let antipattern_section =
-            SectionBuilder::build_antipattern_section(&context.anti_patterns);
+        let antipattern_section = SectionBuilder::build_antipattern_section(&context.anti_patterns);
         substitutions.insert(TemplateMarker::AntiPatterns, antipattern_section);
 
         // Code intelligence section
@@ -1190,7 +1274,10 @@ impl DynamicPromptBuilder {
 
         // Build standard sections
         if let Some(task) = &context.current_task {
-            substitutions.insert(TemplateMarker::TaskContext, SectionBuilder::build_task_section(task));
+            substitutions.insert(
+                TemplateMarker::TaskContext,
+                SectionBuilder::build_task_section(task),
+            );
         } else {
             substitutions.insert(TemplateMarker::TaskContext, String::new());
         }
@@ -1260,7 +1347,8 @@ mod tests {
 
     #[test]
     fn test_build_task_section_basic() {
-        let task = CurrentTaskContext::new("2.1", "Create context types", TaskPhase::Implementation);
+        let task =
+            CurrentTaskContext::new("2.1", "Create context types", TaskPhase::Implementation);
         let section = SectionBuilder::build_task_section(&task);
 
         assert!(section.contains("## Current Task"));
@@ -1342,10 +1430,8 @@ mod tests {
 
     #[test]
     fn test_build_error_section_with_location() {
-        let errors = vec![
-            ErrorContext::new("E0308", "error", ErrorSeverity::Error)
-                .with_location("src/lib.rs", 42),
-        ];
+        let errors = vec![ErrorContext::new("E0308", "error", ErrorSeverity::Error)
+            .with_location("src/lib.rs", 42)];
         let section = SectionBuilder::build_error_section(&errors);
 
         assert!(section.contains("📍 `src/lib.rs:42`"));
@@ -1353,10 +1439,8 @@ mod tests {
 
     #[test]
     fn test_build_error_section_with_suggested_fix() {
-        let errors = vec![
-            ErrorContext::new("E0308", "error", ErrorSeverity::Error)
-                .with_suggested_fix("Change type to String"),
-        ];
+        let errors = vec![ErrorContext::new("E0308", "error", ErrorSeverity::Error)
+            .with_suggested_fix("Change type to String")];
         let section = SectionBuilder::build_error_section(&errors);
 
         assert!(section.contains("💡 Change type to String"));
@@ -1364,9 +1448,8 @@ mod tests {
 
     #[test]
     fn test_build_error_section_recurring() {
-        let errors = vec![
-            ErrorContext::new("E0308", "error", ErrorSeverity::Error).with_occurrences(5),
-        ];
+        let errors =
+            vec![ErrorContext::new("E0308", "error", ErrorSeverity::Error).with_occurrences(5)];
         let section = SectionBuilder::build_error_section(&errors);
 
         assert!(section.contains("(×5)")); // Recurrence indicator
@@ -1543,10 +1626,8 @@ mod tests {
     #[test]
     fn test_build_attempt_section_pattern_analysis() {
         let attempts = vec![
-            AttemptSummary::new(1, AttemptOutcome::TestFailure)
-                .with_error("recurring error"),
-            AttemptSummary::new(2, AttemptOutcome::TestFailure)
-                .with_error("recurring error"),
+            AttemptSummary::new(1, AttemptOutcome::TestFailure).with_error("recurring error"),
+            AttemptSummary::new(2, AttemptOutcome::TestFailure).with_error("recurring error"),
         ];
 
         let section = SectionBuilder::build_attempt_section(&attempts);
@@ -1582,7 +1663,8 @@ mod tests {
     #[test]
     fn test_build_antipattern_section_severity_sorted() {
         let patterns = vec![
-            AntiPattern::new(AntiPatternType::ClippyNotRun, "low").with_severity(AntiPatternSeverity::Low),
+            AntiPattern::new(AntiPatternType::ClippyNotRun, "low")
+                .with_severity(AntiPatternSeverity::Low),
             AntiPattern::new(AntiPatternType::TaskOscillation, "high")
                 .with_severity(AntiPatternSeverity::High),
             AntiPattern::new(AntiPatternType::TestsNotRun, "medium")
@@ -1689,8 +1771,11 @@ mod tests {
     #[test]
     fn test_dynamic_prompt_builder_build_with_errors() {
         let builder = DynamicPromptBuilder::default();
-        let context = PromptContext::new()
-            .with_error(ErrorContext::new("E0308", "mismatched", ErrorSeverity::Error));
+        let context = PromptContext::new().with_error(ErrorContext::new(
+            "E0308",
+            "mismatched",
+            ErrorSeverity::Error,
+        ));
 
         let result = builder.build("build", &context);
         assert!(result.is_ok());
@@ -1775,8 +1860,7 @@ mod tests {
     #[test]
     fn test_build_intelligence_section_unavailable() {
         // Even with data, if not marked available, should be empty
-        let intel = CodeIntelligenceContext::new()
-            .with_call_graph(vec![CallGraphNode::new("foo")]);
+        let intel = CodeIntelligenceContext::new().with_call_graph(vec![CallGraphNode::new("foo")]);
         let section = SectionBuilder::build_intelligence_section(&intel);
         assert!(section.is_empty());
     }
@@ -1784,12 +1868,10 @@ mod tests {
     #[test]
     fn test_build_intelligence_section_with_call_graph() {
         let intel = CodeIntelligenceContext::new()
-            .with_call_graph(vec![
-                CallGraphNode::new("process_request")
-                    .with_file("src/handler.rs")
-                    .with_callers(vec!["main".to_string(), "handle_http".to_string()])
-                    .with_callees(vec!["validate".to_string()]),
-            ])
+            .with_call_graph(vec![CallGraphNode::new("process_request")
+                .with_file("src/handler.rs")
+                .with_callers(vec!["main".to_string(), "handle_http".to_string()])
+                .with_callees(vec!["validate".to_string()])])
             .mark_available();
 
         let section = SectionBuilder::build_intelligence_section(&intel);
@@ -1806,8 +1888,7 @@ mod tests {
             .with_references(vec![
                 SymbolReference::new("MyStruct", "src/lib.rs", 42)
                     .with_kind(ReferenceKind::Definition),
-                SymbolReference::new("MyStruct", "src/main.rs", 10)
-                    .with_kind(ReferenceKind::Usage),
+                SymbolReference::new("MyStruct", "src/main.rs", 10).with_kind(ReferenceKind::Usage),
             ])
             .mark_available();
 
@@ -1821,11 +1902,9 @@ mod tests {
     #[test]
     fn test_build_intelligence_section_with_dependencies() {
         let intel = CodeIntelligenceContext::new()
-            .with_dependencies(vec![
-                ModuleDependency::new("src/lib.rs")
-                    .with_imports(vec!["std::io".to_string(), "crate::util".to_string()])
-                    .with_imported_by(vec!["src/main.rs".to_string()]),
-            ])
+            .with_dependencies(vec![ModuleDependency::new("src/lib.rs")
+                .with_imports(vec!["std::io".to_string(), "crate::util".to_string()])
+                .with_imported_by(vec!["src/main.rs".to_string()])])
             .mark_available();
 
         let section = SectionBuilder::build_intelligence_section(&intel);
@@ -1838,11 +1917,15 @@ mod tests {
     #[test]
     fn test_build_intelligence_section_hotspots() {
         let intel = CodeIntelligenceContext::new()
-            .with_call_graph(vec![
-                CallGraphNode::new("hotspot_func")
-                    .with_callers(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()])
-                    .with_callees(vec!["x".into()]),
-            ])
+            .with_call_graph(vec![CallGraphNode::new("hotspot_func")
+                .with_callers(vec![
+                    "a".into(),
+                    "b".into(),
+                    "c".into(),
+                    "d".into(),
+                    "e".into(),
+                ])
+                .with_callees(vec!["x".into()])])
             .mark_available();
 
         let section = SectionBuilder::build_intelligence_section(&intel);
@@ -1855,8 +1938,7 @@ mod tests {
         let callers: Vec<String> = (0..20).map(|i| format!("caller_{}", i)).collect();
         let intel = CodeIntelligenceContext::new()
             .with_call_graph(vec![
-                CallGraphNode::new("popular_func")
-                    .with_callers(callers),
+                CallGraphNode::new("popular_func").with_callers(callers)
             ])
             .mark_available();
 
@@ -1917,8 +1999,12 @@ mod tests {
 
         let constraints = ConstraintSet::new()
             .with_constraint(
-                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                    .with_value(ConstraintValue::Number(10)),
+                CcgConstraint::new(
+                    "max-complexity",
+                    ConstraintKind::MaxComplexity,
+                    "Keep it simple",
+                )
+                .with_value(ConstraintValue::Number(10)),
             )
             .with_constraint(
                 CcgConstraint::new("max-lines", ConstraintKind::MaxLines, "Short functions")
@@ -1949,13 +2035,21 @@ mod tests {
 
         let constraints = ConstraintSet::new()
             .with_constraint(
-                CcgConstraint::new("max-complexity", ConstraintKind::MaxComplexity, "Keep it simple")
-                    .with_target("process_request")
-                    .with_value(ConstraintValue::Number(10)),
+                CcgConstraint::new(
+                    "max-complexity",
+                    ConstraintKind::MaxComplexity,
+                    "Keep it simple",
+                )
+                .with_target("process_request")
+                .with_value(ConstraintValue::Number(10)),
             )
             .with_constraint(
-                CcgConstraint::new("no-direct-calls", ConstraintKind::NoDirectCalls, "Use interfaces")
-                    .with_target("database::*"),
+                CcgConstraint::new(
+                    "no-direct-calls",
+                    ConstraintKind::NoDirectCalls,
+                    "Use interfaces",
+                )
+                .with_target("database::*"),
             );
 
         let intel = CodeIntelligenceContext::new()
@@ -1995,7 +2089,9 @@ mod tests {
 
     #[test]
     fn test_build_combined_intelligence_section_with_constraints() {
-        use crate::narsil::{CcgConstraint, CcgManifest, ConstraintKind, ConstraintSet, ConstraintValue};
+        use crate::narsil::{
+            CcgConstraint, CcgManifest, ConstraintKind, ConstraintSet, ConstraintValue,
+        };
 
         let constraints = ConstraintSet::new().with_constraint(
             CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep simple")
@@ -2039,15 +2135,13 @@ mod tests {
         use crate::narsil::{ComplianceResult, ConstraintViolation};
 
         let result = ComplianceResult::failed(
-            vec![
-                ConstraintViolation::new(
-                    "max-complexity",
-                    "process_data",
-                    "Complexity 15 exceeds maximum of 10",
-                )
-                .with_location("src/handler.rs", 42)
-                .with_suggestion("Break into smaller functions"),
-            ],
+            vec![ConstraintViolation::new(
+                "max-complexity",
+                "process_data",
+                "Complexity 15 exceeds maximum of 10",
+            )
+            .with_location("src/handler.rs", 42)
+            .with_suggestion("Break into smaller functions")],
             1,
         );
 
@@ -2071,11 +2165,7 @@ mod tests {
 
         let result = ComplianceResult::failed(
             vec![
-                ConstraintViolation::new(
-                    "max-complexity",
-                    "func1",
-                    "Complexity 15 exceeds max",
-                ),
+                ConstraintViolation::new("max-complexity", "func1", "Complexity 15 exceeds max"),
                 ConstraintViolation::new(
                     "max-lines",
                     "func2",

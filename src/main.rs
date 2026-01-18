@@ -13,13 +13,13 @@ mod hooks;
 mod r#loop;
 mod supervisor;
 
-use ralph::bootstrap::Bootstrap;
-use ralph::Analytics;
 use crate::archive::ArchiveManager;
 use crate::context::ContextBuilder;
 use crate::hooks::HookType;
 use crate::r#loop::{LoopManager, LoopManagerConfig, LoopMode};
+use ralph::bootstrap::Bootstrap;
 use ralph::quality::EnforcerConfig;
+use ralph::Analytics;
 use ralph::ProjectConfig;
 
 #[derive(Parser)]
@@ -372,79 +372,92 @@ async fn main() -> anyhow::Result<()> {
                         "   {} Stale files ({}): {}",
                         "Warning:".yellow(),
                         stats.stale_files.len(),
-                        stats.stale_files.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                        stats
+                            .stale_files
+                            .iter()
+                            .take(5)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     );
                 }
             }
         }
 
-        Commands::Archive { action } => {
-            match action {
-                ArchiveAction::Run { stale_days, dry_run } => {
-                    let manager = ArchiveManager::new(project_path, stale_days);
-                    let result = manager.run(dry_run)?;
+        Commands::Archive { action } => match action {
+            ArchiveAction::Run {
+                stale_days,
+                dry_run,
+            } => {
+                let manager = ArchiveManager::new(project_path, stale_days);
+                let result = manager.run(dry_run)?;
 
+                println!(
+                    "\n{} Archive Manager (threshold: {} days)",
+                    "OK".green().bold(),
+                    stale_days
+                );
+                println!("   Stale docs archived: {}", result.docs_archived);
+                println!("   Deprecated ADRs archived: {}", result.decisions_archived);
+
+                if !result.files_processed.is_empty() {
+                    println!("\n   Files processed:");
+                    for file in &result.files_processed {
+                        println!("     - {} ({})", file.original_path, file.reason);
+                    }
+                }
+
+                if dry_run {
+                    println!("\n   {} Dry run - no changes made", "Info:".blue());
+                }
+            }
+
+            ArchiveAction::Stats { stale_days } => {
+                let manager = ArchiveManager::new(project_path, stale_days);
+                let stats = manager.get_stats()?;
+                println!("{}", serde_json::to_string_pretty(&stats)?);
+            }
+
+            ArchiveAction::ListStale { stale_days } => {
+                let manager = ArchiveManager::new(project_path, stale_days);
+                let stale_files = manager.find_stale_files()?;
+
+                if stale_files.is_empty() {
                     println!(
-                        "\n{} Archive Manager (threshold: {} days)",
-                        "OK".green().bold(),
+                        "{} No stale files found (threshold: {} days)",
+                        "OK".green(),
                         stale_days
                     );
-                    println!("   Stale docs archived: {}", result.docs_archived);
-                    println!("   Deprecated ADRs archived: {}", result.decisions_archived);
-
-                    if !result.files_processed.is_empty() {
-                        println!("\n   Files processed:");
-                        for file in &result.files_processed {
-                            println!("     - {} ({})", file.original_path, file.reason);
-                        }
-                    }
-
-                    if dry_run {
-                        println!(
-                            "\n   {} Dry run - no changes made",
-                            "Info:".blue()
-                        );
-                    }
-                }
-
-                ArchiveAction::Stats { stale_days } => {
-                    let manager = ArchiveManager::new(project_path, stale_days);
-                    let stats = manager.get_stats()?;
-                    println!("{}", serde_json::to_string_pretty(&stats)?);
-                }
-
-                ArchiveAction::ListStale { stale_days } => {
-                    let manager = ArchiveManager::new(project_path, stale_days);
-                    let stale_files = manager.find_stale_files()?;
-
-                    if stale_files.is_empty() {
-                        println!("{} No stale files found (threshold: {} days)", "OK".green(), stale_days);
-                    } else {
-                        println!(
-                            "{} Found {} stale files (threshold: {} days):\n",
-                            "Warning:".yellow().bold(),
-                            stale_files.len(),
-                            stale_days
-                        );
-                        for file in &stale_files {
-                            println!("  {} ({} days old)", file.original_path, file.age_days);
-                        }
-                    }
-                }
-
-                ArchiveAction::Restore { path } => {
-                    let manager = ArchiveManager::new(project_path, 90);
-                    let restored_path = manager.restore(&path)?;
+                } else {
                     println!(
-                        "{} Restored: {}",
-                        "OK".green().bold(),
-                        restored_path.display()
+                        "{} Found {} stale files (threshold: {} days):\n",
+                        "Warning:".yellow().bold(),
+                        stale_files.len(),
+                        stale_days
                     );
+                    for file in &stale_files {
+                        println!("  {} ({} days old)", file.original_path, file.age_days);
+                    }
                 }
             }
-        }
 
-        Commands::Bootstrap { force, no_git_hooks, languages, detect_only } => {
+            ArchiveAction::Restore { path } => {
+                let manager = ArchiveManager::new(project_path, 90);
+                let restored_path = manager.restore(&path)?;
+                println!(
+                    "{} Restored: {}",
+                    "OK".green().bold(),
+                    restored_path.display()
+                );
+            }
+        },
+
+        Commands::Bootstrap {
+            force,
+            no_git_hooks,
+            languages,
+            detect_only,
+        } => {
             // Parse language overrides if provided
             let parsed_languages: Vec<ralph::Language> = if languages.is_empty() {
                 Vec::new()
@@ -454,12 +467,7 @@ async fn main() -> anyhow::Result<()> {
                     match lang_str.parse::<ralph::Language>() {
                         Ok(lang) => result.push(lang),
                         Err(e) => {
-                            eprintln!(
-                                "{} {}: {}",
-                                "Error:".red().bold(),
-                                e,
-                                lang_str
-                            );
+                            eprintln!("{} {}: {}", "Error:".red().bold(), e, lang_str);
                             std::process::exit(1);
                         }
                     }
@@ -487,10 +495,7 @@ async fn main() -> anyhow::Result<()> {
                     // Display detected languages
                     let detected = bootstrap.detect_languages();
                     if detected.is_empty() {
-                        println!(
-                            "\n{} No programming languages detected",
-                            "Note:".yellow()
-                        );
+                        println!("\n{} No programming languages detected", "Note:".yellow());
                         println!("   This is an empty or unrecognized project type");
                     } else {
                         println!("\n{} Detected languages:", "Languages:".cyan());
@@ -526,10 +531,7 @@ async fn main() -> anyhow::Result<()> {
 
             bootstrap.run(force, !no_git_hooks)?;
 
-            println!(
-                "\n{} Automation suite bootstrapped!",
-                "OK".green().bold()
-            );
+            println!("\n{} Automation suite bootstrapped!", "OK".green().bold());
             println!("\nQuick start:");
             println!("  1. Edit IMPLEMENTATION_PLAN.md with your tasks");
             println!("  2. Run: ralph loop plan --max-iterations 5");
@@ -563,8 +565,8 @@ async fn main() -> anyhow::Result<()> {
                 "docs-{}.txt",
                 chrono::Utc::now().format("%Y%m%d-%H%M%S")
             ));
-            let docs_builder = ContextBuilder::new(project_path.clone())
-                .mode(context::ContextMode::Docs);
+            let docs_builder =
+                ContextBuilder::new(project_path.clone()).mode(context::ContextMode::Docs);
             let _ = docs_builder.build(&docs_output)?;
 
             println!(
@@ -597,7 +599,11 @@ async fn main() -> anyhow::Result<()> {
             let analytics = Analytics::new(project_path);
 
             match action {
-                AnalyticsAction::Sessions { last, detailed, json } => {
+                AnalyticsAction::Sessions {
+                    last,
+                    detailed,
+                    json,
+                } => {
                     let sessions = analytics.get_recent_sessions(last)?;
 
                     if json {
@@ -636,7 +642,11 @@ async fn main() -> anyhow::Result<()> {
                     println!("{} Analytics data cleared", "OK".green().bold());
                 }
 
-                AnalyticsAction::Log { session, event, data } => {
+                AnalyticsAction::Log {
+                    session,
+                    event,
+                    data,
+                } => {
                     let data: serde_json::Value = serde_json::from_str(&data)
                         .unwrap_or_else(|_| serde_json::json!({"raw": data}));
 
@@ -693,7 +703,11 @@ async fn main() -> anyhow::Result<()> {
                     let findings = hooks::scan_file_for_secrets(&path)?;
 
                     if findings.is_empty() {
-                        println!("{} No secrets found in {}", "OK".green().bold(), path.display());
+                        println!(
+                            "{} No secrets found in {}",
+                            "OK".green().bold(),
+                            path.display()
+                        );
                     } else {
                         eprintln!(
                             "{} Found {} potential secrets in {}:",
@@ -740,7 +754,10 @@ async fn main() -> anyhow::Result<()> {
                         println!("   PreToolUse hooks: {}", config.hooks.pre_tool_use.len());
                         println!("   PostToolUse hooks: {}", config.hooks.post_tool_use.len());
                         println!("   Stop hooks: {}", config.hooks.stop.len());
-                        println!("   SessionStart hooks: {}", config.hooks.session_start.len());
+                        println!(
+                            "   SessionStart hooks: {}",
+                            config.hooks.session_start.len()
+                        );
                     }
                 }
 
@@ -760,7 +777,10 @@ async fn main() -> anyhow::Result<()> {
                             }
                         }
                     } else {
-                        println!("{} settings.json not found (using defaults)", "Info:".blue());
+                        println!(
+                            "{} settings.json not found (using defaults)",
+                            "Info:".blue()
+                        );
                     }
 
                     // Check CLAUDE.md
@@ -800,11 +820,26 @@ async fn main() -> anyhow::Result<()> {
                 ConfigAction::Paths => {
                     println!("\n{} Configuration Paths", "Config:".cyan().bold());
                     println!("{}", "─".repeat(40));
-                    println!("   Settings: {}", ProjectConfig::settings_path(&project_path).display());
-                    println!("   CLAUDE.md: {}", ProjectConfig::claude_md_path(&project_path).display());
-                    println!("   Analytics: {}", ProjectConfig::analytics_dir(&project_path).display());
-                    println!("   Archive: {}", ProjectConfig::archive_dir(&project_path).display());
-                    println!("   Analysis: {}", ProjectConfig::analysis_dir(&project_path).display());
+                    println!(
+                        "   Settings: {}",
+                        ProjectConfig::settings_path(&project_path).display()
+                    );
+                    println!(
+                        "   CLAUDE.md: {}",
+                        ProjectConfig::claude_md_path(&project_path).display()
+                    );
+                    println!(
+                        "   Analytics: {}",
+                        ProjectConfig::analytics_dir(&project_path).display()
+                    );
+                    println!(
+                        "   Archive: {}",
+                        ProjectConfig::archive_dir(&project_path).display()
+                    );
+                    println!(
+                        "   Analysis: {}",
+                        ProjectConfig::analysis_dir(&project_path).display()
+                    );
                 }
             }
         }

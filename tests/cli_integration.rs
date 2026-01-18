@@ -449,7 +449,8 @@ fn test_hook_validate_respects_config_allow_list() {
     std::fs::write(
         temp.path().join(".claude/settings.json"),
         r#"{"permissions": {"allow": ["Bash(git *)"], "deny": []}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     // git status should be allowed
     ralph()
@@ -483,7 +484,8 @@ fn test_hook_validate_respects_config_deny_list() {
     std::fs::write(
         temp.path().join(".claude/settings.json"),
         r#"{"permissions": {"allow": ["Bash(*)"], "deny": ["Bash(npm *)"]}}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     // git status should be allowed
     ralph()
@@ -544,7 +546,9 @@ fn test_bootstrap_detect_only_empty_project() {
         .arg("--detect-only")
         .assert()
         .success()
-        .stdout(predicate::str::contains("No programming languages detected"));
+        .stdout(predicate::str::contains(
+            "No programming languages detected",
+        ));
 
     // Verify NO files were created
     assert!(!temp.path().join(".claude").exists());

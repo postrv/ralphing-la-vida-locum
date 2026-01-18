@@ -271,10 +271,7 @@ impl Bootstrap {
         let detected = self.detect_languages();
 
         if detected.is_empty() {
-            println!(
-                "   {} No programming languages detected",
-                "Note:".yellow()
-            );
+            println!("   {} No programming languages detected", "Note:".yellow());
             println!("   This is an empty or unrecognized project type");
             return;
         }
@@ -415,10 +412,22 @@ impl Bootstrap {
     /// Create hook scripts
     fn create_hooks(&self, force: bool) -> Result<()> {
         let hooks = [
-            ("security-filter.sh", include_str!("../templates/hooks/security-filter.sh")),
-            ("post-edit-scan.sh", include_str!("../templates/hooks/post-edit-scan.sh")),
-            ("end-of-turn.sh", include_str!("../templates/hooks/end-of-turn.sh")),
-            ("session-init.sh", include_str!("../templates/hooks/session-init.sh")),
+            (
+                "security-filter.sh",
+                include_str!("../templates/hooks/security-filter.sh"),
+            ),
+            (
+                "post-edit-scan.sh",
+                include_str!("../templates/hooks/post-edit-scan.sh"),
+            ),
+            (
+                "end-of-turn.sh",
+                include_str!("../templates/hooks/end-of-turn.sh"),
+            ),
+            (
+                "session-init.sh",
+                include_str!("../templates/hooks/session-init.sh"),
+            ),
         ];
 
         for (name, content) in hooks {
@@ -442,8 +451,14 @@ impl Bootstrap {
     /// Create skill definitions
     fn create_skills(&self, force: bool) -> Result<()> {
         let skills = [
-            ("docs-sync.md", include_str!("../templates/skills/docs-sync.md")),
-            ("project-analyst.md", include_str!("../templates/skills/project-analyst.md")),
+            (
+                "docs-sync.md",
+                include_str!("../templates/skills/docs-sync.md"),
+            ),
+            (
+                "project-analyst.md",
+                include_str!("../templates/skills/project-analyst.md"),
+            ),
         ];
 
         for (name, content) in skills {
@@ -460,9 +475,18 @@ impl Bootstrap {
     /// Create agent definitions
     fn create_agents(&self, force: bool) -> Result<()> {
         let agents = [
-            ("adversarial-reviewer.md", include_str!("../templates/agents/adversarial-reviewer.md")),
-            ("security-auditor.md", include_str!("../templates/agents/security-auditor.md")),
-            ("supervisor.md", include_str!("../templates/agents/supervisor.md")),
+            (
+                "adversarial-reviewer.md",
+                include_str!("../templates/agents/adversarial-reviewer.md"),
+            ),
+            (
+                "security-auditor.md",
+                include_str!("../templates/agents/security-auditor.md"),
+            ),
+            (
+                "supervisor.md",
+                include_str!("../templates/agents/supervisor.md"),
+            ),
         ];
 
         for (name, content) in agents {
@@ -479,9 +503,18 @@ impl Bootstrap {
     /// Create prompt templates
     fn create_prompts(&self, force: bool) -> Result<()> {
         let prompts = [
-            ("PROMPT_plan.md", include_str!("../templates/PROMPT_plan.md")),
-            ("PROMPT_build.md", include_str!("../templates/PROMPT_build.md")),
-            ("PROMPT_debug.md", include_str!("../templates/PROMPT_debug.md")),
+            (
+                "PROMPT_plan.md",
+                include_str!("../templates/PROMPT_plan.md"),
+            ),
+            (
+                "PROMPT_build.md",
+                include_str!("../templates/PROMPT_build.md"),
+            ),
+            (
+                "PROMPT_debug.md",
+                include_str!("../templates/PROMPT_debug.md"),
+            ),
         ];
 
         for (name, content) in prompts {
@@ -542,8 +575,14 @@ ralph bootstrap  # Set up project structure
     /// Create documentation templates
     fn create_doc_templates(&self, force: bool) -> Result<()> {
         let templates = [
-            ("adr-template.md", include_str!("../templates/docs/adr-template.md")),
-            ("implementation-template.md", include_str!("../templates/docs/implementation-template.md")),
+            (
+                "adr-template.md",
+                include_str!("../templates/docs/adr-template.md"),
+            ),
+            (
+                "implementation-template.md",
+                include_str!("../templates/docs/implementation-template.md"),
+            ),
         ];
 
         for (name, content) in templates {
@@ -557,7 +596,10 @@ ralph bootstrap  # Set up project structure
         // Create architecture.md and api.md stubs
         let arch_path = self.project_dir.join("docs/architecture.md");
         if !arch_path.exists() {
-            fs::write(&arch_path, include_str!("../templates/docs/architecture.md"))?;
+            fs::write(
+                &arch_path,
+                include_str!("../templates/docs/architecture.md"),
+            )?;
             println!("   Created: docs/architecture.md");
         }
 
@@ -597,9 +639,7 @@ sbom.json
         if gitignore_path.exists() {
             let content = fs::read_to_string(&gitignore_path)?;
             if !content.contains("# Ralph Automation Suite") {
-                let mut file = fs::OpenOptions::new()
-                    .append(true)
-                    .open(&gitignore_path)?;
+                let mut file = fs::OpenOptions::new().append(true).open(&gitignore_path)?;
                 use std::io::Write;
                 write!(file, "{}", additions)?;
                 println!("   Updated: .gitignore");
@@ -625,8 +665,14 @@ sbom.json
         }
 
         let hooks = [
-            ("pre-commit", include_str!("../templates/git-hooks/pre-commit")),
-            ("post-commit", include_str!("../templates/git-hooks/post-commit")),
+            (
+                "pre-commit",
+                include_str!("../templates/git-hooks/pre-commit"),
+            ),
+            (
+                "post-commit",
+                include_str!("../templates/git-hooks/post-commit"),
+            ),
         ];
 
         for (name, content) in hooks {
@@ -690,7 +736,10 @@ mod tests {
 
         bootstrap.run(false, false).unwrap();
 
-        assert!(temp.path().join(".claude/hooks/security-filter.sh").exists());
+        assert!(temp
+            .path()
+            .join(".claude/hooks/security-filter.sh")
+            .exists());
         assert!(temp.path().join(".claude/hooks/post-edit-scan.sh").exists());
         assert!(temp.path().join(".claude/hooks/end-of-turn.sh").exists());
         assert!(temp.path().join(".claude/hooks/session-init.sh").exists());
@@ -704,7 +753,10 @@ mod tests {
         bootstrap.run(false, false).unwrap();
 
         assert!(temp.path().join(".claude/skills/docs-sync.md").exists());
-        assert!(temp.path().join(".claude/skills/project-analyst.md").exists());
+        assert!(temp
+            .path()
+            .join(".claude/skills/project-analyst.md")
+            .exists());
     }
 
     #[test]
@@ -714,8 +766,14 @@ mod tests {
 
         bootstrap.run(false, false).unwrap();
 
-        assert!(temp.path().join(".claude/agents/adversarial-reviewer.md").exists());
-        assert!(temp.path().join(".claude/agents/security-auditor.md").exists());
+        assert!(temp
+            .path()
+            .join(".claude/agents/adversarial-reviewer.md")
+            .exists());
+        assert!(temp
+            .path()
+            .join(".claude/agents/security-auditor.md")
+            .exists());
         assert!(temp.path().join(".claude/agents/supervisor.md").exists());
     }
 
@@ -749,7 +807,10 @@ mod tests {
         bootstrap.run(false, false).unwrap();
 
         assert!(temp.path().join("docs/templates/adr-template.md").exists());
-        assert!(temp.path().join("docs/templates/implementation-template.md").exists());
+        assert!(temp
+            .path()
+            .join("docs/templates/implementation-template.md")
+            .exists());
         assert!(temp.path().join("docs/architecture.md").exists());
         assert!(temp.path().join("docs/api.md").exists());
     }
@@ -824,7 +885,9 @@ mod tests {
         let detected = bootstrap.detect_languages();
 
         assert!(!detected.is_empty(), "Should detect languages");
-        let rust = detected.iter().find(|d| d.language == crate::bootstrap::language::Language::Rust);
+        let rust = detected
+            .iter()
+            .find(|d| d.language == crate::bootstrap::language::Language::Rust);
         assert!(rust.is_some(), "Should detect Rust");
         assert!(rust.unwrap().primary, "Rust should be primary");
     }
@@ -834,13 +897,19 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Create a Python project
-        std::fs::write(temp.path().join("pyproject.toml"), "[project]\nname = \"test\"").unwrap();
+        std::fs::write(
+            temp.path().join("pyproject.toml"),
+            "[project]\nname = \"test\"",
+        )
+        .unwrap();
         std::fs::write(temp.path().join("main.py"), "print('hello')").unwrap();
 
         let bootstrap = Bootstrap::new(temp.path().to_path_buf());
         let detected = bootstrap.detect_languages();
 
-        let python = detected.iter().find(|d| d.language == crate::bootstrap::language::Language::Python);
+        let python = detected
+            .iter()
+            .find(|d| d.language == crate::bootstrap::language::Language::Python);
         assert!(python.is_some(), "Should detect Python");
         assert!(python.unwrap().primary, "Python should be primary");
     }
@@ -852,7 +921,10 @@ mod tests {
         let bootstrap = Bootstrap::new(temp.path().to_path_buf());
         let detected = bootstrap.detect_languages();
 
-        assert!(detected.is_empty(), "Empty project should have no detected languages");
+        assert!(
+            detected.is_empty(),
+            "Empty project should have no detected languages"
+        );
     }
 
     #[test]
@@ -877,7 +949,10 @@ mod tests {
         let bootstrap = Bootstrap::new(temp.path().to_path_buf());
         let primary = bootstrap.primary_language();
 
-        assert!(primary.is_none(), "Empty project should have no primary language");
+        assert!(
+            primary.is_none(),
+            "Empty project should have no primary language"
+        );
     }
 
     #[test]
@@ -898,7 +973,9 @@ mod tests {
 
         // Verify TypeScript was detected
         let detected = bootstrap.detect_languages();
-        let ts = detected.iter().find(|d| d.language == crate::bootstrap::language::Language::TypeScript);
+        let ts = detected
+            .iter()
+            .find(|d| d.language == crate::bootstrap::language::Language::TypeScript);
         assert!(ts.is_some(), "Should detect TypeScript");
     }
 
@@ -914,8 +991,8 @@ mod tests {
         std::fs::write(temp.path().join("main.py"), "print('hello')").unwrap();
 
         // But override to use Rust
-        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
-            .with_languages(vec![Language::Rust]);
+        let bootstrap =
+            Bootstrap::new(temp.path().to_path_buf()).with_languages(vec![Language::Rust]);
 
         let languages = bootstrap.effective_languages();
         assert_eq!(languages.len(), 1);
@@ -926,8 +1003,11 @@ mod tests {
     fn test_bootstrap_with_multiple_language_overrides() {
         let temp = TempDir::new().unwrap();
 
-        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
-            .with_languages(vec![Language::Rust, Language::Python, Language::TypeScript]);
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf()).with_languages(vec![
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+        ]);
 
         let languages = bootstrap.effective_languages();
         assert_eq!(languages.len(), 3);
@@ -962,8 +1042,7 @@ mod tests {
         std::fs::write(temp.path().join("src/main.rs"), "fn main() {}").unwrap();
 
         // Empty override should fall back to detection
-        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
-            .with_languages(vec![]);
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf()).with_languages(vec![]);
 
         let languages = bootstrap.effective_languages();
         // Should detect Rust since override is empty
@@ -975,12 +1054,15 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Override to use Python even though no Python files exist
-        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
-            .with_languages(vec![Language::Python]);
+        let bootstrap =
+            Bootstrap::new(temp.path().to_path_buf()).with_languages(vec![Language::Python]);
 
         // Should succeed with override
         let result = bootstrap.run(false, false);
-        assert!(result.is_ok(), "Bootstrap with language override should succeed");
+        assert!(
+            result.is_ok(),
+            "Bootstrap with language override should succeed"
+        );
 
         // Verify effective languages
         let languages = bootstrap.effective_languages();
@@ -1008,20 +1090,22 @@ mod tests {
     #[test]
     fn test_generate_mcp_config_for_rust() {
         let temp = TempDir::new().unwrap();
-        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
-            .with_languages(vec![Language::Rust]);
+        let bootstrap =
+            Bootstrap::new(temp.path().to_path_buf()).with_languages(vec![Language::Rust]);
 
         let config = bootstrap.generate_mcp_config();
 
         // Should be valid JSON
-        let parsed: serde_json::Value = serde_json::from_str(&config)
-            .expect("MCP config should be valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&config).expect("MCP config should be valid JSON");
 
         // Should have narsil-mcp server
         assert!(parsed["mcpServers"]["narsil-mcp"].is_object());
 
         // Should have basic flags
-        let args = parsed["mcpServers"]["narsil-mcp"]["args"].as_array().unwrap();
+        let args = parsed["mcpServers"]["narsil-mcp"]["args"]
+            .as_array()
+            .unwrap();
         let args_str: Vec<&str> = args.iter().filter_map(|a| a.as_str()).collect();
         assert!(args_str.contains(&"--git"));
         assert!(args_str.contains(&"--call-graph"));
@@ -1030,8 +1114,8 @@ mod tests {
     #[test]
     fn test_generate_mcp_config_for_python() {
         let temp = TempDir::new().unwrap();
-        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
-            .with_languages(vec![Language::Python]);
+        let bootstrap =
+            Bootstrap::new(temp.path().to_path_buf()).with_languages(vec![Language::Python]);
 
         let config = bootstrap.generate_mcp_config();
         let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
@@ -1043,8 +1127,11 @@ mod tests {
     #[test]
     fn test_generate_mcp_config_for_polyglot() {
         let temp = TempDir::new().unwrap();
-        let bootstrap = Bootstrap::new(temp.path().to_path_buf())
-            .with_languages(vec![Language::Rust, Language::Python, Language::TypeScript]);
+        let bootstrap = Bootstrap::new(temp.path().to_path_buf()).with_languages(vec![
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+        ]);
 
         let config = bootstrap.generate_mcp_config();
         let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
@@ -1053,7 +1140,9 @@ mod tests {
         assert!(parsed["mcpServers"]["narsil-mcp"].is_object());
 
         // Should have standard flags
-        let args = parsed["mcpServers"]["narsil-mcp"]["args"].as_array().unwrap();
+        let args = parsed["mcpServers"]["narsil-mcp"]["args"]
+            .as_array()
+            .unwrap();
         let args_str: Vec<&str> = args.iter().filter_map(|a| a.as_str()).collect();
         assert!(args_str.contains(&"--git"));
     }
@@ -1066,8 +1155,8 @@ mod tests {
         let config = bootstrap.generate_mcp_config();
 
         // Should still be valid JSON with default config
-        let parsed: serde_json::Value = serde_json::from_str(&config)
-            .expect("MCP config should be valid JSON");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&config).expect("MCP config should be valid JSON");
         assert!(parsed["mcpServers"]["narsil-mcp"].is_object());
     }
 }

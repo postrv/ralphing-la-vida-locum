@@ -332,14 +332,23 @@ impl FailureClassifier {
             (r"unresolved import", FailureClass::ImportError),
             (r"cannot find .+ in this scope", FailureClass::ImportError),
             // Lifetime/borrow specific (must come before generic compile errors)
-            (r"borrowed value does not live long enough", FailureClass::LifetimeError),
+            (
+                r"borrowed value does not live long enough",
+                FailureClass::LifetimeError,
+            ),
             (r"cannot borrow .+ as mutable", FailureClass::LifetimeError),
             (r"cannot move out of", FailureClass::LifetimeError),
             (r"lifetime .+ required", FailureClass::LifetimeError),
             (r"does not live long enough", FailureClass::LifetimeError),
             // Trait bounds (must come before generic compile errors)
-            (r"the trait .+ is not implemented", FailureClass::TraitBoundError),
-            (r"trait bound .+ is not satisfied", FailureClass::TraitBoundError),
+            (
+                r"the trait .+ is not implemented",
+                FailureClass::TraitBoundError,
+            ),
+            (
+                r"trait bound .+ is not satisfied",
+                FailureClass::TraitBoundError,
+            ),
             (r"doesn't implement", FailureClass::TraitBoundError),
             // Type inference (must come before generic compile errors)
             (r"type annotations needed", FailureClass::TypeInferenceError),
@@ -351,7 +360,10 @@ impl FailureClassifier {
             (r"left: .+\n.+right:", FailureClass::TestFailure),
             // Clippy warnings (before generic warnings)
             (r"clippy::", FailureClass::ClippyWarning),
-            (r"warning: .+\n.+= note: `#\[warn", FailureClass::ClippyWarning),
+            (
+                r"warning: .+\n.+= note: `#\[warn",
+                FailureClass::ClippyWarning,
+            ),
             // Security findings
             (r"security vulnerability", FailureClass::SecurityFinding),
             (r"CVE-", FailureClass::SecurityFinding),
@@ -379,9 +391,7 @@ impl FailureClassifier {
 
         let compiled: Vec<_> = patterns
             .into_iter()
-            .filter_map(|(pattern, class)| {
-                Regex::new(pattern).ok().map(|re| (re, class))
-            })
+            .filter_map(|(pattern, class)| Regex::new(pattern).ok().map(|re| (re, class)))
             .collect();
 
         Self { patterns: compiled }
@@ -409,8 +419,8 @@ impl FailureClassifier {
             }
         }
 
-        let mut context = FailureContext::new(matched_class, matched_message)
-            .with_raw_output(output);
+        let mut context =
+            FailureContext::new(matched_class, matched_message).with_raw_output(output);
 
         // Try to extract error code
         if let Some(code) = self.extract_error_code(output) {
@@ -455,7 +465,11 @@ impl FailureClassifier {
             let file = caps.get(1)?.as_str();
             let line: u32 = caps.get(2)?.as_str().parse().ok()?;
             let column: u32 = caps.get(3)?.as_str().parse().ok()?;
-            return Some(FailureLocation::new(file).with_line(line).with_column(column));
+            return Some(
+                FailureLocation::new(file)
+                    .with_line(line)
+                    .with_column(column),
+            );
         }
 
         // Try simpler pattern "src/lib.rs:123"
@@ -1074,7 +1088,9 @@ impl TaskDecomposer {
         // Add specific fix sub-task
         match failure.class {
             FailureClass::TestFailure => {
-                subtasks.push(SubTask::new("Read the failing test to understand expected behavior"));
+                subtasks.push(SubTask::new(
+                    "Read the failing test to understand expected behavior",
+                ));
                 subtasks.push(
                     SubTask::new("Identify what the implementation should do differently")
                         .depends_on(subtasks.len() - 1),
@@ -1098,10 +1114,8 @@ impl TaskDecomposer {
                 );
             }
             FailureClass::CompileError => {
-                let mut fix_task = SubTask::new(format!(
-                    "Fix the compilation error: {}",
-                    failure.message
-                ));
+                let mut fix_task =
+                    SubTask::new(format!("Fix the compilation error: {}", failure.message));
                 // Add file context if available
                 if let Some(ref loc) = failure.location {
                     fix_task = fix_task.with_file(loc.file.clone());
@@ -1278,9 +1292,15 @@ mod tests {
 
     #[test]
     fn test_failure_class_description() {
-        assert_eq!(FailureClass::CompileError.description(), "Compilation error");
+        assert_eq!(
+            FailureClass::CompileError.description(),
+            "Compilation error"
+        );
         assert_eq!(FailureClass::TestFailure.description(), "Test failure");
-        assert_eq!(FailureClass::LifetimeError.description(), "Lifetime/borrow error");
+        assert_eq!(
+            FailureClass::LifetimeError.description(),
+            "Lifetime/borrow error"
+        );
     }
 
     #[test]
@@ -1300,8 +1320,14 @@ mod tests {
 
     #[test]
     fn test_failure_class_complexity() {
-        assert!(FailureClass::SyntaxError.complexity_estimate() < FailureClass::LifetimeError.complexity_estimate());
-        assert!(FailureClass::ImportError.complexity_estimate() < FailureClass::TraitBoundError.complexity_estimate());
+        assert!(
+            FailureClass::SyntaxError.complexity_estimate()
+                < FailureClass::LifetimeError.complexity_estimate()
+        );
+        assert!(
+            FailureClass::ImportError.complexity_estimate()
+                < FailureClass::TraitBoundError.complexity_estimate()
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1452,7 +1478,10 @@ mod tests {
         let output = "error[E0308]: mismatched types\nhelp: try using `as` to convert";
 
         let ctx = classifier.classify(output);
-        assert_eq!(ctx.suggestion, Some("try using `as` to convert".to_string()));
+        assert_eq!(
+            ctx.suggestion,
+            Some("try using `as` to convert".to_string())
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -1669,7 +1698,9 @@ mod tests {
         let subtasks = decomposer.decompose("Fix lifetime", &failure);
         assert!(!subtasks.is_empty());
         // Should have context-gathering step for complex errors
-        assert!(subtasks.iter().any(|s| s.description.contains("Read") || s.description.contains("Understand")));
+        assert!(subtasks
+            .iter()
+            .any(|s| s.description.contains("Read") || s.description.contains("Understand")));
     }
 
     #[test]

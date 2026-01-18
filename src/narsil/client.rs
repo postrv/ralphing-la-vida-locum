@@ -190,7 +190,11 @@ pub struct SecurityFinding {
 
 impl SecurityFinding {
     /// Create a new security finding.
-    pub fn new(severity: SecuritySeverity, message: impl Into<String>, file: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        severity: SecuritySeverity,
+        message: impl Into<String>,
+        file: impl Into<PathBuf>,
+    ) -> Self {
         Self {
             severity,
             message: message.into(),
@@ -244,7 +248,10 @@ pub struct ToolResponse {
 impl ToolResponse {
     /// Create a successful response.
     pub fn success(result: serde_json::Value) -> Self {
-        Self { result, error: None }
+        Self {
+            result,
+            error: None,
+        }
     }
 
     /// Create an error response.
@@ -386,7 +393,9 @@ impl NarsilClient {
     /// - Module dependencies
     ///
     /// Returns None if narsil-mcp is not available or CCG export fails.
-    pub fn get_ccg_architecture(&self) -> Result<Option<crate::narsil::CcgArchitecture>, NarsilError> {
+    pub fn get_ccg_architecture(
+        &self,
+    ) -> Result<Option<crate::narsil::CcgArchitecture>, NarsilError> {
         if !self.available {
             return Ok(None);
         }
@@ -665,9 +674,7 @@ impl NarsilClient {
     // CCG Private Methods
     // =========================================================================
 
-    fn invoke_get_ccg_manifest(
-        &self,
-    ) -> Result<Option<crate::narsil::CcgManifest>, NarsilError> {
+    fn invoke_get_ccg_manifest(&self) -> Result<Option<crate::narsil::CcgManifest>, NarsilError> {
         // Try to get project structure and build a manifest from it
         let output = Command::new(&self.config.binary_path)
             .arg("get-project-structure")
@@ -741,10 +748,14 @@ impl NarsilClient {
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as u32;
 
-                manifest = manifest.with_language(lang.clone(), LanguageStats::new(file_count, lines, symbols));
+                manifest = manifest
+                    .with_language(lang.clone(), LanguageStats::new(file_count, lines, symbols));
 
                 // Track primary language by file count
-                if primary.as_ref().is_none_or(|(_, count)| file_count > *count) {
+                if primary
+                    .as_ref()
+                    .is_none_or(|(_, count)| file_count > *count)
+                {
                     primary = Some((lang.clone(), file_count));
                 }
             }
@@ -756,12 +767,16 @@ impl NarsilClient {
 
         // Parse security summary (if available from a separate scan)
         if let Some(security) = value.get("security") {
-            let critical = security.get("critical").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let critical = security
+                .get("critical")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32;
             let high = security.get("high").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             let medium = security.get("medium").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
             let low = security.get("low").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
 
-            manifest = manifest.with_security_summary(SecuritySummary::new(critical, high, medium, low));
+            manifest =
+                manifest.with_security_summary(SecuritySummary::new(critical, high, medium, low));
         }
 
         Ok(Some(manifest))
@@ -829,7 +844,10 @@ impl NarsilClient {
 
         for sym in symbols {
             // Extract module path
-            if let Some(module_path) = sym.get("module").or(sym.get("path")).and_then(|v| v.as_str())
+            if let Some(module_path) = sym
+                .get("module")
+                .or(sym.get("path"))
+                .and_then(|v| v.as_str())
             {
                 // Add module if not seen
                 if !seen_modules.contains(module_path) {
@@ -854,7 +872,10 @@ impl NarsilClient {
 
             // Parse public symbols
             if let Some(name) = sym.get("name").and_then(|v| v.as_str()) {
-                let kind_str = sym.get("kind").and_then(|v| v.as_str()).unwrap_or("function");
+                let kind_str = sym
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("function");
                 let kind = match kind_str.to_lowercase().as_str() {
                     "function" | "fn" => SymbolKind::Function,
                     "method" => SymbolKind::Method,
@@ -883,7 +904,11 @@ impl NarsilClient {
                         symbol = symbol.with_qualified_name(format!("{}::{}", module, name));
                     }
 
-                    if let Some(desc) = sym.get("description").or(sym.get("doc")).and_then(|v| v.as_str()) {
+                    if let Some(desc) = sym
+                        .get("description")
+                        .or(sym.get("doc"))
+                        .and_then(|v| v.as_str())
+                    {
                         symbol = symbol.with_description(desc);
                     }
 
@@ -896,7 +921,8 @@ impl NarsilClient {
 
                 // Detect entry points
                 if name == "main" && kind == SymbolKind::Function {
-                    if let Some(file) = sym.get("file").or(sym.get("path")).and_then(|v| v.as_str()) {
+                    if let Some(file) = sym.get("file").or(sym.get("path")).and_then(|v| v.as_str())
+                    {
                         let mut entry = EntryPoint::new("main", EntryPointKind::Main, file);
                         if let Some(line) = sym.get("line").and_then(|v| v.as_u64()) {
                             entry = entry.with_line(line as u32);
@@ -1274,8 +1300,7 @@ mod tests {
 
     #[test]
     fn test_get_ccg_manifest_returns_none_when_unavailable() {
-        let config = NarsilConfig::new(".")
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(".").with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         let result = client.get_ccg_manifest().unwrap();
@@ -1284,8 +1309,7 @@ mod tests {
 
     #[test]
     fn test_get_ccg_architecture_returns_none_when_unavailable() {
-        let config = NarsilConfig::new(".")
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(".").with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         let result = client.get_ccg_architecture().unwrap();
@@ -1294,8 +1318,7 @@ mod tests {
 
     #[test]
     fn test_export_ccg_returns_none_when_unavailable() {
-        let config = NarsilConfig::new(".")
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(".").with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         let result = client.export_ccg("/tmp/ccg_output").unwrap();

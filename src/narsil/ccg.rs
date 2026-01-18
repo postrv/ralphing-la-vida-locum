@@ -518,11 +518,7 @@ pub struct ModuleDependency {
 
 impl ModuleDependency {
     /// Create a new module dependency.
-    pub fn new(
-        from: impl Into<String>,
-        to: impl Into<String>,
-        kind: DependencyKind,
-    ) -> Self {
+    pub fn new(from: impl Into<String>, to: impl Into<String>, kind: DependencyKind) -> Self {
         Self {
             from: from.into(),
             to: to.into(),
@@ -751,7 +747,11 @@ pub struct CcgConstraint {
 
 impl CcgConstraint {
     /// Create a new constraint.
-    pub fn new(id: impl Into<String>, kind: ConstraintKind, description: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        kind: ConstraintKind,
+        description: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             kind,
@@ -804,7 +804,9 @@ impl CcgConstraint {
             return true; // Applies to all
         }
         self.targets.iter().any(|t| {
-            t == target || target.starts_with(&format!("{}::", t)) || t.ends_with("*") && target.starts_with(t.trim_end_matches('*'))
+            t == target
+                || target.starts_with(&format!("{}::", t))
+                || t.ends_with("*") && target.starts_with(t.trim_end_matches('*'))
         })
     }
 
@@ -818,7 +820,10 @@ impl CcgConstraint {
             format!("{} targets", self.targets.len())
         };
 
-        let value_str = self.value.as_ref().map_or(String::new(), |v| format!(" ({})", v));
+        let value_str = self
+            .value
+            .as_ref()
+            .map_or(String::new(), |v| format!(" ({})", v));
 
         format!(
             "- **{}** [{}]: {} → {}{}",
@@ -909,7 +914,9 @@ impl ConstraintSet {
     /// Check if any blocking constraints exist (error or critical severity).
     pub fn has_blocking(&self) -> bool {
         self.constraints.iter().any(|c| {
-            c.enabled && (c.severity == ConstraintSeverity::Error || c.severity == ConstraintSeverity::Critical)
+            c.enabled
+                && (c.severity == ConstraintSeverity::Error
+                    || c.severity == ConstraintSeverity::Critical)
         })
     }
 
@@ -938,17 +945,17 @@ impl ConstraintSet {
             return String::new();
         }
 
-        let mut lines = vec![
-            "### Active Constraints".to_string(),
-            String::new(),
-        ];
+        let mut lines = vec!["### Active Constraints".to_string(), String::new()];
 
         for constraint in enabled.iter().take(10) {
             lines.push(constraint.to_prompt_string());
         }
 
         if enabled.len() > 10 {
-            lines.push(format!("\n*...and {} more constraints*", enabled.len() - 10));
+            lines.push(format!(
+                "\n*...and {} more constraints*",
+                enabled.len() - 10
+            ));
         }
 
         lines.push(String::new());
@@ -995,29 +1002,30 @@ impl ConstraintSet {
 
             // Check for empty description
             if constraint.description.is_empty() {
-                errors.push(format!("Constraint '{}' has empty description", constraint.id));
+                errors.push(format!(
+                    "Constraint '{}' has empty description",
+                    constraint.id
+                ));
             }
 
             // Check value requirements for specific kinds
             match constraint.kind {
-                ConstraintKind::MaxComplexity | ConstraintKind::MaxParameters | ConstraintKind::MaxLines => {
-                    match &constraint.value {
-                        Some(ConstraintValue::Number(_)) => {}
-                        _ => errors.push(format!(
-                            "Constraint '{}' ({}) requires a numeric value",
-                            constraint.id, constraint.kind
-                        )),
-                    }
-                }
-                ConstraintKind::Prohibited => {
-                    match &constraint.value {
-                        Some(ConstraintValue::String(_)) | Some(ConstraintValue::List(_)) => {}
-                        _ => errors.push(format!(
-                            "Constraint '{}' ({}) requires a string or list value",
-                            constraint.id, constraint.kind
-                        )),
-                    }
-                }
+                ConstraintKind::MaxComplexity
+                | ConstraintKind::MaxParameters
+                | ConstraintKind::MaxLines => match &constraint.value {
+                    Some(ConstraintValue::Number(_)) => {}
+                    _ => errors.push(format!(
+                        "Constraint '{}' ({}) requires a numeric value",
+                        constraint.id, constraint.kind
+                    )),
+                },
+                ConstraintKind::Prohibited => match &constraint.value {
+                    Some(ConstraintValue::String(_)) | Some(ConstraintValue::List(_)) => {}
+                    _ => errors.push(format!(
+                        "Constraint '{}' ({}) requires a string or list value",
+                        constraint.id, constraint.kind
+                    )),
+                },
                 _ => {} // Other kinds don't require specific values
             }
         }
@@ -1088,7 +1096,10 @@ impl ConstraintViolation {
             _ => String::new(),
         };
 
-        let suggestion = self.suggestion.as_ref().map_or(String::new(), |s| format!("\n   💡 {}", s));
+        let suggestion = self
+            .suggestion
+            .as_ref()
+            .map_or(String::new(), |s| format!("\n   💡 {}", s));
 
         format!(
             "⚠️ **{}** violated by `{}`{}: {}{}",
@@ -1152,17 +1163,17 @@ impl ComplianceResult {
             return String::new();
         }
 
-        let mut lines = vec![
-            "### ⚠️ Constraint Violations".to_string(),
-            String::new(),
-        ];
+        let mut lines = vec!["### ⚠️ Constraint Violations".to_string(), String::new()];
 
         for violation in self.violations.iter().take(5) {
             lines.push(violation.to_warning());
         }
 
         if self.violations.len() > 5 {
-            lines.push(format!("\n*...and {} more violations*", self.violations.len() - 5));
+            lines.push(format!(
+                "\n*...and {} more violations*",
+                self.violations.len() - 5
+            ));
         }
 
         lines.push(String::new());
@@ -1185,26 +1196,57 @@ mod tests {
     #[test]
     fn test_constraint_kind_from_str() {
         use std::str::FromStr;
-        assert_eq!(ConstraintKind::from_str("noDirectCalls"), Ok(ConstraintKind::NoDirectCalls));
-        assert_eq!(ConstraintKind::from_str("no_direct_calls"), Ok(ConstraintKind::NoDirectCalls));
-        assert_eq!(ConstraintKind::from_str("maxComplexity"), Ok(ConstraintKind::MaxComplexity));
-        assert_eq!(ConstraintKind::from_str("max_complexity"), Ok(ConstraintKind::MaxComplexity));
-        assert_eq!(ConstraintKind::from_str("maxParameters"), Ok(ConstraintKind::MaxParameters));
-        assert_eq!(ConstraintKind::from_str("maxLines"), Ok(ConstraintKind::MaxLines));
-        assert_eq!(ConstraintKind::from_str("requireDocs"), Ok(ConstraintKind::RequireDocs));
-        assert_eq!(ConstraintKind::from_str("prohibited"), Ok(ConstraintKind::Prohibited));
+        assert_eq!(
+            ConstraintKind::from_str("noDirectCalls"),
+            Ok(ConstraintKind::NoDirectCalls)
+        );
+        assert_eq!(
+            ConstraintKind::from_str("no_direct_calls"),
+            Ok(ConstraintKind::NoDirectCalls)
+        );
+        assert_eq!(
+            ConstraintKind::from_str("maxComplexity"),
+            Ok(ConstraintKind::MaxComplexity)
+        );
+        assert_eq!(
+            ConstraintKind::from_str("max_complexity"),
+            Ok(ConstraintKind::MaxComplexity)
+        );
+        assert_eq!(
+            ConstraintKind::from_str("maxParameters"),
+            Ok(ConstraintKind::MaxParameters)
+        );
+        assert_eq!(
+            ConstraintKind::from_str("maxLines"),
+            Ok(ConstraintKind::MaxLines)
+        );
+        assert_eq!(
+            ConstraintKind::from_str("requireDocs"),
+            Ok(ConstraintKind::RequireDocs)
+        );
+        assert_eq!(
+            ConstraintKind::from_str("prohibited"),
+            Ok(ConstraintKind::Prohibited)
+        );
         assert!(ConstraintKind::from_str("unknown").is_err());
     }
 
     #[test]
     fn test_constraint_kind_display() {
-        assert_eq!(format!("{}", ConstraintKind::NoDirectCalls), "noDirectCalls");
-        assert_eq!(format!("{}", ConstraintKind::MaxComplexity), "maxComplexity");
+        assert_eq!(
+            format!("{}", ConstraintKind::NoDirectCalls),
+            "noDirectCalls"
+        );
+        assert_eq!(
+            format!("{}", ConstraintKind::MaxComplexity),
+            "maxComplexity"
+        );
     }
 
     #[test]
     fn test_constraint_new() {
-        let constraint = CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep complexity low");
+        let constraint =
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep complexity low");
         assert_eq!(constraint.id, "c1");
         assert_eq!(constraint.kind, ConstraintKind::MaxComplexity);
         assert_eq!(constraint.description, "Keep complexity low");
@@ -1269,9 +1311,10 @@ mod tests {
 
     #[test]
     fn test_constraint_to_prompt_string() {
-        let constraint = CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep complexity low")
-            .with_target("process_request")
-            .with_value(ConstraintValue::Number(10));
+        let constraint =
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep complexity low")
+                .with_target("process_request")
+                .with_value(ConstraintValue::Number(10));
 
         let prompt = constraint.to_prompt_string();
         assert!(prompt.contains("maxComplexity"));
@@ -1292,23 +1335,36 @@ mod tests {
 
     #[test]
     fn test_constraint_set_with_constraint() {
-        let set = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test"));
+        let set = ConstraintSet::new().with_constraint(CcgConstraint::new(
+            "c1",
+            ConstraintKind::MaxComplexity,
+            "Test",
+        ));
         assert_eq!(set.len(), 1);
     }
 
     #[test]
     fn test_constraint_set_add() {
         let mut set = ConstraintSet::new();
-        set.add(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test"));
+        set.add(CcgConstraint::new(
+            "c1",
+            ConstraintKind::MaxComplexity,
+            "Test",
+        ));
         assert_eq!(set.len(), 1);
     }
 
     #[test]
     fn test_constraint_set_enabled() {
         let set = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Enabled"))
-            .with_constraint(CcgConstraint::new("c2", ConstraintKind::MaxLines, "Disabled").disabled());
+            .with_constraint(CcgConstraint::new(
+                "c1",
+                ConstraintKind::MaxComplexity,
+                "Enabled",
+            ))
+            .with_constraint(
+                CcgConstraint::new("c2", ConstraintKind::MaxLines, "Disabled").disabled(),
+            );
 
         let enabled: Vec<_> = set.enabled().collect();
         assert_eq!(enabled.len(), 1);
@@ -1322,9 +1378,7 @@ mod tests {
                 CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "For core")
                     .with_target("core::*"),
             )
-            .with_constraint(
-                CcgConstraint::new("c2", ConstraintKind::MaxLines, "Global"),
-            );
+            .with_constraint(CcgConstraint::new("c2", ConstraintKind::MaxLines, "Global"));
 
         let core_constraints = set.for_target("core::process");
         assert_eq!(core_constraints.len(), 2);
@@ -1337,8 +1391,16 @@ mod tests {
     #[test]
     fn test_constraint_set_by_kind() {
         let set = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test1"))
-            .with_constraint(CcgConstraint::new("c2", ConstraintKind::MaxComplexity, "Test2"))
+            .with_constraint(CcgConstraint::new(
+                "c1",
+                ConstraintKind::MaxComplexity,
+                "Test1",
+            ))
+            .with_constraint(CcgConstraint::new(
+                "c2",
+                ConstraintKind::MaxComplexity,
+                "Test2",
+            ))
             .with_constraint(CcgConstraint::new("c3", ConstraintKind::MaxLines, "Test3"));
 
         let complexity = set.by_kind(ConstraintKind::MaxComplexity);
@@ -1347,22 +1409,28 @@ mod tests {
 
     #[test]
     fn test_constraint_set_has_blocking() {
-        let non_blocking = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test"));
+        let non_blocking = ConstraintSet::new().with_constraint(CcgConstraint::new(
+            "c1",
+            ConstraintKind::MaxComplexity,
+            "Test",
+        ));
         assert!(!non_blocking.has_blocking());
 
-        let blocking = ConstraintSet::new()
-            .with_constraint(
-                CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test")
-                    .with_severity(ConstraintSeverity::Error),
-            );
+        let blocking = ConstraintSet::new().with_constraint(
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test")
+                .with_severity(ConstraintSeverity::Error),
+        );
         assert!(blocking.has_blocking());
     }
 
     #[test]
     fn test_constraint_set_count_by_severity() {
         let set = ConstraintSet::new()
-            .with_constraint(CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Test1"))
+            .with_constraint(CcgConstraint::new(
+                "c1",
+                ConstraintKind::MaxComplexity,
+                "Test1",
+            ))
             .with_constraint(
                 CcgConstraint::new("c2", ConstraintKind::MaxLines, "Test2")
                     .with_severity(ConstraintSeverity::Error),
@@ -1408,10 +1476,17 @@ mod tests {
         );
 
         // Missing value for maxComplexity
-        set.add(CcgConstraint::new("c2", ConstraintKind::MaxComplexity, "Missing value"));
+        set.add(CcgConstraint::new(
+            "c2",
+            ConstraintKind::MaxComplexity,
+            "Missing value",
+        ));
 
         // Empty description
-        set.add(CcgConstraint::new("c3", ConstraintKind::MaxLines, "").with_value(ConstraintValue::Number(100)));
+        set.add(
+            CcgConstraint::new("c3", ConstraintKind::MaxLines, "")
+                .with_value(ConstraintValue::Number(100)),
+        );
 
         let errors = set.validate();
         assert_eq!(errors.len(), 2);
@@ -1419,11 +1494,10 @@ mod tests {
 
     #[test]
     fn test_constraint_set_to_prompt_section() {
-        let set = ConstraintSet::new()
-            .with_constraint(
-                CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep it simple")
-                    .with_value(ConstraintValue::Number(10)),
-            );
+        let set = ConstraintSet::new().with_constraint(
+            CcgConstraint::new("c1", ConstraintKind::MaxComplexity, "Keep it simple")
+                .with_value(ConstraintValue::Number(10)),
+        );
 
         let section = set.to_prompt_section();
         assert!(section.contains("Active Constraints"));
@@ -1444,8 +1518,8 @@ mod tests {
 
     #[test]
     fn test_constraint_violation_with_location() {
-        let violation = ConstraintViolation::new("c1", "process", "Error")
-            .with_location("src/main.rs", 42);
+        let violation =
+            ConstraintViolation::new("c1", "process", "Error").with_location("src/main.rs", 42);
         assert_eq!(violation.file, Some("src/main.rs".to_string()));
         assert_eq!(violation.line, Some(42));
     }
@@ -1477,9 +1551,7 @@ mod tests {
 
     #[test]
     fn test_compliance_result_failed() {
-        let violations = vec![
-            ConstraintViolation::new("c1", "process", "Error"),
-        ];
+        let violations = vec![ConstraintViolation::new("c1", "process", "Error")];
         let result = ComplianceResult::failed(violations, 5);
         assert!(!result.compliant);
         assert_eq!(result.violations.len(), 1);
@@ -1562,23 +1634,23 @@ mod tests {
         let no_issues = CcgManifest::default();
         assert!(!no_issues.has_blocking_issues());
 
-        let with_high = CcgManifest::default()
-            .with_security_summary(SecuritySummary::new(0, 1, 0, 0));
+        let with_high =
+            CcgManifest::default().with_security_summary(SecuritySummary::new(0, 1, 0, 0));
         assert!(with_high.has_blocking_issues());
 
-        let with_critical = CcgManifest::default()
-            .with_security_summary(SecuritySummary::new(1, 0, 0, 0));
+        let with_critical =
+            CcgManifest::default().with_security_summary(SecuritySummary::new(1, 0, 0, 0));
         assert!(with_critical.has_blocking_issues());
 
-        let only_medium = CcgManifest::default()
-            .with_security_summary(SecuritySummary::new(0, 0, 5, 0));
+        let only_medium =
+            CcgManifest::default().with_security_summary(SecuritySummary::new(0, 0, 5, 0));
         assert!(!only_medium.has_blocking_issues());
     }
 
     #[test]
     fn test_ccg_manifest_total_security_issues() {
-        let manifest = CcgManifest::default()
-            .with_security_summary(SecuritySummary::new(1, 2, 3, 4));
+        let manifest =
+            CcgManifest::default().with_security_summary(SecuritySummary::new(1, 2, 3, 4));
         assert_eq!(manifest.total_security_issues(), 10);
     }
 
@@ -1687,15 +1759,9 @@ mod tests {
     #[test]
     fn test_ccg_architecture_public_api_for_module() {
         let arch = CcgArchitecture::new()
-            .with_public_symbol(
-                PublicSymbol::new("foo", SymbolKind::Function).with_module("core"),
-            )
-            .with_public_symbol(
-                PublicSymbol::new("bar", SymbolKind::Function).with_module("utils"),
-            )
-            .with_public_symbol(
-                PublicSymbol::new("baz", SymbolKind::Function).with_module("core"),
-            );
+            .with_public_symbol(PublicSymbol::new("foo", SymbolKind::Function).with_module("core"))
+            .with_public_symbol(PublicSymbol::new("bar", SymbolKind::Function).with_module("utils"))
+            .with_public_symbol(PublicSymbol::new("baz", SymbolKind::Function).with_module("core"));
 
         let core_symbols = arch.public_api_for_module("core");
         assert_eq!(core_symbols.len(), 2);
@@ -1703,8 +1769,7 @@ mod tests {
 
     #[test]
     fn test_ccg_architecture_serialization() {
-        let arch = CcgArchitecture::new()
-            .with_module(Module::new("test", "src/test"));
+        let arch = CcgArchitecture::new().with_module(Module::new("test", "src/test"));
 
         let json = serde_json::to_string(&arch).unwrap();
         let deserialized: CcgArchitecture = serde_json::from_str(&json).unwrap();

@@ -61,6 +61,7 @@ pub mod context;
 pub mod templates;
 
 // Re-export commonly used types for convenience
+pub use antipatterns::{AntiPatternDetector, DetectorConfig, IterationSummary};
 pub use assembler::{AssemblerConfig, PromptAssembler};
 pub use builder::{DynamicPromptBuilder, SectionBuilder};
 pub use context::{
@@ -69,4 +70,3 @@ pub use context::{
     QualityGateStatus, SessionStats, TaskPhase,
 };
 pub use templates::{PromptTemplates, Template, TemplateMarker};
-pub use antipatterns::{AntiPatternDetector, DetectorConfig, IterationSummary};

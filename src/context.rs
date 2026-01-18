@@ -1,9 +1,9 @@
 //! Context builder for generating LLM-ready project context bundles.
 
-use ralph::config::{default_ignore_dirs, default_ignore_files, extensions};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
+use ralph::config::{default_ignore_dirs, default_ignore_files, extensions};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs::{self, File};
@@ -73,8 +73,14 @@ impl ContextBuilder {
             include_narsil: true,
             stale_threshold_days: 90,
             max_file_size_kb: 500,
-            ignore_dirs: default_ignore_dirs().iter().map(|s: &&str| s.to_string()).collect(),
-            ignore_files: default_ignore_files().iter().map(|s: &&str| s.to_string()).collect(),
+            ignore_dirs: default_ignore_dirs()
+                .iter()
+                .map(|s: &&str| s.to_string())
+                .collect(),
+            ignore_files: default_ignore_files()
+                .iter()
+                .map(|s: &&str| s.to_string())
+                .collect(),
         }
     }
 
@@ -209,7 +215,9 @@ impl ContextBuilder {
         files.sort_by(|a, b| {
             let a_priority = self.file_priority(a.path());
             let b_priority = self.file_priority(b.path());
-            a_priority.cmp(&b_priority).then_with(|| a.path().cmp(b.path()))
+            a_priority
+                .cmp(&b_priority)
+                .then_with(|| a.path().cmp(b.path()))
         });
 
         for entry in files {
@@ -230,7 +238,9 @@ impl ContextBuilder {
                     continue;
                 }
 
-                let rel_path = self.relative_path(path).unwrap_or_else(|| path.display().to_string());
+                let rel_path = self
+                    .relative_path(path)
+                    .unwrap_or_else(|| path.display().to_string());
                 let is_stale = self.is_file_stale(path);
                 let age_days = self.file_age_days(path);
 
@@ -292,7 +302,10 @@ impl ContextBuilder {
 
     /// Check if file should be included
     fn should_include_file(&self, path: &Path, extensions: &[&str]) -> bool {
-        let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default();
 
         // Skip hidden files
         if name.starts_with('.') {

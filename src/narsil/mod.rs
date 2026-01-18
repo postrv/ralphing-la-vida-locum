@@ -151,10 +151,14 @@ mod tests {
 
     #[test]
     fn test_security_finding_builder() {
-        let finding = SecurityFinding::new(SecuritySeverity::Critical, "XSS vulnerability", "src/web.rs")
-            .with_line(42)
-            .with_rule_id("CWE-79")
-            .with_suggestion("Use HTML escaping");
+        let finding = SecurityFinding::new(
+            SecuritySeverity::Critical,
+            "XSS vulnerability",
+            "src/web.rs",
+        )
+        .with_line(42)
+        .with_rule_id("CWE-79")
+        .with_suggestion("Use HTML escaping");
 
         assert_eq!(finding.line, Some(42));
         assert_eq!(finding.rule_id, Some("CWE-79".to_string()));
@@ -205,8 +209,7 @@ mod tests {
     #[test]
     fn test_narsil_client_is_available_returns_false_when_not_installed() {
         // This test verifies graceful handling when narsil-mcp is not installed
-        let config = NarsilConfig::new(".")
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(".").with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         assert!(!client.is_available());
@@ -214,8 +217,7 @@ mod tests {
 
     #[test]
     fn test_narsil_client_scan_security_returns_empty_when_unavailable() {
-        let config = NarsilConfig::new(".")
-            .with_binary_path("/nonexistent/narsil-mcp");
+        let config = NarsilConfig::new(".").with_binary_path("/nonexistent/narsil-mcp");
         let client = NarsilClient::new(config).unwrap();
 
         // Should return empty vec, not an error

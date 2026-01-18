@@ -173,8 +173,7 @@ impl TemplateRegistry {
 
     /// Registers a language-specific template.
     fn register(&mut self, language: Language, kind: TemplateKind, content: &str) {
-        self.templates
-            .insert((language, kind), content.to_string());
+        self.templates.insert((language, kind), content.to_string());
     }
 
     /// Loads default templates from the templates directory.
@@ -1055,8 +1054,10 @@ mod tests {
         let registry = TemplateRegistry::new();
         let template = registry.get(TemplateKind::PromptBuild, Language::Java);
         assert!(
-            template.contains("maven") || template.contains("Maven")
-                || template.contains("gradle") || template.contains("Gradle"),
+            template.contains("maven")
+                || template.contains("Maven")
+                || template.contains("gradle")
+                || template.contains("Gradle"),
             "Java build prompt should reference Maven or Gradle"
         );
     }
@@ -1145,7 +1146,9 @@ mod tests {
         for lang in languages {
             let template = registry.get(TemplateKind::PromptBuild, lang);
             assert!(
-                template.contains("Quality") || template.contains("gate") || template.contains("Gate"),
+                template.contains("Quality")
+                    || template.contains("gate")
+                    || template.contains("Gate"),
                 "{:?} build prompt should reference quality gates",
                 lang
             );
@@ -1217,7 +1220,10 @@ mod tests {
         let registry = TemplateRegistry::new();
         let template = registry.get(TemplateKind::SettingsJson, Language::TypeScript);
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(template);
-        assert!(parsed.is_ok(), "TypeScript settings.json should be valid JSON");
+        assert!(
+            parsed.is_ok(),
+            "TypeScript settings.json should be valid JSON"
+        );
     }
 
     #[test]
@@ -1380,7 +1386,9 @@ mod tests {
 
         // Should contain polyglot header
         assert!(
-            prompt.contains("Polyglot") || prompt.contains("polyglot") || prompt.contains("Multi-language"),
+            prompt.contains("Polyglot")
+                || prompt.contains("polyglot")
+                || prompt.contains("Multi-language"),
             "Polyglot prompt should indicate multi-language project"
         );
 
@@ -1563,7 +1571,9 @@ mod tests {
         let registry = TemplateRegistry::new();
         let template = registry.get(TemplateKind::PromptBuild, Language::CSharp);
         assert!(
-            template.contains("dotnet test") || template.contains("xunit") || template.contains("MSTest"),
+            template.contains("dotnet test")
+                || template.contains("xunit")
+                || template.contains("MSTest"),
             "C# build prompt should reference dotnet test or testing framework"
         );
     }

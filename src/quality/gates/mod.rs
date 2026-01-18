@@ -236,13 +236,19 @@ impl GateResult {
     /// Count issues by severity.
     #[must_use]
     pub fn count_by_severity(&self, severity: IssueSeverity) -> usize {
-        self.issues.iter().filter(|i| i.severity == severity).count()
+        self.issues
+            .iter()
+            .filter(|i| i.severity == severity)
+            .count()
     }
 
     /// Get only blocking issues.
     #[must_use]
     pub fn blocking_issues(&self) -> Vec<&GateIssue> {
-        self.issues.iter().filter(|i| i.severity.is_blocking()).collect()
+        self.issues
+            .iter()
+            .filter(|i| i.severity.is_blocking())
+            .collect()
     }
 
     /// Format a summary for display.
@@ -432,17 +438,17 @@ fn tool_for_gate(gate_name: &str) -> Option<&'static str> {
         // Rust gates
         "Clippy" => Some("cargo"),
         "Tests" => Some("cargo"),
-        "NoAllow" => None, // Built-in, no external tool
+        "NoAllow" => None,  // Built-in, no external tool
         "Security" => None, // Uses narsil-mcp or cargo-audit, gracefully degrades
-        "NoTodo" => None,  // Built-in, no external tool
+        "NoTodo" => None,   // Built-in, no external tool
         // Python gates
         "Ruff" => Some("ruff"),
         "Pytest" => Some("pytest"),
         "Mypy" => Some("mypy"),
         "Bandit" => Some("bandit"),
         // TypeScript/JavaScript gates
-        "ESLint" => Some("npx"), // ESLint runs via npx
-        "Jest" => Some("npx"),   // Jest runs via npx
+        "ESLint" => Some("npx"),     // ESLint runs via npx
+        "Jest" => Some("npx"),       // Jest runs via npx
         "TypeScript" => Some("npx"), // tsc runs via npx
         "npm-audit" => Some("npm"),
         // Go gates
@@ -714,7 +720,11 @@ impl ClippyGate {
             .into_iter()
             .filter(|issue| {
                 if let Some(ref code) = issue.code {
-                    !self.config.allowed_lints.iter().any(|allowed| code.contains(allowed))
+                    !self
+                        .config
+                        .allowed_lints
+                        .iter()
+                        .any(|allowed| code.contains(allowed))
                 } else {
                     true
                 }
@@ -1147,10 +1157,7 @@ impl SecurityGate {
 
         match client.scan_security() {
             Ok(findings) => {
-                let issues: Vec<GateIssue> = findings
-                    .iter()
-                    .map(Self::convert_finding)
-                    .collect();
+                let issues: Vec<GateIssue> = findings.iter().map(Self::convert_finding).collect();
                 let _ = self.narsil_cache.set(issues.clone());
                 Ok(issues)
             }
@@ -1478,8 +1485,14 @@ fn main() {
 
         assert!(!result.passed);
         assert_eq!(result.issues.len(), 2);
-        assert!(result.issues.iter().any(|i| i.message.contains("dead_code")));
-        assert!(result.issues.iter().any(|i| i.message.contains("unused_variables")));
+        assert!(result
+            .issues
+            .iter()
+            .any(|i| i.message.contains("dead_code")));
+        assert!(result
+            .issues
+            .iter()
+            .any(|i| i.message.contains("unused_variables")));
     }
 
     #[test]
@@ -1533,7 +1546,10 @@ fn unused_function() {}
         let gate = NoAllowGate::new(temp_dir.path());
         let result = gate.check().unwrap();
 
-        assert!(result.passed, "Gate should pass - #[allow] inside raw strings should be skipped");
+        assert!(
+            result.passed,
+            "Gate should pass - #[allow] inside raw strings should be skipped"
+        );
         assert!(result.issues.is_empty());
     }
 
@@ -1671,7 +1687,10 @@ error[E0308]: mismatched types
         assert_eq!(issue.file, Some(PathBuf::from("src/db.rs")));
         assert_eq!(issue.line, Some(42));
         assert_eq!(issue.code, Some("CWE-89".to_string()));
-        assert_eq!(issue.suggestion, Some("Use parameterized queries".to_string()));
+        assert_eq!(
+            issue.suggestion,
+            Some("Use parameterized queries".to_string())
+        );
     }
 
     #[test]
@@ -1771,7 +1790,10 @@ edition = "2021"
     #[test]
     fn test_gates_for_language_unsupported_returns_empty() {
         let gates = gates_for_language(Language::Sql);
-        assert!(gates.is_empty(), "Unsupported languages should return empty");
+        assert!(
+            gates.is_empty(),
+            "Unsupported languages should return empty"
+        );
     }
 
     #[test]
@@ -1917,9 +1939,15 @@ edition = "2021"
         let names: Vec<_> = gates.iter().map(|g| g.name()).collect();
 
         assert!(names.contains(&"go-vet"), "Should have go-vet gate");
-        assert!(names.contains(&"golangci-lint"), "Should have golangci-lint gate");
+        assert!(
+            names.contains(&"golangci-lint"),
+            "Should have golangci-lint gate"
+        );
         assert!(names.contains(&"go-test"), "Should have go-test gate");
-        assert!(names.contains(&"govulncheck"), "Should have govulncheck gate");
+        assert!(
+            names.contains(&"govulncheck"),
+            "Should have govulncheck gate"
+        );
     }
 
     #[test]
@@ -2018,8 +2046,11 @@ version = "0.1.0"
 "#,
         )
         .unwrap();
-        std::fs::write(temp_dir.path().join("pyproject.toml"), "[project]\nname = \"test\"")
-            .unwrap();
+        std::fs::write(
+            temp_dir.path().join("pyproject.toml"),
+            "[project]\nname = \"test\"",
+        )
+        .unwrap();
 
         let gates = detect_available_gates(temp_dir.path(), &[Language::Rust, Language::Python]);
 

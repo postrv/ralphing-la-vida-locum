@@ -238,7 +238,10 @@ impl RollbackManager {
         }
 
         // Perform the checkout
-        info!("Rolling back to checkpoint {} ({})", checkpoint.id, checkpoint.git_hash);
+        info!(
+            "Rolling back to checkpoint {} ({})",
+            checkpoint.id, checkpoint.git_hash
+        );
         self.checkout_hash(&checkpoint.git_hash)?;
 
         // Attempt task tracker restoration
@@ -383,8 +386,8 @@ impl RollbackManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::process::Command;
+    use tempfile::TempDir;
 
     fn setup_git_repo() -> TempDir {
         let dir = TempDir::new().expect("create temp dir");
@@ -556,13 +559,7 @@ mod tests {
             .expect("git rev-parse");
         let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-        let checkpoint = Checkpoint::new(
-            "Test",
-            hash,
-            "main",
-            QualityMetrics::new(),
-            1,
-        );
+        let checkpoint = Checkpoint::new("Test", hash, "main", QualityMetrics::new(), 1);
 
         let result = manager.rollback_to(&checkpoint);
         assert!(result.is_err());
@@ -599,13 +596,7 @@ mod tests {
             .expect("git commit");
 
         // Rollback to first commit
-        let checkpoint = Checkpoint::new(
-            "First",
-            &first_hash,
-            "main",
-            QualityMetrics::new(),
-            1,
-        );
+        let checkpoint = Checkpoint::new("First", &first_hash, "main", QualityMetrics::new(), 1);
 
         let result = manager.rollback_to(&checkpoint);
         assert!(result.is_ok());
@@ -655,13 +646,7 @@ mod tests {
             .expect("git commit");
 
         // Rollback
-        let checkpoint = Checkpoint::new(
-            "First",
-            &first_hash,
-            "main",
-            QualityMetrics::new(),
-            1,
-        );
+        let checkpoint = Checkpoint::new("First", &first_hash, "main", QualityMetrics::new(), 1);
 
         let _result = manager.rollback_to(&checkpoint).expect("rollback");
 

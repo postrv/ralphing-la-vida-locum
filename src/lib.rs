@@ -57,8 +57,8 @@ pub use config::{
 
 // Re-export testing types for convenience
 pub use testing::{
-    ClaudeProcess, FileSystem, GitOperations, MockClaudeProcess, MockFileSystem,
-    MockGitOperations, MockQualityChecker, QualityChecker, QualityGateResult,
+    ClaudeProcess, FileSystem, GitOperations, MockClaudeProcess, MockFileSystem, MockGitOperations,
+    MockQualityChecker, QualityChecker, QualityGateResult,
 };
 
 // Re-export quality gate types

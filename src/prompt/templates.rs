@@ -273,14 +273,18 @@ impl Template {
     /// ```
     #[must_use]
     pub fn insert_before(&self, marker: TemplateMarker, content: &str) -> Template {
-        let new_content = self.content.replace(marker.tag(), &format!("{}{}", content, marker.tag()));
+        let new_content = self
+            .content
+            .replace(marker.tag(), &format!("{}{}", content, marker.tag()));
         Template::new(new_content)
     }
 
     /// Insert content after a marker (append section).
     #[must_use]
     pub fn insert_after(&self, marker: TemplateMarker, content: &str) -> Template {
-        let new_content = self.content.replace(marker.tag(), &format!("{}{}", marker.tag(), content));
+        let new_content = self
+            .content
+            .replace(marker.tag(), &format!("{}{}", marker.tag(), content));
         Template::new(new_content)
     }
 }
@@ -364,8 +368,9 @@ impl PromptTemplates {
                         .unwrap_or("");
 
                     if !mode.is_empty() {
-                        let content = std::fs::read_to_string(&path)
-                            .with_context(|| format!("Failed to read template: {}", path.display()))?;
+                        let content = std::fs::read_to_string(&path).with_context(|| {
+                            format!("Failed to read template: {}", path.display())
+                        })?;
                         templates.add_template(mode, Template::new(content));
                     }
                 }
@@ -855,10 +860,8 @@ mod tests {
         let mut templates = PromptTemplates::new();
         templates.add_template("partial", Template::new("Has {{TASK_CONTEXT}}"));
 
-        let warnings = templates.validate_optional(&[
-            TemplateMarker::TaskContext,
-            TemplateMarker::ErrorContext,
-        ]);
+        let warnings = templates
+            .validate_optional(&[TemplateMarker::TaskContext, TemplateMarker::ErrorContext]);
 
         // Should have warning for missing ErrorContext
         assert_eq!(warnings.len(), 1);

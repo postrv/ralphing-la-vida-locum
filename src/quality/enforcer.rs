@@ -165,10 +165,7 @@ impl EnforcerSummary {
             output.push_str(&format!("{}\n", result.summary()));
         }
 
-        output.push_str(&format!(
-            "\n**Total time**: {}ms\n",
-            self.total_duration_ms
-        ));
+        output.push_str(&format!("\n**Total time**: {}ms\n", self.total_duration_ms));
 
         if self.all_passed {
             output.push_str("\n✅ **All gates passed** - safe to commit\n");
@@ -579,7 +576,10 @@ fn unused_function() {}
         let enforcer = QualityGateEnforcer::with_config(project_dir, config);
         let result = enforcer.can_commit();
 
-        assert!(result.is_err(), "can_commit should fail with #[allow] annotation");
+        assert!(
+            result.is_err(),
+            "can_commit should fail with #[allow] annotation"
+        );
         let failures = result.unwrap_err();
         assert!(!failures.is_empty(), "Should have at least one failure");
         assert!(

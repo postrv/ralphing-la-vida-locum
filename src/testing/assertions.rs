@@ -20,8 +20,7 @@ pub fn assert_gate_passed(result: &QualityGateResult) {
     assert!(
         result.passed,
         "Expected quality gate to pass, but it failed.\nWarnings: {:?}\nFailures: {:?}",
-        result.warnings,
-        result.failures
+        result.warnings, result.failures
     );
 }
 
@@ -107,8 +106,7 @@ pub fn assert_warning_contains(result: &QualityGateResult, substring: &str) {
     assert!(
         found,
         "Expected a warning containing '{}', but none found.\nWarnings: {:?}",
-        substring,
-        result.warnings
+        substring, result.warnings
     );
 }
 
@@ -129,8 +127,7 @@ pub fn assert_failure_contains(result: &QualityGateResult, substring: &str) {
     assert!(
         found,
         "Expected a failure containing '{}', but none found.\nFailures: {:?}",
-        substring,
-        result.failures
+        substring, result.failures
     );
 }
 
@@ -273,8 +270,7 @@ mod tests {
 
     #[test]
     fn test_assert_warning_contains_succeeds() {
-        let result =
-            QualityGateResult::fail_with_warnings(vec!["unused variable `x`".to_string()]);
+        let result = QualityGateResult::fail_with_warnings(vec!["unused variable `x`".to_string()]);
         assert_warning_contains(&result, "unused variable");
     }
 

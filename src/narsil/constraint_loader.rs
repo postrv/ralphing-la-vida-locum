@@ -190,8 +190,7 @@ mod tests {
 
     #[test]
     fn test_constraint_loader_with_custom_path() {
-        let loader = ConstraintLoader::new(".")
-            .with_custom_path("config/my-constraints.json");
+        let loader = ConstraintLoader::new(".").with_custom_path("config/my-constraints.json");
 
         assert_eq!(
             loader.custom_path,
@@ -210,8 +209,7 @@ mod tests {
 
     #[test]
     fn test_constraint_loader_constraints_path_custom() {
-        let loader = ConstraintLoader::new("/project")
-            .with_custom_path("config/rules.json");
+        let loader = ConstraintLoader::new("/project").with_custom_path("config/rules.json");
 
         assert_eq!(
             loader.constraints_path(),
@@ -344,7 +342,10 @@ mod tests {
         let result = loader.load();
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ConstraintLoadError::ParseError(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConstraintLoadError::ParseError(_)
+        ));
     }
 
     #[test]
@@ -372,7 +373,10 @@ mod tests {
         let result = loader.load();
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ConstraintLoadError::ValidationError(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            ConstraintLoadError::ValidationError(_)
+        ));
     }
 
     #[test]
@@ -395,8 +399,7 @@ mod tests {
         }"#;
         fs::write(config_dir.join("rules.json"), json).unwrap();
 
-        let loader = ConstraintLoader::new(dir.path())
-            .with_custom_path("config/rules.json");
+        let loader = ConstraintLoader::new(dir.path()).with_custom_path("config/rules.json");
 
         let result = loader.load();
         assert!(result.is_ok());
@@ -503,13 +506,14 @@ mod tests {
 
     #[test]
     fn test_constraint_load_error_display() {
-        let io_err = ConstraintLoadError::IoError(
-            std::io::Error::new(std::io::ErrorKind::NotFound, "file not found")
-        );
+        let io_err = ConstraintLoadError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file not found",
+        ));
         assert!(io_err.to_string().contains("Failed to read"));
 
         let parse_err = ConstraintLoadError::ParseError(
-            serde_json::from_str::<serde_json::Value>("invalid").unwrap_err()
+            serde_json::from_str::<serde_json::Value>("invalid").unwrap_err(),
         );
         assert!(parse_err.to_string().contains("Failed to parse"));
 

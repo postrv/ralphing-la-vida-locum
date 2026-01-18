@@ -132,8 +132,12 @@ impl CheckpointManager {
 
         // Create storage directory if it doesn't exist
         if !storage_dir.exists() {
-            fs::create_dir_all(&storage_dir)
-                .with_context(|| format!("Failed to create checkpoint directory: {}", storage_dir.display()))?;
+            fs::create_dir_all(&storage_dir).with_context(|| {
+                format!(
+                    "Failed to create checkpoint directory: {}",
+                    storage_dir.display()
+                )
+            })?;
             debug!("Created checkpoint directory: {}", storage_dir.display());
         }
 
@@ -146,7 +150,10 @@ impl CheckpointManager {
     }
 
     /// Create a checkpoint manager with custom configuration.
-    pub fn with_config(storage_dir: impl AsRef<Path>, config: CheckpointManagerConfig) -> Result<Self> {
+    pub fn with_config(
+        storage_dir: impl AsRef<Path>,
+        config: CheckpointManagerConfig,
+    ) -> Result<Self> {
         let mut manager = Self::new(storage_dir)?;
         manager.config = config;
         Ok(manager)
@@ -270,7 +277,11 @@ impl CheckpointManager {
     /// Returns an error if the cache cannot be loaded.
     pub fn checkpoints_with_tag(&mut self, tag: &str) -> Result<Vec<&Checkpoint>> {
         self.ensure_cache_loaded()?;
-        Ok(self.checkpoints.iter().filter(|cp| cp.has_tag(tag)).collect())
+        Ok(self
+            .checkpoints
+            .iter()
+            .filter(|cp| cp.has_tag(tag))
+            .collect())
     }
 
     /// Prune checkpoints to keep only the most recent N.
@@ -319,7 +330,11 @@ impl CheckpointManager {
 
         let removed = to_remove.len();
         if removed > 0 {
-            info!("Pruned {} checkpoints, {} remaining", removed, self.checkpoints.len());
+            info!(
+                "Pruned {} checkpoints, {} remaining",
+                removed,
+                self.checkpoints.len()
+            );
         }
 
         Ok(removed)
@@ -394,8 +409,8 @@ impl CheckpointManager {
     /// Save a checkpoint to disk.
     fn save_checkpoint(&self, checkpoint: &Checkpoint) -> Result<()> {
         let path = self.checkpoint_path(&checkpoint.id);
-        let json = serde_json::to_string_pretty(checkpoint)
-            .context("Failed to serialize checkpoint")?;
+        let json =
+            serde_json::to_string_pretty(checkpoint).context("Failed to serialize checkpoint")?;
         fs::write(&path, json)
             .with_context(|| format!("Failed to write checkpoint: {}", path.display()))?;
         debug!("Saved checkpoint to: {}", path.display());
@@ -406,8 +421,12 @@ impl CheckpointManager {
     fn load_checkpoints(&mut self) -> Result<()> {
         self.checkpoints.clear();
 
-        let entries = fs::read_dir(&self.storage_dir)
-            .with_context(|| format!("Failed to read checkpoint directory: {}", self.storage_dir.display()))?;
+        let entries = fs::read_dir(&self.storage_dir).with_context(|| {
+            format!(
+                "Failed to read checkpoint directory: {}",
+                self.storage_dir.display()
+            )
+        })?;
 
         for entry in entries {
             let entry = entry.context("Failed to read directory entry")?;
@@ -427,7 +446,8 @@ impl CheckpointManager {
         }
 
         // Sort by creation time (oldest first)
-        self.checkpoints.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        self.checkpoints
+            .sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
         debug!("Loaded {} checkpoints from disk", self.checkpoints.len());
         self.cache_loaded = true;
@@ -463,8 +483,8 @@ mod tests {
 
     fn temp_manager() -> (TempDir, CheckpointManager) {
         let dir = TempDir::new().expect("create temp dir");
-        let manager = CheckpointManager::new(dir.path().join("checkpoints"))
-            .expect("create manager");
+        let manager =
+            CheckpointManager::new(dir.path().join("checkpoints")).expect("create manager");
         (dir, manager)
     }
 
@@ -511,7 +531,9 @@ mod tests {
         assert!(found.is_some());
         assert_eq!(found.unwrap().description, "Test");
 
-        let not_found = manager.get_checkpoint(&CheckpointId::from_string("nonexistent")).expect("get");
+        let not_found = manager
+            .get_checkpoint(&CheckpointId::from_string("nonexistent"))
+            .expect("get");
         assert!(not_found.is_none());
     }
 
@@ -547,7 +569,13 @@ mod tests {
 
         for i in 1..=5 {
             manager
-                .create_checkpoint(format!("CP {}", i), format!("hash{}", i), "main", metrics.clone(), i)
+                .create_checkpoint(
+                    format!("CP {}", i),
+                    format!("hash{}", i),
+                    "main",
+                    metrics.clone(),
+                    i,
+                )
                 .expect("create");
         }
 
@@ -627,11 +655,23 @@ mod tests {
             .create_checkpoint("Test", "abc", "main", metrics, 1)
             .expect("create");
 
-        assert!(!manager.get_checkpoint(&cp.id).expect("get").unwrap().verified);
+        assert!(
+            !manager
+                .get_checkpoint(&cp.id)
+                .expect("get")
+                .unwrap()
+                .verified
+        );
 
         manager.verify_checkpoint(&cp.id).expect("verify");
 
-        assert!(manager.get_checkpoint(&cp.id).expect("get").unwrap().verified);
+        assert!(
+            manager
+                .get_checkpoint(&cp.id)
+                .expect("get")
+                .unwrap()
+                .verified
+        );
     }
 
     #[test]

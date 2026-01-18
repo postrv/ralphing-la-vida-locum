@@ -199,7 +199,8 @@ impl PromptAssembler {
     #[must_use]
     pub fn with_config(config: AssemblerConfig) -> Self {
         let templates = if let Some(ref dir) = config.load_templates_from_dir {
-            PromptTemplates::load_or_defaults(dir).unwrap_or_else(|_| PromptTemplates::with_defaults())
+            PromptTemplates::load_or_defaults(dir)
+                .unwrap_or_else(|_| PromptTemplates::with_defaults())
         } else {
             PromptTemplates::with_defaults()
         };
@@ -465,7 +466,11 @@ impl PromptAssembler {
         } else {
             GateResult::fail(messages)
         };
-        self.quality_status = self.quality_status.clone().with_clippy(result).with_timestamp();
+        self.quality_status = self
+            .quality_status
+            .clone()
+            .with_clippy(result)
+            .with_timestamp();
         self.update_quality_failure_streak(passed);
     }
 
@@ -476,7 +481,11 @@ impl PromptAssembler {
         } else {
             GateResult::fail(messages)
         };
-        self.quality_status = self.quality_status.clone().with_tests(result).with_timestamp();
+        self.quality_status = self
+            .quality_status
+            .clone()
+            .with_tests(result)
+            .with_timestamp();
         self.update_quality_failure_streak(passed);
     }
 
@@ -487,7 +496,11 @@ impl PromptAssembler {
         } else {
             GateResult::fail(messages)
         };
-        self.quality_status = self.quality_status.clone().with_security(result).with_timestamp();
+        self.quality_status = self
+            .quality_status
+            .clone()
+            .with_security(result)
+            .with_timestamp();
         self.update_quality_failure_streak(passed);
     }
 
@@ -743,8 +756,16 @@ impl PromptAssembler {
         };
 
         // Convert owned Strings to &str slices for the builder API
-        let functions: Vec<&str> = self.intelligence_functions.iter().map(|s| s.as_str()).collect();
-        let symbols: Vec<&str> = self.intelligence_symbols.iter().map(|s| s.as_str()).collect();
+        let functions: Vec<&str> = self
+            .intelligence_functions
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        let symbols: Vec<&str> = self
+            .intelligence_symbols
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
         let files: Vec<&str> = self.intelligence_files.iter().map(|s| s.as_str()).collect();
 
         let builder = CodeIntelligenceBuilder::new(client)
@@ -753,7 +774,9 @@ impl PromptAssembler {
             .for_files(&files);
 
         // Build returns a Result, unwrap with default on error
-        builder.build().unwrap_or_else(|_| crate::prompt::context::CodeIntelligenceContext::new())
+        builder
+            .build()
+            .unwrap_or_else(|_| crate::prompt::context::CodeIntelligenceContext::new())
     }
 
     // =========================================================================
@@ -926,7 +949,10 @@ impl std::fmt::Debug for PromptAssembler {
             .field("quality_status", &self.quality_status)
             .field("attempts", &self.attempts)
             .field("historical_guidance", &self.historical_guidance)
-            .field("consecutive_quality_failures", &self.consecutive_quality_failures)
+            .field(
+                "consecutive_quality_failures",
+                &self.consecutive_quality_failures,
+            )
             .field("session_files_modified", &self.session_files_modified)
             .field("has_narsil_client", &self.narsil_client.is_some())
             .field("intelligence_functions", &self.intelligence_functions)
@@ -1501,7 +1527,10 @@ mod tests {
         // Even with unavailable client, the field should be properly initialized
         // (is_available will be false since narsil-mcp isn't installed in test)
         // The key is that build_context properly tries to gather intelligence
-        assert!(context.code_intelligence.call_graph.is_empty() || !context.code_intelligence.is_available);
+        assert!(
+            context.code_intelligence.call_graph.is_empty()
+                || !context.code_intelligence.is_available
+        );
     }
 
     #[test]

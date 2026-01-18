@@ -287,7 +287,11 @@ or track it properly in the project plan.
         // Collect critical issues first
         let critical_issues: Vec<_> = failures
             .iter()
-            .flat_map(|f| f.issues.iter().filter(|i| i.severity == IssueSeverity::Critical))
+            .flat_map(|f| {
+                f.issues
+                    .iter()
+                    .filter(|i| i.severity == IssueSeverity::Critical)
+            })
             .take(3)
             .collect();
 
@@ -302,7 +306,11 @@ or track it properly in the project plan.
         // Then errors
         let error_issues: Vec<_> = failures
             .iter()
-            .flat_map(|f| f.issues.iter().filter(|i| i.severity == IssueSeverity::Error))
+            .flat_map(|f| {
+                f.issues
+                    .iter()
+                    .filter(|i| i.severity == IssueSeverity::Error)
+            })
             .take(5)
             .collect();
 
@@ -365,8 +373,7 @@ mod tests {
     fn make_test_failure() -> GateResult {
         GateResult::fail(
             "Tests",
-            vec![GateIssue::new(IssueSeverity::Error, "test_add failed")
-                .with_code("test_failure")],
+            vec![GateIssue::new(IssueSeverity::Error, "test_add failed").with_code("test_failure")],
         )
     }
 
@@ -405,7 +412,11 @@ mod tests {
     #[test]
     fn test_generator_multiple_failures() {
         let generator = RemediationGenerator::new();
-        let failures = vec![make_clippy_failure(), make_test_failure(), make_no_allow_failure()];
+        let failures = vec![
+            make_clippy_failure(),
+            make_test_failure(),
+            make_no_allow_failure(),
+        ];
         let prompt = generator.generate_prompt(&failures);
 
         assert!(prompt.contains("Clippy Gate"));

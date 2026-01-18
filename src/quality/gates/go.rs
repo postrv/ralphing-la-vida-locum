@@ -99,7 +99,10 @@ impl GoVetGate {
             if let Ok(col_num) = parts[2].parse::<u32>() {
                 (Some(col_num), parts[3].trim().to_string())
             } else {
-                (None, format!("{}: {}", parts[2], parts[3]).trim().to_string())
+                (
+                    None,
+                    format!("{}: {}", parts[2], parts[3]).trim().to_string(),
+                )
             }
         } else {
             (None, parts[2].trim().to_string())
@@ -246,10 +249,8 @@ impl GolangciLintGate {
 
                     if let Some(ref replacement) = lint_issue.replacement {
                         if let Some(ref new_text) = replacement.new_lines {
-                            issue = issue.with_suggestion(format!(
-                                "Replace with:\n{}",
-                                new_text.join("\n")
-                            ));
+                            issue = issue
+                                .with_suggestion(format!("Replace with:\n{}", new_text.join("\n")));
                         }
                     }
 
@@ -309,7 +310,10 @@ impl GolangciLintGate {
         let (linter, message) = if let Some(space_pos) = rest.find(' ') {
             let potential_linter = &rest[..space_pos];
             // Check if it looks like a linter name (single word, no spaces)
-            if potential_linter.chars().all(|c| c.is_alphanumeric() || c == '-') {
+            if potential_linter
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-')
+            {
                 (
                     potential_linter.to_string(),
                     rest[space_pos + 1..].trim_start().to_string(),
@@ -464,11 +468,7 @@ impl GoTestGate {
                     }
                     "fail" => {
                         if let Some(ref test) = event.test {
-                            let message = format!(
-                                "Test failed: {}/{}",
-                                event.package,
-                                test
-                            );
+                            let message = format!("Test failed: {}/{}", event.package, test);
                             let mut issue = GateIssue::new(IssueSeverity::Error, &message)
                                 .with_code("go-test-failure");
 
@@ -702,21 +702,20 @@ impl GovulncheckGate {
                         message = format!("{} (fixed in {})", message, fixed);
                     }
 
-                    let mut issue = GateIssue::new(severity, &message)
-                        .with_code(&finding.osv);
+                    let mut issue = GateIssue::new(severity, &message).with_code(&finding.osv);
 
                     // Add file location from trace if available
                     if let Some(trace) = finding.trace.first() {
-                        if let (Some(ref file), Some(line)) = (&trace.position_file, trace.position_line) {
+                        if let (Some(ref file), Some(line)) =
+                            (&trace.position_file, trace.position_line)
+                        {
                             issue = issue.with_location(file, line);
                         }
                     }
 
                     if let Some(ref fixed) = finding.fixed_version {
-                        issue = issue.with_suggestion(format!(
-                            "Upgrade to version {} or later",
-                            fixed
-                        ));
+                        issue =
+                            issue.with_suggestion(format!("Upgrade to version {} or later", fixed));
                     }
 
                     issues.push(issue);
@@ -970,9 +969,7 @@ mod tests {
     #[test]
     fn test_go_vet_gate_remediation() {
         let gate = GoVetGate::new();
-        let issues = vec![
-            GateIssue::new(IssueSeverity::Error, "error"),
-        ];
+        let issues = vec![GateIssue::new(IssueSeverity::Error, "error")];
         let remediation = gate.remediation(&issues);
         assert!(remediation.contains("go vet"));
         assert!(remediation.contains("1 issues"));
@@ -1000,7 +997,9 @@ mod tests {
 
     #[test]
     fn test_go_vet_parse_line_with_column() {
-        let issue = GoVetGate::parse_vet_line("pkg/handler.go:42:10: shadow: declaration of \"err\"").unwrap();
+        let issue =
+            GoVetGate::parse_vet_line("pkg/handler.go:42:10: shadow: declaration of \"err\"")
+                .unwrap();
         assert_eq!(issue.severity, IssueSeverity::Error);
         assert_eq!(issue.line, Some(42));
         assert_eq!(issue.column, Some(10));
@@ -1103,11 +1102,26 @@ mod tests {
 
     #[test]
     fn test_golangci_lint_severity_from_linter() {
-        assert_eq!(GolangciLintGate::severity_from_linter("errcheck"), IssueSeverity::Error);
-        assert_eq!(GolangciLintGate::severity_from_linter("staticcheck"), IssueSeverity::Error);
-        assert_eq!(GolangciLintGate::severity_from_linter("gosec"), IssueSeverity::Error);
-        assert_eq!(GolangciLintGate::severity_from_linter("gofmt"), IssueSeverity::Warning);
-        assert_eq!(GolangciLintGate::severity_from_linter("golint"), IssueSeverity::Warning);
+        assert_eq!(
+            GolangciLintGate::severity_from_linter("errcheck"),
+            IssueSeverity::Error
+        );
+        assert_eq!(
+            GolangciLintGate::severity_from_linter("staticcheck"),
+            IssueSeverity::Error
+        );
+        assert_eq!(
+            GolangciLintGate::severity_from_linter("gosec"),
+            IssueSeverity::Error
+        );
+        assert_eq!(
+            GolangciLintGate::severity_from_linter("gofmt"),
+            IssueSeverity::Warning
+        );
+        assert_eq!(
+            GolangciLintGate::severity_from_linter("golint"),
+            IssueSeverity::Warning
+        );
     }
 
     #[test]
@@ -1148,10 +1162,8 @@ mod tests {
     #[test]
     fn test_go_test_gate_remediation() {
         let gate = GoTestGate::new();
-        let issues = vec![
-            GateIssue::new(IssueSeverity::Error, "Test failed: TestFoo")
-                .with_code("go-test-failure"),
-        ];
+        let issues = vec![GateIssue::new(IssueSeverity::Error, "Test failed: TestFoo")
+            .with_code("go-test-failure")];
         let remediation = gate.remediation(&issues);
         assert!(remediation.contains("go test"));
         assert!(remediation.contains("1 test(s) failed"));

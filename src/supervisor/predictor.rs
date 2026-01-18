@@ -714,49 +714,37 @@ impl StagnationPredictor {
         let dominant = breakdown.dominant_factor();
 
         match dominant {
-            "commit_gap" => {
-                "Consider committing your current progress, even if incomplete. \
+            "commit_gap" => "Consider committing your current progress, even if incomplete. \
                 Small, incremental commits are better than large, delayed ones. \
                 If there are blocking issues, document them and commit what works."
-                    .to_string()
-            }
-            "file_churn" => {
-                "You're editing the same files repeatedly. This often indicates \
+                .to_string(),
+            "file_churn" => "You're editing the same files repeatedly. This often indicates \
                 an unclear goal or approach. Step back and clarify: what exactly \
                 needs to change? Write a brief plan before making more edits."
-                    .to_string()
-            }
-            "error_repeat" => {
-                "The same error keeps occurring. Don't keep trying the same fix. \
+                .to_string(),
+            "error_repeat" => "The same error keeps occurring. Don't keep trying the same fix. \
                 Instead: 1) Read the full error carefully, 2) Search for similar \
                 issues, 3) Try a completely different approach."
-                    .to_string()
-            }
+                .to_string(),
             "test_stagnation" => {
                 "No new tests have been added recently. Tests help verify progress \
                 and catch regressions. Write a test for the current functionality \
                 before moving on."
                     .to_string()
             }
-            "mode_oscillation" => {
-                "Frequent mode switches suggest uncertainty about the approach. \
+            "mode_oscillation" => "Frequent mode switches suggest uncertainty about the approach. \
                 Pick one mode and commit to it for at least 5 iterations. If in \
                 build mode, focus on implementation. If in debug mode, focus on \
                 fixing the specific issue."
-                    .to_string()
-            }
-            "warning_growth" => {
-                "Clippy warnings are accumulating. Address them now rather than \
+                .to_string(),
+            "warning_growth" => "Clippy warnings are accumulating. Address them now rather than \
                 later. Run 'cargo clippy --fix' for auto-fixable issues, then \
                 manually address the rest."
-                    .to_string()
-            }
-            _ => {
-                "Progress has stalled. Consider: 1) What's the smallest possible \
+                .to_string(),
+            _ => "Progress has stalled. Consider: 1) What's the smallest possible \
                 next step? 2) Is there a test you can write? 3) Should you commit \
                 what you have so far?"
-                    .to_string()
-            }
+                .to_string(),
         }
     }
 
@@ -781,12 +769,12 @@ impl StagnationPredictor {
         match dominant {
             "commit_gap" => "Make a commit with your current changes".to_string(),
             "file_churn" => {
-                if let Some((file, count)) = signals
-                    .file_touch_counts
-                    .iter()
-                    .max_by_key(|(_, c)| c)
+                if let Some((file, count)) = signals.file_touch_counts.iter().max_by_key(|(_, c)| c)
                 {
-                    format!("Stop editing {} (touched {} times) and verify it works", file, count)
+                    format!(
+                        "Stop editing {} (touched {} times) and verify it works",
+                        file, count
+                    )
                 } else {
                     "Verify your changes work before editing more files".to_string()
                 }
@@ -1081,10 +1069,7 @@ mod tests {
 
         let signals = RiskSignals::new()
             .with_commit_gap(12)
-            .with_file_touches(vec![
-                ("main.rs".into(), 6),
-                ("lib.rs".into(), 5),
-            ])
+            .with_file_touches(vec![("main.rs".into(), 6), ("lib.rs".into(), 5)])
             .with_errors(vec![
                 "same error".into(),
                 "same error".into(),
@@ -1282,8 +1267,7 @@ mod tests {
     fn test_identify_single_actionable_item() {
         let predictor = StagnationPredictor::with_defaults();
 
-        let signals = RiskSignals::new()
-            .with_file_touches(vec![("main.rs".into(), 10)]);
+        let signals = RiskSignals::new().with_file_touches(vec![("main.rs".into(), 10)]);
 
         let breakdown = RiskBreakdown {
             commit_gap_contribution: 10.0,

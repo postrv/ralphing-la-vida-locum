@@ -10,11 +10,11 @@
 
 pub mod predictor;
 
-use ralph::Analytics;
 use crate::r#loop::state::{LoopMode, LoopState};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use colored::Colorize;
+use ralph::Analytics;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -490,11 +490,7 @@ impl Supervisor {
                 .map(|m| m.current_mode)
                 .collect();
 
-            let oscillating = recent_modes
-                .windows(2)
-                .filter(|w| w[0] != w[1])
-                .count()
-                >= 3;
+            let oscillating = recent_modes.windows(2).filter(|w| w[0] != w[1]).count() >= 3;
 
             if oscillating {
                 return Some(StagnationPattern::ModeOscillation {
@@ -507,9 +503,7 @@ impl Supervisor {
         if let Some(first) = self.health_history.front() {
             let drop = ((first.test_pass_rate - current.test_pass_rate) * 100.0) as u32;
             if drop >= 20 {
-                return Some(StagnationPattern::TestRegression {
-                    drop_percent: drop,
-                });
+                return Some(StagnationPattern::TestRegression { drop_percent: drop });
             }
         }
 
@@ -613,10 +607,7 @@ impl Supervisor {
 
     /// Print supervisor status
     pub fn print_status(&self, metrics: &HealthMetrics) {
-        println!(
-            "\n{} Supervisor Health Check",
-            "Chief".bright_blue()
-        );
+        println!("\n{} Supervisor Health Check", "Chief".bright_blue());
         println!("{}", "-".repeat(50));
         println!(
             "   Test Pass Rate:    {}%",
@@ -650,8 +641,7 @@ mod tests {
     #[test]
     fn test_supervisor_with_interval() {
         let temp = TempDir::new().unwrap();
-        let supervisor = Supervisor::new(temp.path().to_path_buf())
-            .with_interval(10);
+        let supervisor = Supervisor::new(temp.path().to_path_buf()).with_interval(10);
 
         assert_eq!(supervisor.check_interval(), 10);
     }
