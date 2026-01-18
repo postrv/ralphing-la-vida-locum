@@ -64,7 +64,7 @@ jobs:
       - name: Build release
         run: cargo build --release
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ralph-linux
           path: target/release/ralph
@@ -104,7 +104,7 @@ jobs:
       - name: Build
         run: cargo build --release
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ralph-macos
           path: target/release/ralph
