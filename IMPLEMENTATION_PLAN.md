@@ -20,11 +20,11 @@
 
 ---
 
-## Current Focus: Sprint 6 (Multi-Language Bootstrap - Detection)
+## Current Focus: Sprint 7 (Language-Specific Quality Gates)
 
-Ralph should work on **Sprint 6: Language Detection** - the foundation for multi-language support.
+Ralph should work on **Sprint 7: Language-Specific Quality Gates** - extending quality enforcement to multiple languages.
 
-**Goal:** Transform Ralph from Rust-only to a universal automation suite supporting all 32 languages in narsil-mcp.
+**Goal:** Create quality gates that use each language's standard tooling (Python: ruff/pytest/mypy, TypeScript: eslint/jest/tsc, Go: vet/golangci-lint/test).
 
 **Reference:** See `further_dev_plans/ralph-multilang-bootstrap.md` for full design.
 
