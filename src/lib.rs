@@ -41,6 +41,7 @@ pub mod analytics;
 pub mod bootstrap;
 pub mod checkpoint;
 pub mod config;
+pub mod enterprise;
 pub mod error;
 pub mod narsil;
 pub mod prompt;
@@ -97,6 +98,12 @@ pub use bootstrap::language_detector::{DetectedLanguage, LanguageDetector};
 
 // Re-export reporting types
 pub use reporting::{ExportFormat, QualityExporter, ReportConfig, ReportData, ReportGenerator};
+
+// Re-export enterprise types
+pub use enterprise::rbac::{
+    can_access, CustomRole, ParsePermissionError, ParseRoleError, Permission, PermissionCheck,
+    Resource, Role, RoleBuilder, RolePermissions,
+};
 
 // TestFixture is only available in test builds
 #[cfg(test)]
