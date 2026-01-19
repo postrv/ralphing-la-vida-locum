@@ -162,7 +162,10 @@ impl FailureClass {
     /// Check if this failure class might be transient.
     #[must_use]
     pub fn may_be_transient(&self) -> bool {
-        matches!(self, Self::GitError | Self::ToolError | Self::ProcessFailure)
+        matches!(
+            self,
+            Self::GitError | Self::ToolError | Self::ProcessFailure
+        )
     }
 
     /// Estimate complexity of fixing this failure class (1-5).
@@ -746,10 +749,12 @@ impl RecoveryStrategist {
                 RecoveryStrategy::GatherContext,
                 RecoveryStrategy::TestFirst,
             ],
-            FailureClass::GitError | FailureClass::ToolError | FailureClass::ProcessFailure => vec![
-                RecoveryStrategy::SimpleRetry,
-                RecoveryStrategy::EscalateDebug,
-            ],
+            FailureClass::GitError | FailureClass::ToolError | FailureClass::ProcessFailure => {
+                vec![
+                    RecoveryStrategy::SimpleRetry,
+                    RecoveryStrategy::EscalateDebug,
+                ]
+            }
             FailureClass::Unknown => vec![
                 RecoveryStrategy::GatherContext,
                 RecoveryStrategy::IsolatedFix,
@@ -1427,14 +1432,20 @@ mod tests {
     #[test]
     fn test_backoff_first_attempt_is_base() {
         use std::time::Duration;
-        assert_eq!(calculate_backoff(1), Duration::from_millis(RETRY_BACKOFF_BASE_MS));
+        assert_eq!(
+            calculate_backoff(1),
+            Duration::from_millis(RETRY_BACKOFF_BASE_MS)
+        );
     }
 
     #[test]
     fn test_backoff_caps_at_max() {
         use std::time::Duration;
         // Even with very high attempt number, should never exceed max
-        assert_eq!(calculate_backoff(100), Duration::from_millis(MAX_BACKOFF_MS));
+        assert_eq!(
+            calculate_backoff(100),
+            Duration::from_millis(MAX_BACKOFF_MS)
+        );
     }
 
     // -------------------------------------------------------------------------

@@ -2743,9 +2743,7 @@ Connect all components.
 
     #[tokio::test]
     async fn test_process_error_retries_then_succeeds() {
-        let claude = Arc::new(
-            MockClaudeProcess::new().with_fail_count(2, "No messages returned"),
-        );
+        let claude = Arc::new(MockClaudeProcess::new().with_fail_count(2, "No messages returned"));
         let deps = LoopDependencies {
             git: Arc::new(MockGitOperations::new()),
             claude: claude.clone(),
@@ -2761,16 +2759,18 @@ Connect all components.
         let manager = LoopManager::with_deps(cfg, deps).unwrap();
 
         let result = manager.run_claude_iteration_with_retry().await;
-        assert!(result.is_ok(), "Expected Ok after retries, got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected Ok after retries, got: {:?}",
+            result
+        );
         assert_eq!(claude.call_count(), 3); // Failed twice, succeeded on third
     }
 
     #[tokio::test]
     async fn test_process_error_exhausts_retries() {
         // Fail more times than MAX_RETRIES to exhaust all retries
-        let claude = Arc::new(
-            MockClaudeProcess::new().with_fail_count(10, "No messages returned"),
-        );
+        let claude = Arc::new(MockClaudeProcess::new().with_fail_count(10, "No messages returned"));
         let deps = LoopDependencies {
             git: Arc::new(MockGitOperations::new()),
             claude: claude.clone(),
@@ -2793,9 +2793,8 @@ Connect all components.
     #[tokio::test]
     async fn test_non_transient_error_not_retried() {
         // A compilation error should not be retried
-        let claude = Arc::new(
-            MockClaudeProcess::new().with_error("error[E0308]: mismatched types"),
-        );
+        let claude =
+            Arc::new(MockClaudeProcess::new().with_error("error[E0308]: mismatched types"));
         let deps = LoopDependencies {
             git: Arc::new(MockGitOperations::new()),
             claude: claude.clone(),
