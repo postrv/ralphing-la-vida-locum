@@ -35,6 +35,51 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
+
+// ============================================================================
+// Backoff Constants and Calculation
+// ============================================================================
+
+/// Base backoff delay in milliseconds for retry attempts.
+pub const RETRY_BACKOFF_BASE_MS: u64 = 2000;
+
+/// Maximum backoff delay in milliseconds.
+pub const MAX_BACKOFF_MS: u64 = 30_000;
+
+/// Multiplier for exponential backoff.
+pub const BACKOFF_MULTIPLIER: u64 = 2;
+
+/// Calculate exponential backoff delay for a given attempt number.
+///
+/// Uses exponential backoff with a cap at `MAX_BACKOFF_MS` to prevent
+/// extremely long delays.
+///
+/// # Arguments
+///
+/// * `attempt` - The attempt number (1-indexed). First attempt uses base delay.
+///
+/// # Returns
+///
+/// A `Duration` representing the delay before the next retry.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::r#loop::retry::calculate_backoff;
+/// use std::time::Duration;
+///
+/// assert_eq!(calculate_backoff(1), Duration::from_millis(2000));  // Base
+/// assert_eq!(calculate_backoff(2), Duration::from_millis(4000));  // 2x
+/// assert_eq!(calculate_backoff(3), Duration::from_millis(8000));  // 4x
+/// ```
+#[must_use]
+pub fn calculate_backoff(attempt: u32) -> Duration {
+    let exponent = attempt.saturating_sub(1);
+    let multiplier = BACKOFF_MULTIPLIER.saturating_pow(exponent);
+    let delay = RETRY_BACKOFF_BASE_MS.saturating_mul(multiplier);
+    Duration::from_millis(delay.min(MAX_BACKOFF_MS))
+}
 
 // ============================================================================
 // Failure Classification
@@ -69,6 +114,8 @@ pub enum FailureClass {
     GitError,
     /// External tool execution failed
     ToolError,
+    /// Claude Code process failure (transient, no code change needed)
+    ProcessFailure,
     /// Unknown error type
     Unknown,
 }
@@ -90,6 +137,7 @@ impl FailureClass {
             Self::SecurityFinding => "Security finding",
             Self::GitError => "Git operation failed",
             Self::ToolError => "Tool execution failed",
+            Self::ProcessFailure => "Process failure",
             Self::Unknown => "Unknown error",
         }
     }
@@ -114,7 +162,7 @@ impl FailureClass {
     /// Check if this failure class might be transient.
     #[must_use]
     pub fn may_be_transient(&self) -> bool {
-        matches!(self, Self::GitError | Self::ToolError)
+        matches!(self, Self::GitError | Self::ToolError | Self::ProcessFailure)
     }
 
     /// Estimate complexity of fixing this failure class (1-5).
@@ -123,6 +171,7 @@ impl FailureClass {
         match self {
             Self::SyntaxError => 1,
             Self::ImportError => 1,
+            Self::ProcessFailure => 1,
             Self::MissingDependency => 2,
             Self::ClippyWarning => 2,
             Self::CompileError => 3,
@@ -328,6 +377,10 @@ impl FailureClassifier {
         // Patterns ordered from most specific to least specific
         // More specific patterns must come BEFORE more general ones
         let patterns = vec![
+            // Process failures (transient, Claude CLI issues)
+            (r"No messages returned", FailureClass::ProcessFailure),
+            (r"process crashed", FailureClass::ProcessFailure),
+            (r"connection timed out", FailureClass::ProcessFailure),
             // Import errors (must come before generic compile errors)
             (r"unresolved import", FailureClass::ImportError),
             (r"cannot find .+ in this scope", FailureClass::ImportError),
@@ -693,7 +746,7 @@ impl RecoveryStrategist {
                 RecoveryStrategy::GatherContext,
                 RecoveryStrategy::TestFirst,
             ],
-            FailureClass::GitError | FailureClass::ToolError => vec![
+            FailureClass::GitError | FailureClass::ToolError | FailureClass::ProcessFailure => vec![
                 RecoveryStrategy::SimpleRetry,
                 RecoveryStrategy::EscalateDebug,
             ],
@@ -1328,6 +1381,60 @@ mod tests {
             FailureClass::ImportError.complexity_estimate()
                 < FailureClass::TraitBoundError.complexity_estimate()
         );
+    }
+
+    #[test]
+    fn test_process_failure_is_transient() {
+        assert!(FailureClass::ProcessFailure.may_be_transient());
+        assert!(!FailureClass::ProcessFailure.requires_code_change());
+        assert_eq!(FailureClass::ProcessFailure.complexity_estimate(), 1);
+    }
+
+    #[test]
+    fn test_classifier_detects_no_messages_returned() {
+        let classifier = FailureClassifier::new();
+        let ctx = classifier.classify("No messages returned");
+        assert_eq!(ctx.class, FailureClass::ProcessFailure);
+    }
+
+    #[test]
+    fn test_classifier_detects_process_crashed() {
+        let classifier = FailureClassifier::new();
+        let ctx = classifier.classify("The process crashed unexpectedly");
+        assert_eq!(ctx.class, FailureClass::ProcessFailure);
+    }
+
+    #[test]
+    fn test_classifier_detects_connection_timed_out() {
+        let classifier = FailureClassifier::new();
+        let ctx = classifier.classify("connection timed out while waiting for response");
+        assert_eq!(ctx.class, FailureClass::ProcessFailure);
+    }
+
+    // -------------------------------------------------------------------------
+    // Exponential backoff tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_exponential_backoff_calculation() {
+        use std::time::Duration;
+        assert_eq!(calculate_backoff(1), Duration::from_millis(2000)); // Base
+        assert_eq!(calculate_backoff(2), Duration::from_millis(4000)); // 2x
+        assert_eq!(calculate_backoff(3), Duration::from_millis(8000)); // 4x
+        assert_eq!(calculate_backoff(5), Duration::from_millis(30000)); // Capped at max
+    }
+
+    #[test]
+    fn test_backoff_first_attempt_is_base() {
+        use std::time::Duration;
+        assert_eq!(calculate_backoff(1), Duration::from_millis(RETRY_BACKOFF_BASE_MS));
+    }
+
+    #[test]
+    fn test_backoff_caps_at_max() {
+        use std::time::Duration;
+        // Even with very high attempt number, should never exceed max
+        assert_eq!(calculate_backoff(100), Duration::from_millis(MAX_BACKOFF_MS));
     }
 
     // -------------------------------------------------------------------------

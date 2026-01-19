@@ -83,6 +83,125 @@ pub(crate) const FILE_SIZE_WARNING_TOKENS: usize = 20_000;
 /// Critical threshold - files this size will cause Claude errors
 pub(crate) const FILE_SIZE_CRITICAL_TOKENS: usize = 25_000;
 
+/// Maximum number of files to track in the touch history.
+/// This bounds memory usage in long-running sessions.
+pub(crate) const MAX_FILE_TOUCH_HISTORY: usize = 100;
+
+// ============================================================================
+// BoundedFileTouchHistory
+// ============================================================================
+
+/// A bounded history of file touches that evicts least-touched entries.
+///
+/// Used to track file modification patterns during automation sessions
+/// without unbounded memory growth.
+///
+/// # Memory Bound
+///
+/// The history is capped at `capacity` entries. When full, adding a new
+/// file will evict the file with the lowest touch count.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let mut history = BoundedFileTouchHistory::new(100);
+/// history.touch("src/lib.rs");
+/// history.touch("src/lib.rs"); // Count = 2
+/// history.touch("src/main.rs"); // Count = 1
+///
+/// assert_eq!(history.get_count("src/lib.rs"), Some(2));
+/// ```
+#[derive(Debug, Clone)]
+pub(crate) struct BoundedFileTouchHistory {
+    entries: std::collections::HashMap<String, u32>,
+    capacity: usize,
+}
+
+impl BoundedFileTouchHistory {
+    /// Create a new bounded history with the given capacity.
+    #[must_use]
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            entries: std::collections::HashMap::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    /// Create a new bounded history with the default capacity.
+    #[must_use]
+    pub fn with_default_capacity() -> Self {
+        Self::new(MAX_FILE_TOUCH_HISTORY)
+    }
+
+    /// Record a touch on a file, incrementing its count.
+    ///
+    /// If the history is at capacity and the file is new, evicts the
+    /// file with the lowest touch count.
+    pub fn touch(&mut self, file: &str) {
+        if let Some(count) = self.entries.get_mut(file) {
+            *count += 1;
+        } else {
+            // New file - check if we need to evict
+            if self.entries.len() >= self.capacity {
+                self.evict_least_touched();
+            }
+            self.entries.insert(file.to_string(), 1);
+        }
+    }
+
+    /// Evict the entry with the lowest touch count.
+    fn evict_least_touched(&mut self) {
+        if let Some((min_file, _)) = self
+            .entries
+            .iter()
+            .min_by_key(|(_, count)| *count)
+            .map(|(f, c)| (f.clone(), *c))
+        {
+            self.entries.remove(&min_file);
+        }
+    }
+
+    /// Iterate over all entries.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &u32)> {
+        self.entries.iter()
+    }
+
+    /// Get the current number of tracked files.
+    #[cfg(test)]
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Check if the history is empty.
+    #[cfg(test)]
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Get the capacity of the history.
+    #[cfg(test)]
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Check if a file is in the history.
+    #[cfg(test)]
+    #[must_use]
+    pub fn contains(&self, file: &str) -> bool {
+        self.entries.contains_key(file)
+    }
+
+    /// Get the touch count for a file.
+    #[cfg(test)]
+    #[must_use]
+    pub fn get_count(&self, file: &str) -> Option<u32> {
+        self.entries.get(file).copied()
+    }
+}
+
 /// Dependencies for the loop manager.
 ///
 /// This struct holds trait objects for all external dependencies,
@@ -518,9 +637,8 @@ impl LoopManager {
         // Track best quality metrics for checkpoint creation
         let mut best_quality: Option<QualityMetrics> = None;
 
-        // Track file touches across iterations for churn detection
-        let mut file_touch_history: std::collections::HashMap<String, u32> =
-            std::collections::HashMap::new();
+        // Track file touches across iterations for churn detection (bounded to prevent memory growth)
+        let mut file_touch_history = BoundedFileTouchHistory::with_default_capacity();
         // Track test count history for stagnation detection
         let mut test_count_history: Vec<u32> = Vec::new();
         // Track clippy warning history for growth detection
@@ -744,7 +862,7 @@ impl LoopManager {
             let mut should_break = false;
 
             loop {
-                let result = self.run_claude_iteration().await;
+                let result = self.run_claude_iteration_with_retry().await;
 
                 match result {
                     Ok(exit_code) => {
@@ -1192,7 +1310,7 @@ impl LoopManager {
             if let Some(ref deps) = self.deps {
                 if let Ok(modified) = deps.git.get_modified_files() {
                     for file in modified {
-                        *file_touch_history.entry(file).or_insert(0) += 1;
+                        file_touch_history.touch(&file);
                     }
                 }
             }
@@ -2617,5 +2735,177 @@ Connect all components.
     #[test]
     fn test_mode_to_prompt_name_plan() {
         assert_eq!(mode_to_prompt_name(&LoopMode::Plan), "plan");
+    }
+
+    // =========================================================================
+    // run_claude_iteration_with_retry tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_process_error_retries_then_succeeds() {
+        let claude = Arc::new(
+            MockClaudeProcess::new().with_fail_count(2, "No messages returned"),
+        );
+        let deps = LoopDependencies {
+            git: Arc::new(MockGitOperations::new()),
+            claude: claude.clone(),
+            fs: Arc::new(RwLock::new(
+                MockFileSystem::new()
+                    .with_file("IMPLEMENTATION_PLAN.md", "# Plan")
+                    .with_file("PROMPT_build.md", "Test build prompt"),
+            )),
+            quality: Arc::new(MockQualityChecker::new()),
+        };
+
+        let cfg = mock_config();
+        let manager = LoopManager::with_deps(cfg, deps).unwrap();
+
+        let result = manager.run_claude_iteration_with_retry().await;
+        assert!(result.is_ok(), "Expected Ok after retries, got: {:?}", result);
+        assert_eq!(claude.call_count(), 3); // Failed twice, succeeded on third
+    }
+
+    #[tokio::test]
+    async fn test_process_error_exhausts_retries() {
+        // Fail more times than MAX_RETRIES to exhaust all retries
+        let claude = Arc::new(
+            MockClaudeProcess::new().with_fail_count(10, "No messages returned"),
+        );
+        let deps = LoopDependencies {
+            git: Arc::new(MockGitOperations::new()),
+            claude: claude.clone(),
+            fs: Arc::new(RwLock::new(
+                MockFileSystem::new()
+                    .with_file("IMPLEMENTATION_PLAN.md", "# Plan")
+                    .with_file("PROMPT_build.md", "Test build prompt"),
+            )),
+            quality: Arc::new(MockQualityChecker::new()),
+        };
+
+        let cfg = mock_config();
+        let manager = LoopManager::with_deps(cfg, deps).unwrap();
+
+        let result = manager.run_claude_iteration_with_retry().await;
+        assert!(result.is_err());
+        assert_eq!(claude.call_count(), MAX_RETRIES); // Stopped at MAX_RETRIES
+    }
+
+    #[tokio::test]
+    async fn test_non_transient_error_not_retried() {
+        // A compilation error should not be retried
+        let claude = Arc::new(
+            MockClaudeProcess::new().with_error("error[E0308]: mismatched types"),
+        );
+        let deps = LoopDependencies {
+            git: Arc::new(MockGitOperations::new()),
+            claude: claude.clone(),
+            fs: Arc::new(RwLock::new(
+                MockFileSystem::new()
+                    .with_file("IMPLEMENTATION_PLAN.md", "# Plan")
+                    .with_file("PROMPT_build.md", "Test build prompt"),
+            )),
+            quality: Arc::new(MockQualityChecker::new()),
+        };
+
+        let cfg = mock_config();
+        let manager = LoopManager::with_deps(cfg, deps).unwrap();
+
+        let result = manager.run_claude_iteration_with_retry().await;
+        assert!(result.is_err());
+        // Should only call once since compile errors are not transient
+        assert_eq!(claude.call_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_success_on_first_try_no_retry_needed() {
+        let claude = Arc::new(MockClaudeProcess::new().with_exit_code(0));
+        let deps = LoopDependencies {
+            git: Arc::new(MockGitOperations::new()),
+            claude: claude.clone(),
+            fs: Arc::new(RwLock::new(
+                MockFileSystem::new()
+                    .with_file("IMPLEMENTATION_PLAN.md", "# Plan")
+                    .with_file("PROMPT_build.md", "Test build prompt"),
+            )),
+            quality: Arc::new(MockQualityChecker::new()),
+        };
+
+        let cfg = mock_config();
+        let manager = LoopManager::with_deps(cfg, deps).unwrap();
+
+        let result = manager.run_claude_iteration_with_retry().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+        assert_eq!(claude.call_count(), 1); // Only one call needed
+    }
+
+    // =========================================================================
+    // BoundedFileTouchHistory tests
+    // =========================================================================
+
+    #[test]
+    fn test_bounded_history_evicts_least_touched() {
+        let mut history = BoundedFileTouchHistory::new(3);
+        history.touch("a.rs");
+        history.touch("b.rs");
+        history.touch("a.rs"); // a.rs count = 2
+        history.touch("c.rs");
+        history.touch("d.rs"); // Should evict b.rs or c.rs (count = 1)
+
+        assert_eq!(history.len(), 3);
+        assert!(history.contains("a.rs")); // Most touched, should remain
+    }
+
+    #[test]
+    fn test_bounded_history_default_capacity() {
+        let history = BoundedFileTouchHistory::with_default_capacity();
+        assert_eq!(history.capacity(), MAX_FILE_TOUCH_HISTORY);
+    }
+
+    #[test]
+    fn test_bounded_history_touch_increments_count() {
+        let mut history = BoundedFileTouchHistory::new(10);
+        history.touch("file.rs");
+        assert_eq!(history.get_count("file.rs"), Some(1));
+
+        history.touch("file.rs");
+        assert_eq!(history.get_count("file.rs"), Some(2));
+
+        history.touch("file.rs");
+        assert_eq!(history.get_count("file.rs"), Some(3));
+    }
+
+    #[test]
+    fn test_bounded_history_no_eviction_under_capacity() {
+        let mut history = BoundedFileTouchHistory::new(5);
+        history.touch("a.rs");
+        history.touch("b.rs");
+        history.touch("c.rs");
+
+        assert_eq!(history.len(), 3);
+        assert!(history.contains("a.rs"));
+        assert!(history.contains("b.rs"));
+        assert!(history.contains("c.rs"));
+    }
+
+    #[test]
+    fn test_bounded_history_iter() {
+        let mut history = BoundedFileTouchHistory::new(10);
+        history.touch("a.rs");
+        history.touch("b.rs");
+        history.touch("a.rs");
+
+        let entries: Vec<_> = history.iter().collect();
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn test_bounded_history_is_empty() {
+        let history = BoundedFileTouchHistory::new(10);
+        assert!(history.is_empty());
+
+        let mut history = BoundedFileTouchHistory::new(10);
+        history.touch("a.rs");
+        assert!(!history.is_empty());
     }
 }

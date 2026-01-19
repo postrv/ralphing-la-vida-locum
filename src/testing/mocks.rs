@@ -131,6 +131,10 @@ pub struct MockClaudeProcess {
     error: Option<String>,
     agent_output: String,
     call_count: AtomicU32,
+    /// Number of times to fail before succeeding.
+    fail_count: AtomicU32,
+    /// Error message to return when fail_count > 0.
+    fail_error: Option<String>,
 }
 
 impl Clone for MockClaudeProcess {
@@ -140,6 +144,8 @@ impl Clone for MockClaudeProcess {
             error: self.error.clone(),
             agent_output: self.agent_output.clone(),
             call_count: AtomicU32::new(self.call_count.load(Ordering::SeqCst)),
+            fail_count: AtomicU32::new(self.fail_count.load(Ordering::SeqCst)),
+            fail_error: self.fail_error.clone(),
         }
     }
 }
@@ -151,6 +157,8 @@ impl Default for MockClaudeProcess {
             error: None,
             agent_output: String::new(),
             call_count: AtomicU32::new(0),
+            fail_count: AtomicU32::new(0),
+            fail_error: None,
         }
     }
 }
@@ -183,6 +191,29 @@ impl MockClaudeProcess {
         self
     }
 
+    /// Configure the mock to fail the first N calls, then succeed.
+    ///
+    /// This is useful for testing retry logic with transient failures.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let claude = MockClaudeProcess::new()
+    ///     .with_fail_count(2, "No messages returned");
+    ///
+    /// // First two calls fail
+    /// assert!(claude.run_iteration("prompt").await.is_err());
+    /// assert!(claude.run_iteration("prompt").await.is_err());
+    /// // Third call succeeds
+    /// assert!(claude.run_iteration("prompt").await.is_ok());
+    /// ```
+    #[must_use]
+    pub fn with_fail_count(mut self, count: u32, error: &str) -> Self {
+        self.fail_count = AtomicU32::new(count);
+        self.fail_error = Some(error.to_string());
+        self
+    }
+
     /// Get the number of times run_iteration was called.
     pub fn call_count(&self) -> u32 {
         self.call_count.load(Ordering::SeqCst)
@@ -194,6 +225,18 @@ impl ClaudeProcess for MockClaudeProcess {
     async fn run_iteration(&self, _prompt: &str) -> Result<i32> {
         self.call_count.fetch_add(1, Ordering::SeqCst);
 
+        // Check fail_count first - if > 0, decrement and fail
+        let current_fail_count = self.fail_count.load(Ordering::SeqCst);
+        if current_fail_count > 0 {
+            self.fail_count.fetch_sub(1, Ordering::SeqCst);
+            if let Some(ref fail_error) = self.fail_error {
+                bail!("{}", fail_error)
+            } else {
+                bail!("Mock failure")
+            }
+        }
+
+        // Then check permanent error
         if let Some(ref error) = self.error {
             bail!("{}", error)
         } else {
@@ -520,5 +563,28 @@ mod tests {
         let result = checker.check_no_allow_annotations().unwrap();
         assert!(!result.passed);
         assert_eq!(result.warnings.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_mock_claude_fails_first_n_calls_then_succeeds() {
+        let claude = MockClaudeProcess::new().with_fail_count(2, "No messages returned");
+
+        assert!(claude.run_iteration("prompt").await.is_err());
+        assert!(claude.run_iteration("prompt").await.is_err());
+        assert!(claude.run_iteration("prompt").await.is_ok());
+        assert_eq!(claude.call_count(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_mock_claude_fail_count_decrements() {
+        let claude = MockClaudeProcess::new().with_fail_count(1, "Process crashed");
+
+        // First call should fail
+        let err = claude.run_iteration("prompt").await.unwrap_err();
+        assert!(err.to_string().contains("Process crashed"));
+
+        // Second call should succeed
+        assert!(claude.run_iteration("prompt").await.is_ok());
+        assert_eq!(claude.call_count(), 2);
     }
 }

@@ -3,11 +3,11 @@
 //! This module contains methods related to running Claude Code iterations,
 //! tracking progress, and managing the intelligent retry system.
 
-use super::{mode_to_prompt_name, truncate_prompt, LoopManager};
+use super::{mode_to_prompt_name, truncate_prompt, LoopManager, MAX_RETRIES};
 use crate::r#loop::progress::{ProgressEvaluation, ProgressSignals};
 use crate::r#loop::retry::{
-    FailureClass, FailureClassifier, FailureContext, FailureLocation, RecoveryStrategy,
-    RetryAttempt, SubTask, TaskDecomposer,
+    calculate_backoff, FailureClass, FailureClassifier, FailureContext, FailureLocation,
+    RecoveryStrategy, RetryAttempt, SubTask, TaskDecomposer,
 };
 use anyhow::Result;
 use std::process::Command;
@@ -47,6 +47,51 @@ impl LoopManager {
 
         // Fallback to direct command execution
         self.run_claude_command(&prompt).await
+    }
+
+    /// Run a Claude Code iteration with automatic retry on transient failures.
+    ///
+    /// This method wraps `run_claude_iteration()` with exponential backoff retry
+    /// logic specifically for `ProcessFailure` class errors (e.g., "No messages
+    /// returned", "process crashed", "connection timed out").
+    ///
+    /// # Behavior
+    ///
+    /// - On success: returns immediately with exit code
+    /// - On transient failure: cleans up LSP, waits with exponential backoff, retries
+    /// - On max retries exceeded: returns the last error
+    /// - On non-transient failure: returns immediately without retry
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let exit_code = manager.run_claude_iteration_with_retry().await?;
+    /// ```
+    pub(crate) async fn run_claude_iteration_with_retry(&self) -> Result<i32> {
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
+            match self.run_claude_iteration().await {
+                Ok(code) => return Ok(code),
+                Err(e) => {
+                    let failure = self.failure_classifier().classify(&e.to_string());
+                    if failure.class.may_be_transient() && attempt < MAX_RETRIES {
+                        let delay = calculate_backoff(attempt);
+                        tracing::warn!(
+                            "Process failure (attempt {}/{}): {}. Retrying in {:?}...",
+                            attempt,
+                            MAX_RETRIES,
+                            e,
+                            delay
+                        );
+                        Self::cleanup_lsp();
+                        tokio::time::sleep(delay).await;
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        }
     }
 
     /// Run the claude command with the given prompt.
