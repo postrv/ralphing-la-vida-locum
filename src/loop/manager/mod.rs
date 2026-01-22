@@ -332,9 +332,8 @@ impl LoopDependencies {
             git: Arc::new(RealGitOperations::new(project_dir.clone())),
             claude: Arc::new(RealClaudeProcess::new(project_dir.clone())),
             fs: Arc::new(RwLock::new(RealFileSystem::new(project_dir.clone()))),
-            // For now, use the default quality checker. Phase 7.2 will add
-            // RealQualityChecker::with_gates() to use the detected gates.
-            quality: Arc::new(RealQualityChecker::new(project_dir)),
+            // Phase 7.2: Use detected gates for polyglot quality checking
+            quality: Arc::new(RealQualityChecker::with_gates(project_dir, gates)),
             gate_names,
         }
     }

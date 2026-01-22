@@ -5,10 +5,12 @@
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
+use ralph::quality::gates::QualityGate;
 use ralph::quality::{EnforcerConfig, QualityGateEnforcer};
 use ralph::testing::{ClaudeProcess, FileSystem, GitOperations, QualityChecker, QualityGateResult};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use tokio::process::Command as AsyncCommand;
 use tracing::debug;
 
@@ -259,30 +261,154 @@ impl FileSystem for RealFileSystem {
 ///
 /// Uses the comprehensive `QualityGateEnforcer` for running quality checks.
 /// This integrates the quality gate enforcement system with the testable trait interface.
-#[derive(Debug, Clone)]
+///
+/// # Polyglot Support (Phase 7.2)
+///
+/// This checker supports two modes of operation:
+/// 1. **Legacy mode**: Uses `QualityGateEnforcer` with `EnforcerConfig` (Rust-only)
+/// 2. **Polyglot mode**: Uses injected `QualityGate` instances via `with_gates()`
+///
+/// The `run_gates()` method runs all injected gates when in polyglot mode.
 pub struct RealQualityChecker {
     project_dir: PathBuf,
-    /// Configuration for the quality gate enforcer.
+    /// Configuration for the quality gate enforcer (legacy mode).
     enforcer_config: EnforcerConfig,
+    /// Injected quality gates for polyglot support.
+    /// When non-empty, `run_gates()` uses these instead of the enforcer.
+    gates: Arc<Vec<Box<dyn QualityGate>>>,
+}
+
+impl std::fmt::Debug for RealQualityChecker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RealQualityChecker")
+            .field("project_dir", &self.project_dir)
+            .field("enforcer_config", &self.enforcer_config)
+            .field("gates_count", &self.gates.len())
+            .finish()
+    }
+}
+
+impl Clone for RealQualityChecker {
+    fn clone(&self) -> Self {
+        Self {
+            project_dir: self.project_dir.clone(),
+            enforcer_config: self.enforcer_config.clone(),
+            gates: Arc::clone(&self.gates),
+        }
+    }
 }
 
 impl RealQualityChecker {
     /// Create a new quality checker for the given directory.
+    ///
+    /// Uses the default enforcer configuration (Rust quality gates).
+    /// For polyglot support, use `with_gates()` instead.
     #[must_use]
     pub fn new(project_dir: PathBuf) -> Self {
         Self {
             project_dir,
             enforcer_config: EnforcerConfig::default(),
+            gates: Arc::new(Vec::new()),
         }
     }
 
     /// Create a quality checker with custom enforcer configuration.
+    ///
+    /// This is used for legacy Rust-only quality checking.
+    /// For polyglot support, use `with_gates()` instead.
     #[must_use]
     pub fn with_config(project_dir: PathBuf, config: EnforcerConfig) -> Self {
+        let mut checker = Self::new(project_dir);
+        checker.enforcer_config = config;
+        checker
+    }
+
+    /// Create a quality checker with injected quality gates.
+    ///
+    /// This enables polyglot quality checking by allowing gates for multiple
+    /// languages to be injected. Use `run_gates()` to execute all injected gates.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_dir` - Path to the project directory
+    /// * `gates` - Quality gates to run (typically from `detect_available_gates()`)
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::quality::gates::detect_available_gates;
+    /// use ralph::bootstrap::Language;
+    ///
+    /// let languages = vec![Language::Rust, Language::Python];
+    /// let gates = detect_available_gates(&project_dir, &languages);
+    /// let checker = RealQualityChecker::with_gates(project_dir, gates);
+    ///
+    /// let result = checker.run_gates().unwrap();
+    /// ```
+    #[must_use]
+    pub fn with_gates(project_dir: PathBuf, gates: Vec<Box<dyn QualityGate>>) -> Self {
         Self {
             project_dir,
-            enforcer_config: config,
+            enforcer_config: EnforcerConfig::default(),
+            gates: Arc::new(gates),
         }
+    }
+
+    /// Returns the names of all injected quality gates.
+    ///
+    /// Returns an empty vector if using legacy enforcer mode (no injected gates).
+    #[must_use]
+    pub fn gate_names(&self) -> Vec<String> {
+        self.gates.iter().map(|g| g.name().to_string()).collect()
+    }
+
+    /// Run all injected quality gates and return combined results.
+    ///
+    /// This method iterates over all gates provided via `with_gates()` and
+    /// collects their results. Gates are run in order and failures are combined.
+    ///
+    /// # Returns
+    ///
+    /// A `QualityGateResult` with:
+    /// - `passed`: true if all gates passed (or no gates to run)
+    /// - `failures`: combined failure messages from all gates
+    /// - `warnings`: empty (not currently used by polyglot gates)
+    /// - `output`: empty (individual gate outputs not combined)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any gate fails to execute (not if checks fail).
+    pub fn run_gates(&self) -> Result<QualityGateResult> {
+        // If no gates are injected, return success
+        if self.gates.is_empty() {
+            return Ok(QualityGateResult::pass());
+        }
+
+        let mut all_failures = Vec::new();
+        let mut all_passed = true;
+
+        // Run each gate in order (deterministic)
+        for gate in self.gates.iter() {
+            let issues = gate.run(&self.project_dir)?;
+
+            // Convert issues to failure messages
+            for issue in &issues {
+                let msg = format!("[{}] {}", gate.name(), issue.message);
+                all_failures.push(msg);
+            }
+
+            // Check if gate failed (has blocking issues)
+            if !issues.is_empty() && gate.is_blocking() {
+                all_passed = false;
+            }
+        }
+
+        Ok(QualityGateResult {
+            passed: all_passed,
+            warnings: Vec::new(),
+            failures: all_failures,
+            output: String::new(),
+        })
     }
 
     /// Get an enforcer instance configured for this checker.
@@ -395,12 +521,190 @@ impl QualityChecker for RealQualityChecker {
             output: result.raw_output,
         })
     }
+
+    fn run_gates(&self) -> Result<QualityGateResult> {
+        // Delegate to the inherent method
+        RealQualityChecker::run_gates(self)
+    }
+
+    fn gate_names(&self) -> Vec<String> {
+        // Delegate to the inherent method
+        RealQualityChecker::gate_names(self)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ralph::quality::gates::{GateIssue, IssueSeverity, QualityGate};
+    use std::path::Path;
     use tempfile::TempDir;
+
+    // =========================================================================
+    // Mock QualityGate for testing (Phase 7.2)
+    // =========================================================================
+
+    /// A mock quality gate for testing gate injection.
+    struct MockGate {
+        name: String,
+        issues: Vec<GateIssue>,
+        blocking: bool,
+    }
+
+    impl MockGate {
+        /// Create a passing gate with no issues.
+        fn passing(name: &str) -> Self {
+            Self {
+                name: name.to_string(),
+                issues: Vec::new(),
+                blocking: true,
+            }
+        }
+
+        /// Create a failing gate with specified issues.
+        fn failing(name: &str, messages: Vec<&str>) -> Self {
+            let issues = messages
+                .iter()
+                .map(|msg| GateIssue::new(IssueSeverity::Error, *msg))
+                .collect();
+            Self {
+                name: name.to_string(),
+                issues,
+                blocking: true,
+            }
+        }
+    }
+
+    impl QualityGate for MockGate {
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        fn run(&self, _project_dir: &Path) -> Result<Vec<GateIssue>> {
+            Ok(self.issues.clone())
+        }
+
+        fn is_blocking(&self) -> bool {
+            self.blocking
+        }
+
+        fn remediation(&self, issues: &[GateIssue]) -> String {
+            issues
+                .iter()
+                .map(|i| i.message.clone())
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    }
+
+    // =========================================================================
+    // RealQualityChecker with_gates() tests (Phase 7.2)
+    // =========================================================================
+
+    #[test]
+    fn test_with_gates_stores_provided_gates() {
+        let temp = TempDir::new().unwrap();
+        let gates: Vec<Box<dyn QualityGate>> = vec![
+            Box::new(MockGate::passing("Gate1")),
+            Box::new(MockGate::passing("Gate2")),
+        ];
+
+        let checker = RealQualityChecker::with_gates(temp.path().to_path_buf(), gates);
+
+        // Verify gates were stored
+        assert_eq!(checker.gate_names().len(), 2);
+        assert!(checker.gate_names().contains(&"Gate1".to_string()));
+        assert!(checker.gate_names().contains(&"Gate2".to_string()));
+    }
+
+    #[test]
+    fn test_run_gates_executes_all_injected_gates() {
+        let temp = TempDir::new().unwrap();
+        let gates: Vec<Box<dyn QualityGate>> = vec![
+            Box::new(MockGate::passing("Gate1")),
+            Box::new(MockGate::passing("Gate2")),
+            Box::new(MockGate::passing("Gate3")),
+        ];
+
+        let checker = RealQualityChecker::with_gates(temp.path().to_path_buf(), gates);
+        let result = checker.run_gates().unwrap();
+
+        // All gates should pass
+        assert!(result.passed);
+        assert!(result.warnings.is_empty());
+        assert!(result.failures.is_empty());
+    }
+
+    #[test]
+    fn test_run_gates_returns_combined_results_from_multiple_languages() {
+        let temp = TempDir::new().unwrap();
+        let gates: Vec<Box<dyn QualityGate>> = vec![
+            Box::new(MockGate::failing("Clippy", vec!["rust warning 1"])),
+            Box::new(MockGate::failing("Ruff", vec!["python warning 1", "python warning 2"])),
+        ];
+
+        let checker = RealQualityChecker::with_gates(temp.path().to_path_buf(), gates);
+        let result = checker.run_gates().unwrap();
+
+        // Should fail and have combined failures
+        assert!(!result.passed);
+        assert_eq!(result.failures.len(), 3);
+        assert!(result.failures.iter().any(|f| f.contains("rust warning")));
+        assert!(result.failures.iter().any(|f| f.contains("python warning")));
+    }
+
+    #[test]
+    fn test_run_gates_empty_gates_list_returns_success() {
+        let temp = TempDir::new().unwrap();
+        let gates: Vec<Box<dyn QualityGate>> = vec![];
+
+        let checker = RealQualityChecker::with_gates(temp.path().to_path_buf(), gates);
+        let result = checker.run_gates().unwrap();
+
+        // No gates to fail means success
+        assert!(result.passed);
+        assert!(result.warnings.is_empty());
+        assert!(result.failures.is_empty());
+    }
+
+    #[test]
+    fn test_run_gates_execution_order_is_deterministic() {
+        let temp = TempDir::new().unwrap();
+
+        // Run multiple times with same gate order
+        for _ in 0..3 {
+            let gates: Vec<Box<dyn QualityGate>> = vec![
+                Box::new(MockGate::failing("Gate1", vec!["error1"])),
+                Box::new(MockGate::failing("Gate2", vec!["error2"])),
+                Box::new(MockGate::failing("Gate3", vec!["error3"])),
+            ];
+
+            let checker = RealQualityChecker::with_gates(temp.path().to_path_buf(), gates);
+            let result = checker.run_gates().unwrap();
+
+            // Failures should be in deterministic order
+            assert_eq!(result.failures.len(), 3);
+            assert!(result.failures[0].contains("error1"));
+            assert!(result.failures[1].contains("error2"));
+            assert!(result.failures[2].contains("error3"));
+        }
+    }
+
+    #[test]
+    fn test_new_provides_backward_compatibility() {
+        let temp = TempDir::new().unwrap();
+        let checker = RealQualityChecker::new(temp.path().to_path_buf());
+
+        // new() should use default enforcer config (backward compatible)
+        assert!(checker.enforcer_config.run_clippy);
+        assert!(checker.enforcer_config.run_tests);
+        // The gates field should be empty when using legacy enforcer
+        assert!(checker.gate_names().is_empty());
+    }
+
+    // =========================================================================
+    // Original tests
+    // =========================================================================
 
     #[test]
     fn test_real_file_system_read_write() {

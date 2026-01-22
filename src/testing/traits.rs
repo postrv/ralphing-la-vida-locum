@@ -237,6 +237,26 @@ pub trait QualityChecker {
     ///
     /// Returns an error if file scanning fails.
     fn check_no_allow_annotations(&self) -> Result<QualityGateResult>;
+
+    /// Run all injected quality gates (polyglot support).
+    ///
+    /// This method is used when quality gates are injected via `with_gates()`.
+    /// The default implementation returns success (for backward compatibility).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any gate fails to execute.
+    fn run_gates(&self) -> Result<QualityGateResult> {
+        // Default: no injected gates, return success
+        Ok(QualityGateResult::pass())
+    }
+
+    /// Returns the names of injected quality gates.
+    ///
+    /// Returns an empty vector if no gates are injected (default behavior).
+    fn gate_names(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[cfg(test)]

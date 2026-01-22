@@ -54,17 +54,17 @@ cargo test --lib -- real_polyglot          # All pass
 Extend `RealQualityChecker` to accept injected gates instead of hardcoded Rust gates.
 
 **Test Requirements**:
-- [ ] Test `RealQualityChecker::with_gates()` stores provided gates
-- [ ] Test `run_gates()` executes all injected gates
-- [ ] Test `run_gates()` returns combined results from multiple languages
-- [ ] Test empty gates list returns success (no gates to fail)
-- [ ] Test gate execution order is deterministic
+- [x] Test `RealQualityChecker::with_gates()` stores provided gates
+- [x] Test `run_gates()` executes all injected gates
+- [x] Test `run_gates()` returns combined results from multiple languages
+- [x] Test empty gates list returns success (no gates to fail)
+- [x] Test gate execution order is deterministic
 
 **Implementation**:
-- [ ] Add `gates: Vec<Box<dyn QualityGate>>` field to `RealQualityChecker`
-- [ ] Add `with_gates(project_dir: PathBuf, gates: Vec<Box<dyn QualityGate>>) -> Self`
-- [ ] Modify `run_gates()` to iterate over `self.gates` instead of hardcoded list
-- [ ] Ensure backward compatibility: `new()` defaults to Rust gates for existing projects
+- [x] Add `gates: Vec<Box<dyn QualityGate>>` field to `RealQualityChecker`
+- [x] Add `with_gates(project_dir: PathBuf, gates: Vec<Box<dyn QualityGate>>) -> Self`
+- [x] Modify `run_gates()` to iterate over `self.gates` instead of hardcoded list
+- [x] Ensure backward compatibility: `new()` defaults to Rust gates for existing projects
 
 **Quality Gates**:
 ```bash
