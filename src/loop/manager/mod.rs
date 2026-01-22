@@ -59,8 +59,10 @@ use ralph::checkpoint::{
 };
 use ralph::config::ProjectConfig;
 use ralph::prompt::{AssemblerConfig, AttemptOutcome, ErrorSeverity, PromptAssembler, TaskPhase};
+use ralph::quality::gates::detect_available_gates;
 use ralph::quality::EnforcerConfig;
 use ralph::testing::{ClaudeProcess, FileSystem, GitOperations, QualityChecker};
+use ralph::LanguageDetector;
 use ralph::Analytics;
 use std::path::PathBuf;
 use std::process::Command;
@@ -230,6 +232,9 @@ pub struct LoopDependencies {
     pub fs: Arc<RwLock<dyn FileSystem + Send + Sync>>,
     /// Quality checker abstraction.
     pub quality: Arc<dyn QualityChecker + Send + Sync>,
+    /// Names of the quality gates that were selected for this project.
+    /// This is populated by `real_polyglot()` for polyglot support.
+    gate_names: Vec<String>,
 }
 
 impl std::fmt::Debug for LoopDependencies {
@@ -244,17 +249,6 @@ impl std::fmt::Debug for LoopDependencies {
 }
 
 impl LoopDependencies {
-    /// Create real dependencies for production use.
-    #[must_use]
-    pub fn real(project_dir: PathBuf) -> Self {
-        Self {
-            git: Arc::new(RealGitOperations::new(project_dir.clone())),
-            claude: Arc::new(RealClaudeProcess::new(project_dir.clone())),
-            fs: Arc::new(RwLock::new(RealFileSystem::new(project_dir.clone()))),
-            quality: Arc::new(RealQualityChecker::new(project_dir)),
-        }
-    }
-
     /// Create real dependencies with custom quality gate configuration.
     ///
     /// This allows customizing which quality gates are enabled and their settings.
@@ -278,7 +272,85 @@ impl LoopDependencies {
             claude: Arc::new(RealClaudeProcess::new(project_dir.clone())),
             fs: Arc::new(RwLock::new(RealFileSystem::new(project_dir.clone()))),
             quality: Arc::new(RealQualityChecker::with_config(project_dir, quality_config)),
+            gate_names: Vec::new(),
         }
+    }
+
+    /// Create real dependencies with automatic language detection and gate selection.
+    ///
+    /// This is the recommended constructor for polyglot projects. It:
+    /// 1. Detects all programming languages used in the project
+    /// 2. Filters to languages with confidence >= 10%
+    /// 3. Selects quality gates appropriate for each detected language
+    /// 4. Filters out gates whose tools are not installed
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use std::path::PathBuf;
+    ///
+    /// // For a project with both Rust (Cargo.toml) and Python (pyproject.toml),
+    /// // this will detect both languages and select gates for both:
+    /// // - Rust: Clippy, Tests, NoAllow, Security, NoTodo
+    /// // - Python: Ruff, Pytest, Mypy, Bandit (if tools are installed)
+    /// let deps = LoopDependencies::real_polyglot(PathBuf::from("."));
+    ///
+    /// // Check which gates were selected
+    /// for gate_name in deps.gate_names() {
+    ///     println!("Selected gate: {}", gate_name);
+    /// }
+    /// ```
+    #[must_use]
+    pub fn real_polyglot(project_dir: PathBuf) -> Self {
+        // Step 1: Detect languages in the project
+        let detector = LanguageDetector::new(&project_dir);
+        let detected_languages = detector.detect();
+
+        // Step 2: Filter to languages with confidence >= 10%
+        let significant_languages: Vec<_> = detected_languages
+            .iter()
+            .filter(|d| d.confidence >= LanguageDetector::DEFAULT_POLYGLOT_THRESHOLD)
+            .map(|d| d.language)
+            .collect();
+
+        // Step 3: Detect available gates for the selected languages
+        let gates = detect_available_gates(&project_dir, &significant_languages);
+
+        // Step 4: Collect gate names for tracking
+        let gate_names: Vec<String> = gates.iter().map(|g| g.name().to_string()).collect();
+
+        // Log the detected configuration
+        if !significant_languages.is_empty() {
+            debug!(
+                "Polyglot detection: {:?} languages, {} gates",
+                significant_languages,
+                gate_names.len()
+            );
+        }
+
+        Self {
+            git: Arc::new(RealGitOperations::new(project_dir.clone())),
+            claude: Arc::new(RealClaudeProcess::new(project_dir.clone())),
+            fs: Arc::new(RwLock::new(RealFileSystem::new(project_dir.clone()))),
+            // For now, use the default quality checker. Phase 7.2 will add
+            // RealQualityChecker::with_gates() to use the detected gates.
+            quality: Arc::new(RealQualityChecker::new(project_dir)),
+            gate_names,
+        }
+    }
+
+    /// Returns the names of quality gates selected for this project.
+    ///
+    /// This is primarily useful for:
+    /// - Debugging and logging which gates are active
+    /// - Testing that language detection selected the correct gates
+    /// - UI display of active quality gates
+    ///
+    /// Returns an empty vector if this instance was created with `real()` or
+    /// `real_with_quality_config()` (which use hardcoded Rust gates).
+    #[must_use]
+    pub fn gate_names(&self) -> Vec<String> {
+        self.gate_names.clone()
     }
 }
 
@@ -426,12 +498,20 @@ impl LoopManager {
     /// ```
     pub fn new(cfg: LoopManagerConfig) -> Result<Self> {
         // Create real dependencies, using custom quality config if provided
+        // or polyglot auto-detection by default
         let deps = match cfg.quality_config.clone() {
             Some(quality_config) => {
                 LoopDependencies::real_with_quality_config(cfg.project_dir.clone(), quality_config)
             }
-            None => LoopDependencies::real(cfg.project_dir.clone()),
+            None => LoopDependencies::real_polyglot(cfg.project_dir.clone()),
         };
+
+        // Log detected quality gates for visibility
+        let gate_names = deps.gate_names();
+        if !gate_names.is_empty() {
+            info!("Polyglot gates detected: {:?}", gate_names);
+        }
+
         Self::with_deps(cfg, deps)
     }
 
@@ -2139,6 +2219,7 @@ mod tests {
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new().all_passing()),
+            gate_names: Vec::new(),
         }
     }
 
@@ -2158,6 +2239,7 @@ mod tests {
             claude: Arc::new(MockClaudeProcess::new()),
             fs: Arc::new(RwLock::new(MockFileSystem::new())), // No plan file
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2203,6 +2285,7 @@ mod tests {
                 MockFileSystem::new().with_file("IMPLEMENTATION_PLAN.md", "# Plan"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2221,6 +2304,7 @@ mod tests {
                 MockFileSystem::new().with_file("IMPLEMENTATION_PLAN.md", "# Plan"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2240,6 +2324,7 @@ mod tests {
                     .with_file("IMPLEMENTATION_PLAN.md", "# Plan\n\nALL_TASKS_COMPLETE"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2270,6 +2355,7 @@ mod tests {
                     .with_file("PROMPT_build.md", "Test build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2292,6 +2378,7 @@ mod tests {
                     .with_file("PROMPT_build.md", "Test build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2314,6 +2401,7 @@ mod tests {
                     .with_file("PROMPT_build.md", "Test build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2335,6 +2423,7 @@ mod tests {
                 MockFileSystem::new().with_file("IMPLEMENTATION_PLAN.md", "# Plan"), // No static prompt file needed
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2363,6 +2452,7 @@ mod tests {
                 MockFileSystem::new().with_file("IMPLEMENTATION_PLAN.md", "# Plan"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2388,6 +2478,7 @@ mod tests {
                 MockFileSystem::new().with_file("IMPLEMENTATION_PLAN.md", "# Plan"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2430,6 +2521,7 @@ Final polish.
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2458,6 +2550,7 @@ Second task.
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2490,6 +2583,7 @@ Second task description.
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2524,6 +2618,7 @@ Second task.
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2554,6 +2649,7 @@ First task.
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2600,6 +2696,7 @@ Second task.
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2653,6 +2750,7 @@ Connect all components.
                     .with_file("PROMPT_build.md", "Build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2753,6 +2851,7 @@ Connect all components.
                     .with_file("PROMPT_build.md", "Test build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2780,6 +2879,7 @@ Connect all components.
                     .with_file("PROMPT_build.md", "Test build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2804,6 +2904,7 @@ Connect all components.
                     .with_file("PROMPT_build.md", "Test build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2827,6 +2928,7 @@ Connect all components.
                     .with_file("PROMPT_build.md", "Test build prompt"),
             )),
             quality: Arc::new(MockQualityChecker::new()),
+            gate_names: Vec::new(),
         };
 
         let cfg = mock_config();
@@ -2906,5 +3008,169 @@ Connect all components.
         let mut history = BoundedFileTouchHistory::new(10);
         history.touch("a.rs");
         assert!(!history.is_empty());
+    }
+
+    // =========================================================================
+    // LoopDependencies::real_polyglot() tests (Phase 7.1)
+    // =========================================================================
+
+    #[test]
+    fn test_real_polyglot_detects_rust_project() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().to_path_buf();
+
+        // Create a Rust project structure
+        std::fs::write(project_dir.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        std::fs::create_dir_all(project_dir.join("src")).unwrap();
+        std::fs::write(project_dir.join("src/main.rs"), "fn main() {}").unwrap();
+
+        // Create the polyglot dependencies
+        let deps = LoopDependencies::real_polyglot(project_dir);
+
+        // Verify the detected gates include Rust gates
+        let gate_names = deps.gate_names();
+        assert!(
+            gate_names.contains(&"Clippy".to_string()),
+            "Expected Clippy gate for Rust project, got: {:?}",
+            gate_names
+        );
+        assert!(
+            gate_names.contains(&"Tests".to_string()),
+            "Expected Tests gate for Rust project, got: {:?}",
+            gate_names
+        );
+    }
+
+    #[test]
+    fn test_real_polyglot_detects_python_project() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().to_path_buf();
+
+        // Create a Python project structure
+        std::fs::write(
+            project_dir.join("pyproject.toml"),
+            "[project]\nname = \"test\"",
+        )
+        .unwrap();
+        std::fs::write(project_dir.join("main.py"), "print('hello')").unwrap();
+
+        // Create the polyglot dependencies
+        let deps = LoopDependencies::real_polyglot(project_dir);
+
+        // Verify the detected gates include Python gates
+        let gate_names = deps.gate_names();
+        assert!(
+            gate_names.contains(&"Ruff".to_string()),
+            "Expected Ruff gate for Python project, got: {:?}",
+            gate_names
+        );
+        assert!(
+            gate_names.contains(&"Pytest".to_string()),
+            "Expected Pytest gate for Python project, got: {:?}",
+            gate_names
+        );
+        assert!(
+            gate_names.contains(&"Mypy".to_string()),
+            "Expected Mypy gate for Python project, got: {:?}",
+            gate_names
+        );
+    }
+
+    #[test]
+    fn test_real_polyglot_detects_typescript_project() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().to_path_buf();
+
+        // Create a TypeScript project structure
+        std::fs::write(
+            project_dir.join("package.json"),
+            r#"{"name": "test", "devDependencies": {"typescript": "^5.0.0"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            project_dir.join("tsconfig.json"),
+            r#"{"compilerOptions": {}}"#,
+        )
+        .unwrap();
+        std::fs::write(project_dir.join("index.ts"), "console.log('hello')").unwrap();
+
+        // Create the polyglot dependencies
+        let deps = LoopDependencies::real_polyglot(project_dir);
+
+        // Verify the detected gates include TypeScript gates
+        let gate_names = deps.gate_names();
+        assert!(
+            gate_names.contains(&"ESLint".to_string()),
+            "Expected ESLint gate for TypeScript project, got: {:?}",
+            gate_names
+        );
+        assert!(
+            gate_names.contains(&"Jest".to_string()),
+            "Expected Jest gate for TypeScript project, got: {:?}",
+            gate_names
+        );
+        assert!(
+            gate_names.contains(&"TypeScript".to_string()),
+            "Expected TypeScript gate for TypeScript project, got: {:?}",
+            gate_names
+        );
+    }
+
+    #[test]
+    fn test_real_polyglot_detects_polyglot_project() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().to_path_buf();
+
+        // Create a polyglot project with both Rust and Python
+        std::fs::write(project_dir.join("Cargo.toml"), "[package]\nname = \"test\"").unwrap();
+        std::fs::create_dir_all(project_dir.join("src")).unwrap();
+        std::fs::write(project_dir.join("src/lib.rs"), "pub fn add() {}").unwrap();
+
+        std::fs::write(
+            project_dir.join("pyproject.toml"),
+            "[project]\nname = \"test\"",
+        )
+        .unwrap();
+        std::fs::create_dir_all(project_dir.join("scripts")).unwrap();
+        std::fs::write(project_dir.join("scripts/helper.py"), "print('hello')").unwrap();
+
+        // Create the polyglot dependencies
+        let deps = LoopDependencies::real_polyglot(project_dir);
+
+        // Verify the detected gates include gates from both languages
+        let gate_names = deps.gate_names();
+
+        // Should have Rust gates
+        assert!(
+            gate_names.contains(&"Clippy".to_string()),
+            "Expected Clippy gate for polyglot project, got: {:?}",
+            gate_names
+        );
+
+        // Should have Python gates
+        assert!(
+            gate_names.contains(&"Ruff".to_string()),
+            "Expected Ruff gate for polyglot project, got: {:?}",
+            gate_names
+        );
+    }
+
+    #[test]
+    fn test_real_polyglot_handles_empty_project() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().to_path_buf();
+
+        // Empty project - no language files
+        // This should return an empty gates list without error
+
+        let deps = LoopDependencies::real_polyglot(project_dir);
+
+        // Verify graceful degradation - should have empty gates, not error
+        let gate_names = deps.gate_names();
+        assert!(
+            gate_names.is_empty(),
+            "Expected empty gates for empty project, got: {:?}",
+            gate_names
+        );
     }
 }
