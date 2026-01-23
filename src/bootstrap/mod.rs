@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use language::Language;
 use language_detector::{DetectedLanguage, LanguageDetector};
 
+use crate::prompt::claude_md_generator::ClaudeMdGenerator;
 use crate::quality::gates::detect_available_gates;
 
 /// Bootstrap manager for setting up the automation suite in a project.
@@ -400,12 +401,29 @@ impl Bootstrap {
     }
 
     /// Create CLAUDE.md configuration
+    ///
+    /// Generates a language-aware CLAUDE.md using the ClaudeMdGenerator.
+    /// The generator creates content tailored to the project's detected
+    /// languages with appropriate quality gates and TDD methodology.
     fn create_claude_config(&self, force: bool) -> Result<()> {
         let claude_md = self.project_dir.join(".claude/CLAUDE.md");
         let settings_json = self.project_dir.join(".claude/settings.json");
 
         if !claude_md.exists() || force {
-            fs::write(&claude_md, include_str!("../templates/CLAUDE.md"))?;
+            // Get effective languages for this project
+            let languages = self.effective_languages();
+
+            // Read existing content if it exists to preserve user customizations
+            let generator = if claude_md.exists() {
+                let existing = fs::read_to_string(&claude_md)?;
+                ClaudeMdGenerator::new(languages).with_existing_content(existing)
+            } else {
+                ClaudeMdGenerator::new(languages)
+            };
+
+            // Generate and write the CLAUDE.md
+            let content = generator.generate();
+            fs::write(&claude_md, content)?;
             println!("   Created: .claude/CLAUDE.md");
         }
 

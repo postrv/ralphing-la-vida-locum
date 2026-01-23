@@ -120,6 +120,7 @@ impl TemplateKind {
 ///     assert!(!template.is_empty(), "Template {:?} should exist for Rust", kind);
 /// }
 /// ```
+#[derive(Debug, Clone)]
 pub struct TemplateRegistry {
     templates: HashMap<(Language, TemplateKind), String>,
     defaults: HashMap<TemplateKind, String>,

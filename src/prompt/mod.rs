@@ -57,6 +57,7 @@
 pub mod antipatterns;
 pub mod assembler;
 pub mod builder;
+pub mod claude_md_generator;
 pub mod code_antipatterns;
 pub mod context;
 pub mod templates;
@@ -73,5 +74,8 @@ pub use context::{
     AntiPattern, AntiPatternSeverity, AntiPatternType, AttemptOutcome, AttemptSummary,
     CurrentTaskContext, ErrorAggregator, ErrorContext, ErrorSeverity, GateResult, PromptContext,
     QualityGateStatus, SessionStats, TaskPhase,
+};
+pub use claude_md_generator::{
+    extract_user_custom_sections, ClaudeMdGenerator, USER_CUSTOM_END, USER_CUSTOM_START,
 };
 pub use templates::{PromptTemplates, Template, TemplateMarker};
