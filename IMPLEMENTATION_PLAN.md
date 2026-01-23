@@ -121,23 +121,23 @@ cargo test --lib -- incremental_gates
 cargo test --lib -- changed_file_detection
 ```
 
-### 23. Phase 15.3: Benchmark Suite
+### 23. Phase 15.3: Benchmark Suite ✅
 
 Create benchmark suite for performance regression detection.
 
 **Test Requirements**:
-- [ ] Test benchmark measures gate execution time
-- [ ] Test benchmark measures language detection time
-- [ ] Test benchmark measures context building time
-- [ ] Test benchmark produces machine-readable output
-- [ ] Test benchmark can compare against baseline
+- [x] Test benchmark measures gate execution time
+- [x] Test benchmark measures language detection time
+- [x] Test benchmark measures context building time
+- [x] Test benchmark produces machine-readable output
+- [x] Test benchmark can compare against baseline
 
 **Implementation**:
-- [ ] Add `benches/` directory with Criterion benchmarks
-- [ ] Create benchmark for each major subsystem
-- [ ] Add baseline recording: `cargo bench -- --save-baseline main`
-- [ ] Add comparison: `cargo bench -- --baseline main`
-- [ ] Add CI job for performance regression detection
+- [x] Add `benches/` directory with Criterion benchmarks
+- [x] Create benchmark for each major subsystem
+- [x] Add baseline recording: `cargo bench -- --save-baseline main`
+- [x] Add comparison: `cargo bench -- --baseline main`
+- [ ] Add CI job for performance regression detection (deferred - requires CI configuration)
 
 **Quality Gates**:
 ```bash

@@ -375,12 +375,36 @@ impl LoopDependencies {
     /// ```
     #[must_use]
     pub fn real_with_quality_config(project_dir: PathBuf, quality_config: EnforcerConfig) -> Self {
+        // Step 1: Detect languages in the project
+        let detector = LanguageDetector::new(&project_dir);
+        let detected_languages = detector.detect();
+
+        // Step 2: Filter to languages with confidence >= 10%
+        let significant_languages: Vec<_> = detected_languages
+            .iter()
+            .filter(|d| d.confidence >= LanguageDetector::DEFAULT_POLYGLOT_THRESHOLD)
+            .map(|d| d.language)
+            .collect();
+
+        // Step 3: Detect available gates for visibility/logging
+        let gates = detect_available_gates(&project_dir, &significant_languages);
+        let gate_names: Vec<String> = gates.iter().map(|g| g.name().to_string()).collect();
+
+        // Log the detected configuration
+        if !significant_languages.is_empty() {
+            debug!(
+                "Polyglot detection: {:?} languages, {} gates",
+                significant_languages,
+                gate_names.len()
+            );
+        }
+
         Self {
             git: Arc::new(RealGitOperations::new(project_dir.clone())),
             claude: Arc::new(RealClaudeProcess::new(project_dir.clone())),
             fs: Arc::new(RwLock::new(RealFileSystem::new(project_dir.clone()))),
             quality: Arc::new(RealQualityChecker::with_config(project_dir, quality_config)),
-            gate_names: Vec::new(),
+            gate_names,
         }
     }
 
@@ -794,7 +818,8 @@ impl LoopManager {
             let weight_config = &self.config.predictor_weights;
 
             // Create predictor based on settings
-            let (base_predictor, preset_info) = if let Some(ref preset_name) = weight_config.preset {
+            let (base_predictor, preset_info) = if let Some(ref preset_name) = weight_config.preset
+            {
                 // Use named preset from settings or CLI via the with_preset constructor
                 let preset = match preset_name.to_lowercase().as_str() {
                     "conservative" => WeightPreset::Conservative,
@@ -828,7 +853,10 @@ impl LoopManager {
                 if let Err(e) = weights.validate() {
                     warn!("Invalid predictor weights configuration: {}", e);
                     // Fall back to defaults
-                    (StagnationPredictor::with_defaults(), "defaults (fallback)".to_string())
+                    (
+                        StagnationPredictor::with_defaults(),
+                        "defaults (fallback)".to_string(),
+                    )
                 } else {
                     let predictor_config = PredictorConfig::new().with_weights(weights);
                     (
@@ -1884,10 +1912,7 @@ impl LoopManager {
         let accuracy_breakdown = predictor.prediction_accuracy_by_level();
         let prediction_history = predictor.prediction_history();
         debug!("{}", predictor_summary);
-        debug!(
-            "Prediction history: {} entries",
-            prediction_history.len()
-        );
+        debug!("Prediction history: {} entries", prediction_history.len());
 
         // Log session end with predictor accuracy
         self.analytics.log_event(
@@ -1924,12 +1949,7 @@ impl LoopManager {
                 // Print breakdown by risk level
                 for (level, acc) in &accuracy_breakdown {
                     if let Some(a) = acc {
-                        println!(
-                            "      {} {}: {:.0}%",
-                            "→".bright_black(),
-                            level,
-                            a * 100.0
-                        );
+                        println!("      {} {}: {:.0}%", "→".bright_black(), level, a * 100.0);
                     }
                 }
             }
