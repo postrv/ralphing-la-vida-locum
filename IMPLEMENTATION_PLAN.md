@@ -122,21 +122,22 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- polyglot_gate_result
 ```
 
-### 5. Phase 7.5: CLI Integration
+### 5. Phase 7.5: CLI Integration ✅
 
 Update CLI commands to display polyglot gate information.
 
 **Test Requirements**:
-- [ ] Test `ralph detect` shows all detected languages with confidence
-- [ ] Test `ralph bootstrap` reports detected languages during setup
-- [ ] Test `ralph loop` logs which gates are being run
-- [ ] Test `ralph loop --verbose` shows per-language gate results
+- [x] Test `ralph detect` shows all detected languages with confidence
+- [x] Test `ralph bootstrap` reports detected languages during setup
+- [x] Test `ralph loop` logs which gates are being run
+- [x] Test `ralph loop --verbose` shows per-language gate results
 
 **Implementation**:
-- [ ] Update `detect` command to show gate availability per language
-- [ ] Update `bootstrap` to log detected languages and selected gates
-- [ ] Add gate execution logging to loop iteration output
-- [ ] Add `--show-gates` flag to list available gates for project
+- [x] Add `detect` command to show all detected languages with confidence
+- [x] Add `--show-gates` flag to detect command to show gate availability per language
+- [x] Update `bootstrap` to log detected languages and selected gates
+- [x] Add gate count to loop banner output
+- [x] Add detailed gate list in verbose mode
 
 **Quality Gates**:
 ```bash

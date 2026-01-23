@@ -18,6 +18,8 @@ use crate::context::ContextBuilder;
 use crate::hooks::HookType;
 use crate::r#loop::{LoopManager, LoopManagerConfig, LoopMode};
 use ralph::bootstrap::Bootstrap;
+use ralph::bootstrap::language_detector::LanguageDetector;
+use ralph::quality::gates::{detect_available_gates, gates_for_language, is_gate_available};
 use ralph::quality::EnforcerConfig;
 use ralph::Analytics;
 use ralph::ProjectConfig;
@@ -121,6 +123,17 @@ enum Commands {
         /// Only detect and display project languages without bootstrapping
         #[arg(long)]
         detect_only: bool,
+    },
+
+    /// Detect programming languages and available quality gates in a project
+    Detect {
+        /// Show available quality gates for detected languages
+        #[arg(long)]
+        show_gates: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Analyze project (generate full analysis artifacts)
@@ -536,6 +549,142 @@ async fn main() -> anyhow::Result<()> {
             println!("  1. Edit IMPLEMENTATION_PLAN.md with your tasks");
             println!("  2. Run: ralph loop plan --max-iterations 5");
             println!("  3. Run: ralph loop build --max-iterations 50");
+        }
+
+        Commands::Detect { show_gates, json } => {
+            // Detect languages in the project
+            let detector = LanguageDetector::new(&project_path);
+            let detected = detector.detect();
+
+            if json {
+                // JSON output mode
+                let output = serde_json::json!({
+                    "languages": detected.iter().map(|d| {
+                        let mut lang_info = serde_json::json!({
+                            "language": d.language.to_string(),
+                            "confidence": d.confidence,
+                            "file_count": d.file_count,
+                            "primary": d.primary
+                        });
+
+                        if show_gates {
+                            let lang_gates = gates_for_language(d.language);
+                            let available: Vec<_> = lang_gates.iter()
+                                .filter(|g| is_gate_available(g.as_ref()))
+                                .map(|g| serde_json::json!({
+                                    "name": g.name(),
+                                    "blocking": g.is_blocking(),
+                                    "available": true
+                                }))
+                                .collect();
+                            let unavailable: Vec<_> = lang_gates.iter()
+                                .filter(|g| !is_gate_available(g.as_ref()))
+                                .map(|g| serde_json::json!({
+                                    "name": g.name(),
+                                    "blocking": g.is_blocking(),
+                                    "available": false,
+                                    "required_tool": g.required_tool()
+                                }))
+                                .collect();
+                            lang_info["gates"] = serde_json::json!({
+                                "available": available,
+                                "unavailable": unavailable
+                            });
+                        }
+
+                        lang_info
+                    }).collect::<Vec<_>>()
+                });
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else {
+                // Human-readable output
+                if detected.is_empty() {
+                    println!("\n{} No programming languages detected", "Note:".yellow());
+                    println!("   This is an empty or unrecognized project type");
+                } else {
+                    println!("\n{} Detected languages:", "Languages:".cyan().bold());
+                    for lang in &detected {
+                        let marker = if lang.primary { "→" } else { " " };
+                        let primary_tag = if lang.primary {
+                            " (primary)".green().to_string()
+                        } else {
+                            String::new()
+                        };
+                        println!(
+                            "   {} {}: {:.0}% confidence ({} files){}",
+                            marker,
+                            lang.language.to_string().bold(),
+                            lang.confidence * 100.0,
+                            lang.file_count,
+                            primary_tag
+                        );
+                    }
+
+                    // Show gates if requested
+                    if show_gates {
+                        println!("\n{} Available gates:", "Gates:".cyan().bold());
+
+                        // Group gates by language
+                        for lang in &detected {
+                            let lang_gates = gates_for_language(lang.language);
+                            if lang_gates.is_empty() {
+                                continue;
+                            }
+
+                            println!("\n   {}:", lang.language.to_string().bold());
+                            for gate in &lang_gates {
+                                let available = is_gate_available(gate.as_ref());
+                                let status = if available {
+                                    "✓".green().to_string()
+                                } else {
+                                    "✗".red().to_string()
+                                };
+                                let blocking_tag = if gate.is_blocking() {
+                                    " (blocking)"
+                                } else {
+                                    ""
+                                };
+                                let tool_info = if !available {
+                                    if let Some(tool) = gate.required_tool() {
+                                        format!(" - requires: {}", tool.yellow())
+                                    } else {
+                                        String::new()
+                                    }
+                                } else {
+                                    String::new()
+                                };
+                                println!(
+                                    "     {} {}{}{}",
+                                    status,
+                                    gate.name(),
+                                    blocking_tag,
+                                    tool_info
+                                );
+                            }
+                        }
+                    } else {
+                        // Show summary of available gates
+                        let languages: Vec<_> = detected
+                            .iter()
+                            .filter(|d| d.confidence >= LanguageDetector::DEFAULT_POLYGLOT_THRESHOLD)
+                            .map(|d| d.language)
+                            .collect();
+
+                        let available_gates = detect_available_gates(&project_path, &languages);
+                        if !available_gates.is_empty() {
+                            println!(
+                                "\n{} {} gates available",
+                                "Gates:".cyan().bold(),
+                                available_gates.len()
+                            );
+                            println!(
+                                "   Use {} for details",
+                                "--show-gates".cyan()
+                            );
+                        }
+                    }
+                }
+            }
         }
 
         Commands::Analyze { output_dir } => {

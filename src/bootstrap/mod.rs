@@ -22,6 +22,8 @@ use std::path::PathBuf;
 use language::Language;
 use language_detector::{DetectedLanguage, LanguageDetector};
 
+use crate::quality::gates::detect_available_gates;
+
 /// Bootstrap manager for setting up the automation suite in a project.
 ///
 /// # Example
@@ -266,7 +268,7 @@ impl Bootstrap {
         excludes
     }
 
-    /// Display detected languages with confidence scores.
+    /// Display detected languages with confidence scores and selected gates.
     fn display_detected_languages(&self) {
         let detected = self.detect_languages();
 
@@ -293,6 +295,24 @@ impl Bootstrap {
                 primary_tag
             );
         }
+
+        // Get languages with sufficient confidence for gate selection
+        let significant_languages: Vec<_> = detected
+            .iter()
+            .filter(|d| d.confidence >= LanguageDetector::DEFAULT_POLYGLOT_THRESHOLD)
+            .map(|d| d.language)
+            .collect();
+
+        // Detect and display selected gates
+        let available_gates = detect_available_gates(&self.project_dir, &significant_languages);
+        if !available_gates.is_empty() {
+            println!("\n{} Selected gates:", "Gates:".cyan());
+            for gate in &available_gates {
+                let blocking_tag = if gate.is_blocking() { "" } else { " (non-blocking)" };
+                println!("   ✓ {}{}", gate.name(), blocking_tag);
+            }
+        }
+
         println!();
     }
 

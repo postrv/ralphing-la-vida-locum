@@ -629,3 +629,161 @@ fn test_bootstrap_language_shorthand() {
         .stdout(predicate::str::contains("TypeScript"))
         .stdout(predicate::str::contains("Python"));
 }
+
+// ============================================================
+// CLI Integration Tests for Polyglot Support (Sprint 7, Phase 7.5)
+// ============================================================
+
+#[test]
+fn test_detect_shows_all_detected_languages_with_confidence() {
+    // Test: `ralph detect` shows all detected languages with confidence
+    // Expected behavior: A dedicated `detect` command that lists languages with confidence scores
+    let temp = TempDir::new().unwrap();
+
+    // Create a Python project
+    std::fs::write(temp.path().join("main.py"), "print('hello')").unwrap();
+    std::fs::write(temp.path().join("utils.py"), "def foo(): pass").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("detect")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Detected languages"))
+        .stdout(predicate::str::contains("Python"))
+        .stdout(predicate::str::contains("confidence"));
+}
+
+#[test]
+fn test_detect_shows_gate_availability() {
+    // Test: `ralph detect --show-gates` shows which gates are available for each language
+    // Expected behavior: After showing languages, show which gates are available
+    let temp = TempDir::new().unwrap();
+
+    // Create a Rust project
+    std::fs::write(
+        temp.path().join("Cargo.toml"),
+        r#"[package]
+name = "test"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(temp.path().join("src")).unwrap();
+    std::fs::write(temp.path().join("src/lib.rs"), "// test").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("detect")
+        .arg("--show-gates")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rust"))
+        .stdout(predicate::str::contains("Available gates"));
+}
+
+#[test]
+fn test_detect_empty_project() {
+    // Test: `ralph detect` handles empty projects gracefully
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("detect")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No programming languages detected"));
+}
+
+#[test]
+fn test_detect_polyglot_project() {
+    // Test: `ralph detect` shows multiple languages in polyglot projects
+    let temp = TempDir::new().unwrap();
+
+    // Create a polyglot project (Rust + Python)
+    std::fs::write(
+        temp.path().join("Cargo.toml"),
+        r#"[package]
+name = "test"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(temp.path().join("src")).unwrap();
+    std::fs::write(temp.path().join("src/lib.rs"), "// test").unwrap();
+    std::fs::write(temp.path().join("script.py"), "print('hello')").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("detect")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rust"))
+        .stdout(predicate::str::contains("Python"));
+}
+
+#[test]
+fn test_bootstrap_reports_detected_languages_and_gates() {
+    // Test: `ralph bootstrap` reports detected languages and selected gates during setup
+    // Expected behavior: Bootstrap output includes which languages were detected and which gates will be used
+    let temp = TempDir::new().unwrap();
+
+    // Create a Rust project
+    std::fs::write(
+        temp.path().join("Cargo.toml"),
+        r#"[package]
+name = "test"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(temp.path().join("src")).unwrap();
+    std::fs::write(temp.path().join("src/lib.rs"), "// test").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Detected languages"))
+        .stdout(predicate::str::contains("Rust"))
+        .stdout(predicate::str::contains("Selected gates"));
+}
+
+#[test]
+fn test_show_gates_flag() {
+    // Test: `ralph --show-gates` lists available gates for project
+    // Expected behavior: A flag that just shows gates without running any commands
+    let temp = TempDir::new().unwrap();
+
+    // Create a Rust project
+    std::fs::write(
+        temp.path().join("Cargo.toml"),
+        r#"[package]
+name = "test"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(temp.path().join("src")).unwrap();
+    std::fs::write(temp.path().join("src/lib.rs"), "// test").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("detect")
+        .arg("--show-gates")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Available gates"))
+        .stdout(predicate::str::contains("Clippy"));
+}

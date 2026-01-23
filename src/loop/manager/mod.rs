@@ -1732,6 +1732,14 @@ impl LoopManager {
             );
         }
 
+        // Display quality gates summary
+        if let Some(deps) = &self.deps {
+            let gate_names = deps.gate_names();
+            if !gate_names.is_empty() {
+                println!("   Quality gates: {}", gate_names.len());
+            }
+        }
+
         // Display task summary
         let task_counts = self.task_tracker.task_counts();
         if task_counts.total() > 0 {
@@ -1775,6 +1783,18 @@ impl LoopManager {
                 println!("{}", "   Safety blocks (denied):".cyan());
                 for perm in &self.config.permissions.deny {
                     println!("     {} {}", "X".red(), perm.red());
+                }
+            }
+
+            // Show quality gates in verbose mode
+            if let Some(deps) = &self.deps {
+                let gate_names = deps.gate_names();
+                if !gate_names.is_empty() {
+                    println!();
+                    println!("{}", "   Active quality gates:".cyan());
+                    for gate in &gate_names {
+                        println!("     {} {}", "✓".green(), gate);
+                    }
                 }
             }
         }
