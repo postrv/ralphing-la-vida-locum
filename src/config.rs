@@ -108,6 +108,189 @@ pub mod extensions {
     }
 }
 
+/// Configuration for stagnation predictor risk weights (Phase 10.3).
+///
+/// This configuration allows customizing the risk weights used by the
+/// stagnation predictor. You can either specify a preset profile or
+/// provide custom weight values.
+///
+/// # Example settings.json
+///
+/// Using a preset:
+/// ```json
+/// {
+///   "predictorWeights": {
+///     "preset": "conservative"
+///   }
+/// }
+/// ```
+///
+/// Using custom weights:
+/// ```json
+/// {
+///   "predictorWeights": {
+///     "commit_gap": 0.30,
+///     "file_churn": 0.20,
+///     "error_repeat": 0.20,
+///     "test_stagnation": 0.15,
+///     "mode_oscillation": 0.10,
+///     "warning_growth": 0.05
+///   }
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredictorWeightsConfig {
+    /// Named preset to use: "balanced", "conservative", or "aggressive".
+    ///
+    /// If specified, this takes precedence over individual weight values.
+    #[serde(default)]
+    pub preset: Option<String>,
+
+    /// Weight for iterations since last commit (default: 0.25).
+    #[serde(default = "default_commit_gap")]
+    pub commit_gap: f64,
+
+    /// Weight for repeated file edits (default: 0.20).
+    #[serde(default = "default_file_churn")]
+    pub file_churn: f64,
+
+    /// Weight for error repetition (default: 0.20).
+    #[serde(default = "default_error_repeat")]
+    pub error_repeat: f64,
+
+    /// Weight for test count stagnation (default: 0.15).
+    #[serde(default = "default_test_stagnation")]
+    pub test_stagnation: f64,
+
+    /// Weight for mode oscillation (default: 0.10).
+    #[serde(default = "default_mode_oscillation")]
+    pub mode_oscillation: f64,
+
+    /// Weight for clippy warning growth (default: 0.10).
+    #[serde(default = "default_warning_growth")]
+    pub warning_growth: f64,
+}
+
+fn default_commit_gap() -> f64 {
+    0.25
+}
+
+fn default_file_churn() -> f64 {
+    0.20
+}
+
+fn default_error_repeat() -> f64 {
+    0.20
+}
+
+fn default_test_stagnation() -> f64 {
+    0.15
+}
+
+fn default_mode_oscillation() -> f64 {
+    0.10
+}
+
+fn default_warning_growth() -> f64 {
+    0.10
+}
+
+impl Default for PredictorWeightsConfig {
+    fn default() -> Self {
+        Self {
+            preset: None,
+            commit_gap: default_commit_gap(),
+            file_churn: default_file_churn(),
+            error_repeat: default_error_repeat(),
+            test_stagnation: default_test_stagnation(),
+            mode_oscillation: default_mode_oscillation(),
+            warning_growth: default_warning_growth(),
+        }
+    }
+}
+
+impl PredictorWeightsConfig {
+    /// Returns true if this config specifies a preset.
+    #[must_use]
+    pub fn has_preset(&self) -> bool {
+        self.preset.is_some()
+    }
+
+    /// Returns the weight values as a tuple.
+    ///
+    /// Returns (commit_gap, file_churn, error_repeat, test_stagnation, mode_oscillation, warning_growth).
+    #[must_use]
+    pub fn weight_values(&self) -> (f64, f64, f64, f64, f64, f64) {
+        (
+            self.commit_gap,
+            self.file_churn,
+            self.error_repeat,
+            self.test_stagnation,
+            self.mode_oscillation,
+            self.warning_growth,
+        )
+    }
+
+    /// Validates the weight configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Any weight is negative
+    /// - Any weight is NaN or infinite
+    /// - All weights are zero
+    /// - Preset name is invalid
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate preset name if specified
+        if let Some(ref preset) = self.preset {
+            match preset.to_lowercase().as_str() {
+                "balanced" | "conservative" | "aggressive" => {}
+                _ => {
+                    return Err(format!(
+                        "Invalid predictor weight preset '{}'. Valid options: balanced, conservative, aggressive",
+                        preset
+                    ));
+                }
+            }
+        }
+
+        // Validate weight values
+        let weights = [
+            ("commit_gap", self.commit_gap),
+            ("file_churn", self.file_churn),
+            ("error_repeat", self.error_repeat),
+            ("test_stagnation", self.test_stagnation),
+            ("mode_oscillation", self.mode_oscillation),
+            ("warning_growth", self.warning_growth),
+        ];
+
+        for (name, value) in weights {
+            if value.is_nan() {
+                return Err(format!("{} weight is NaN", name));
+            }
+            if value.is_infinite() {
+                return Err(format!("{} weight is infinite", name));
+            }
+            if value < 0.0 {
+                return Err(format!("{} weight is negative: {}", name, value));
+            }
+        }
+
+        let total = self.commit_gap
+            + self.file_churn
+            + self.error_repeat
+            + self.test_stagnation
+            + self.mode_oscillation
+            + self.warning_growth;
+
+        if total == 0.0 && self.preset.is_none() {
+            return Err("All weights are zero - at least one must be positive".to_string());
+        }
+
+        Ok(())
+    }
+}
+
 /// Project configuration loaded from .claude/settings.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -133,6 +316,12 @@ pub struct ProjectConfig {
     /// language and change status.
     #[serde(default, rename = "contextPriority")]
     pub context_priority: crate::prompt::context_priority::ContextPriorityConfig,
+
+    /// Configuration for stagnation predictor weights (Phase 10.3).
+    ///
+    /// Controls the risk factor weights used by the stagnation predictor.
+    #[serde(default, rename = "predictorWeights")]
+    pub predictor_weights: PredictorWeightsConfig,
 }
 
 fn default_true() -> bool {
@@ -147,6 +336,7 @@ impl Default for ProjectConfig {
             respect_gitignore: true, // Match the serde default
             gate_weights: crate::quality::gates::GateWeightConfig::default(),
             context_priority: crate::prompt::context_priority::ContextPriorityConfig::default(),
+            predictor_weights: PredictorWeightsConfig::default(),
         }
     }
 }
@@ -973,5 +1163,166 @@ mod tests {
             (config.context_priority.primary_language_score - 5.0).abs() < f64::EPSILON,
             "Missing context_priority should use default primary_language_score"
         );
+    }
+
+    // =========================================================================
+    // Predictor Weights Configuration Tests (Phase 10.3)
+    // =========================================================================
+
+    #[test]
+    fn test_predictor_weights_config_default() {
+        let config = PredictorWeightsConfig::default();
+        assert!(config.preset.is_none());
+        assert!((config.commit_gap - 0.25).abs() < f64::EPSILON);
+        assert!((config.file_churn - 0.20).abs() < f64::EPSILON);
+        assert!((config.error_repeat - 0.20).abs() < f64::EPSILON);
+        assert!((config.test_stagnation - 0.15).abs() < f64::EPSILON);
+        assert!((config.mode_oscillation - 0.10).abs() < f64::EPSILON);
+        assert!((config.warning_growth - 0.10).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_predictor_weights_config_validation_valid() {
+        let config = PredictorWeightsConfig::default();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_predictor_weights_config_validation_invalid_preset() {
+        let config = PredictorWeightsConfig {
+            preset: Some("invalid_preset".to_string()),
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid predictor weight preset"));
+    }
+
+    #[test]
+    fn test_predictor_weights_config_validation_negative_weight() {
+        let config = PredictorWeightsConfig {
+            commit_gap: -0.1,
+            ..Default::default()
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("negative"));
+    }
+
+    #[test]
+    fn test_predictor_weights_config_validation_all_zero_without_preset() {
+        let config = PredictorWeightsConfig {
+            preset: None,
+            commit_gap: 0.0,
+            file_churn: 0.0,
+            error_repeat: 0.0,
+            test_stagnation: 0.0,
+            mode_oscillation: 0.0,
+            warning_growth: 0.0,
+        };
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("zero"));
+    }
+
+    #[test]
+    fn test_predictor_weights_config_validation_all_zero_with_preset() {
+        // With a preset, zero custom weights are ok because preset takes precedence
+        let config = PredictorWeightsConfig {
+            preset: Some("conservative".to_string()),
+            commit_gap: 0.0,
+            file_churn: 0.0,
+            error_repeat: 0.0,
+            test_stagnation: 0.0,
+            mode_oscillation: 0.0,
+            warning_growth: 0.0,
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_predictor_weights_config_has_preset() {
+        let without_preset = PredictorWeightsConfig::default();
+        assert!(!without_preset.has_preset());
+
+        let with_preset = PredictorWeightsConfig {
+            preset: Some("balanced".to_string()),
+            ..Default::default()
+        };
+        assert!(with_preset.has_preset());
+    }
+
+    #[test]
+    fn test_predictor_weights_config_weight_values() {
+        let config = PredictorWeightsConfig {
+            preset: None,
+            commit_gap: 0.30,
+            file_churn: 0.25,
+            error_repeat: 0.20,
+            test_stagnation: 0.10,
+            mode_oscillation: 0.10,
+            warning_growth: 0.05,
+        };
+        let (cg, fc, er, ts, mo, wg) = config.weight_values();
+        assert!((cg - 0.30).abs() < f64::EPSILON);
+        assert!((fc - 0.25).abs() < f64::EPSILON);
+        assert!((er - 0.20).abs() < f64::EPSILON);
+        assert!((ts - 0.10).abs() < f64::EPSILON);
+        assert!((mo - 0.10).abs() < f64::EPSILON);
+        assert!((wg - 0.05).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_project_config_predictor_weights_default() {
+        let config = ProjectConfig::default();
+        assert!(config.predictor_weights.preset.is_none());
+        assert!((config.predictor_weights.commit_gap - 0.25).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_project_config_load_with_predictor_weights_preset() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"predictorWeights": {"preset": "conservative"}}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert_eq!(config.predictor_weights.preset.as_deref(), Some("conservative"));
+    }
+
+    #[test]
+    fn test_project_config_load_with_predictor_weights_custom() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.40, "file_churn": 0.30}}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert!(config.predictor_weights.preset.is_none());
+        assert!((config.predictor_weights.commit_gap - 0.40).abs() < f64::EPSILON);
+        assert!((config.predictor_weights.file_churn - 0.30).abs() < f64::EPSILON);
+        // Other weights should use defaults
+        assert!((config.predictor_weights.error_repeat - 0.20).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_project_config_predictor_weights_missing_uses_default() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert!(config.predictor_weights.preset.is_none());
+        assert!((config.predictor_weights.commit_gap - 0.25).abs() < f64::EPSILON);
     }
 }

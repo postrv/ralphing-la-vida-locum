@@ -49,7 +49,7 @@ use super::state::{LoopMode, LoopState};
 use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransition};
 use crate::supervisor::predictor::{
     InterventionThresholds, PredictorConfig, PreventiveAction, RiskSignals, RiskWeights,
-    StagnationPredictor,
+    StagnationPredictor, WeightPreset,
 };
 use crate::supervisor::{Supervisor, SupervisorVerdict};
 use anyhow::{bail, Context, Result};
@@ -789,26 +789,72 @@ impl LoopManager {
         let mut supervisor = Supervisor::new(self.project_dir.clone()).with_interval(5);
 
         // Create stagnation predictor for proactive intervention
-        // Use builder pattern in verbose mode to demonstrate customization,
-        // otherwise use sensible defaults
-        let mut predictor = if self.verbose {
-            // Builder pattern allows tuning based on session parameters
-            let predictor_config = PredictorConfig::new()
-                .with_weights(RiskWeights::new(0.25, 0.20, 0.20, 0.15, 0.10, 0.10))
+        // Use project config predictor_weights if specified, otherwise use defaults
+        let mut predictor = {
+            let weight_config = &self.config.predictor_weights;
+
+            // Create predictor based on settings
+            let (base_predictor, preset_info) = if let Some(ref preset_name) = weight_config.preset {
+                // Use named preset from settings or CLI via the with_preset constructor
+                let preset = match preset_name.to_lowercase().as_str() {
+                    "conservative" => WeightPreset::Conservative,
+                    "aggressive" => WeightPreset::Aggressive,
+                    _ => WeightPreset::Balanced,
+                };
+                (
+                    StagnationPredictor::with_preset(preset),
+                    format!("preset={}", preset_name),
+                )
+            } else if weight_config.commit_gap == 0.25
+                && weight_config.file_churn == 0.20
+                && weight_config.error_repeat == 0.20
+                && weight_config.test_stagnation == 0.15
+                && weight_config.mode_oscillation == 0.10
+                && (weight_config.warning_growth - 0.10).abs() < f64::EPSILON
+            {
+                // Using default weights - use with_defaults() constructor
+                (StagnationPredictor::with_defaults(), "defaults".to_string())
+            } else {
+                // Use custom weights from settings
+                let weights = RiskWeights::new(
+                    weight_config.commit_gap,
+                    weight_config.file_churn,
+                    weight_config.error_repeat,
+                    weight_config.test_stagnation,
+                    weight_config.mode_oscillation,
+                    weight_config.warning_growth,
+                );
+                // Validate custom weights
+                if let Err(e) = weights.validate() {
+                    warn!("Invalid predictor weights configuration: {}", e);
+                    // Fall back to defaults
+                    (StagnationPredictor::with_defaults(), "defaults (fallback)".to_string())
+                } else {
+                    let predictor_config = PredictorConfig::new().with_weights(weights);
+                    (
+                        StagnationPredictor::new(predictor_config),
+                        "custom weights".to_string(),
+                    )
+                }
+            };
+
+            // Tune parameters using builder pattern
+            let tuned_config = PredictorConfig::new()
+                .with_weights(base_predictor.config().weights.clone())
                 .with_thresholds(InterventionThresholds::new(30.0, 60.0, 80.0))
                 .with_max_commit_gap(self.max_iterations.saturating_div(2).max(10))
                 .with_max_file_touches(5)
                 .with_history_length(10);
-            let p = StagnationPredictor::new(predictor_config);
-            let config = p.config();
-            debug!(
-                "Predictor initialized (custom): max_commit_gap={}, max_file_touches={}, history_len={}",
-                config.max_commit_gap, config.max_file_touches, config.history_length
-            );
+
+            let p = StagnationPredictor::new(tuned_config);
+            if self.verbose {
+                let config = p.config();
+                debug!(
+                    "Predictor initialized ({}): max_commit_gap={}, max_file_touches={}, history_len={}",
+                    preset_info, config.max_commit_gap, config.max_file_touches, config.history_length
+                );
+            }
             p
-        } else {
-            // Use defaults for standard operation
-            StagnationPredictor::with_defaults()
         };
 
         // Reset action handler statistics for this session

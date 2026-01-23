@@ -201,6 +201,142 @@ impl RiskWeights {
             warning_growth: self.warning_growth / total,
         }
     }
+
+    /// Validates that the weights are valid (no negative, NaN, or infinite values).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if any weight is invalid:
+    /// - Negative values
+    /// - NaN values
+    /// - Infinite values
+    /// - All weights are zero
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::RiskWeights;
+    ///
+    /// let valid = RiskWeights::new(0.25, 0.20, 0.20, 0.15, 0.10, 0.10);
+    /// assert!(valid.validate().is_ok());
+    ///
+    /// let invalid = RiskWeights::new(-0.1, 0.20, 0.20, 0.15, 0.10, 0.10);
+    /// assert!(invalid.validate().is_err());
+    /// ```
+    pub fn validate(&self) -> Result<(), String> {
+        let weights = [
+            ("commit_gap", self.commit_gap),
+            ("file_churn", self.file_churn),
+            ("error_repeat", self.error_repeat),
+            ("test_stagnation", self.test_stagnation),
+            ("mode_oscillation", self.mode_oscillation),
+            ("warning_growth", self.warning_growth),
+        ];
+
+        for (name, value) in weights {
+            if value.is_nan() {
+                return Err(format!("{} weight is NaN", name));
+            }
+            if value.is_infinite() {
+                return Err(format!("{} weight is infinite", name));
+            }
+            if value < 0.0 {
+                return Err(format!("{} weight is negative: {}", name, value));
+            }
+        }
+
+        if self.total() == 0.0 {
+            return Err("All weights are zero - at least one must be positive".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+/// Preset weight profiles for common use cases.
+///
+/// These presets provide tuned weight configurations for different
+/// operational contexts:
+///
+/// - **Balanced**: Default weights, good for most projects
+/// - **Conservative**: Emphasizes early stagnation detection (commit gap, error repeat)
+/// - **Aggressive**: Tolerates more exploration, focuses on actual problems (file churn)
+///
+/// # Example
+///
+/// ```rust
+/// use ralph::supervisor::predictor::{WeightPreset, StagnationPredictor};
+///
+/// // Create a predictor with conservative weights
+/// let predictor = StagnationPredictor::with_preset(WeightPreset::Conservative);
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeightPreset {
+    /// Balanced weights - default configuration suitable for most projects.
+    ///
+    /// Weights: commit_gap=0.25, file_churn=0.20, error_repeat=0.20,
+    /// test_stagnation=0.15, mode_oscillation=0.10, warning_growth=0.10
+    #[default]
+    Balanced,
+
+    /// Conservative weights - catches stagnation early.
+    ///
+    /// Emphasizes commit gap and error repetition to trigger interventions
+    /// sooner. Good for projects where early warning is preferred over
+    /// allowing more exploration time.
+    ///
+    /// Weights: commit_gap=0.35, file_churn=0.15, error_repeat=0.25,
+    /// test_stagnation=0.10, mode_oscillation=0.10, warning_growth=0.05
+    Conservative,
+
+    /// Aggressive weights - tolerates more exploration.
+    ///
+    /// Reduces emphasis on commit gap to allow longer exploration periods.
+    /// Focuses more on file churn and warning growth as indicators of
+    /// actual problems rather than just time passing.
+    ///
+    /// Weights: commit_gap=0.15, file_churn=0.30, error_repeat=0.15,
+    /// test_stagnation=0.15, mode_oscillation=0.10, warning_growth=0.15
+    Aggressive,
+}
+
+impl WeightPreset {
+    /// Returns the risk weights for this preset.
+    #[must_use]
+    pub fn weights(&self) -> RiskWeights {
+        match self {
+            Self::Balanced => RiskWeights::default(),
+            Self::Conservative => RiskWeights::new(0.35, 0.15, 0.25, 0.10, 0.10, 0.05),
+            Self::Aggressive => RiskWeights::new(0.15, 0.30, 0.15, 0.15, 0.10, 0.15),
+        }
+    }
+}
+
+impl std::fmt::Display for WeightPreset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Balanced => write!(f, "balanced"),
+            Self::Conservative => write!(f, "conservative"),
+            Self::Aggressive => write!(f, "aggressive"),
+        }
+    }
+}
+
+impl std::str::FromStr for WeightPreset {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "balanced" => Ok(Self::Balanced),
+            "conservative" => Ok(Self::Conservative),
+            "aggressive" => Ok(Self::Aggressive),
+            _ => Err(format!(
+                "Unknown weight preset '{}'. Valid options: balanced, conservative, aggressive",
+                s
+            )),
+        }
+    }
 }
 
 /// Thresholds for intervention decisions.
@@ -291,6 +427,27 @@ impl PredictorConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new configuration with weights from a preset.
+    ///
+    /// # Arguments
+    ///
+    /// * `preset` - The weight preset to use.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::{PredictorConfig, WeightPreset};
+    ///
+    /// let config = PredictorConfig::with_preset(WeightPreset::Conservative);
+    /// ```
+    #[must_use]
+    pub fn with_preset(preset: WeightPreset) -> Self {
+        Self {
+            weights: preset.weights(),
+            ..Self::default()
+        }
     }
 
     /// Sets the risk weights.
@@ -561,6 +718,24 @@ impl StagnationPredictor {
     #[must_use]
     pub fn with_defaults() -> Self {
         Self::new(PredictorConfig::default())
+    }
+
+    /// Creates a new predictor with a weight preset.
+    ///
+    /// # Arguments
+    ///
+    /// * `preset` - The weight preset to use.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::{StagnationPredictor, WeightPreset};
+    ///
+    /// let predictor = StagnationPredictor::with_preset(WeightPreset::Conservative);
+    /// ```
+    #[must_use]
+    pub fn with_preset(preset: WeightPreset) -> Self {
+        Self::new(PredictorConfig::with_preset(preset))
     }
 
     /// Returns a reference to the configuration.
@@ -1704,5 +1879,204 @@ mod tests {
         assert_eq!(history[0], (30.0, false));
         assert_eq!(history[1], (60.0, true));
         assert_eq!(history[2], (80.0, true));
+    }
+
+    // =========================================================================
+    // Phase 10.3: Dynamic Risk Weight Tuning Tests
+    // =========================================================================
+
+    #[test]
+    fn test_weight_preset_balanced_is_default() {
+        let balanced = WeightPreset::Balanced.weights();
+        let default = RiskWeights::default();
+
+        assert!((balanced.commit_gap - default.commit_gap).abs() < 0.001);
+        assert!((balanced.file_churn - default.file_churn).abs() < 0.001);
+        assert!((balanced.error_repeat - default.error_repeat).abs() < 0.001);
+        assert!((balanced.test_stagnation - default.test_stagnation).abs() < 0.001);
+        assert!((balanced.mode_oscillation - default.mode_oscillation).abs() < 0.001);
+        assert!((balanced.warning_growth - default.warning_growth).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_weight_preset_conservative() {
+        // Conservative: emphasize commit gap and error repeat (catch stagnation early)
+        let conservative = WeightPreset::Conservative.weights();
+
+        // Weights should sum to 1.0
+        assert!((conservative.total() - 1.0).abs() < 0.001);
+
+        // Conservative emphasizes commit_gap and error_repeat
+        assert!(
+            conservative.commit_gap >= 0.30,
+            "Conservative should emphasize commit_gap"
+        );
+        assert!(
+            conservative.error_repeat >= 0.25,
+            "Conservative should emphasize error_repeat"
+        );
+    }
+
+    #[test]
+    fn test_weight_preset_aggressive() {
+        // Aggressive: emphasize file churn and warning growth (tolerate more commit gap)
+        let aggressive = WeightPreset::Aggressive.weights();
+
+        // Weights should sum to 1.0
+        assert!((aggressive.total() - 1.0).abs() < 0.001);
+
+        // Aggressive reduces commit_gap emphasis
+        assert!(
+            aggressive.commit_gap <= 0.20,
+            "Aggressive should de-emphasize commit_gap"
+        );
+        // Aggressive emphasizes file churn (focus on actual problems)
+        assert!(
+            aggressive.file_churn >= 0.25,
+            "Aggressive should emphasize file_churn"
+        );
+    }
+
+    #[test]
+    fn test_weight_presets_all_normalize() {
+        for preset in [
+            WeightPreset::Balanced,
+            WeightPreset::Conservative,
+            WeightPreset::Aggressive,
+        ] {
+            let weights = preset.weights();
+            assert!(
+                (weights.total() - 1.0).abs() < 0.001,
+                "{:?} weights should sum to 1.0, got {}",
+                preset,
+                weights.total()
+            );
+        }
+    }
+
+    #[test]
+    fn test_weight_preset_from_str() {
+        assert_eq!(
+            "balanced".parse::<WeightPreset>().unwrap(),
+            WeightPreset::Balanced
+        );
+        assert_eq!(
+            "conservative".parse::<WeightPreset>().unwrap(),
+            WeightPreset::Conservative
+        );
+        assert_eq!(
+            "aggressive".parse::<WeightPreset>().unwrap(),
+            WeightPreset::Aggressive
+        );
+        assert!("invalid".parse::<WeightPreset>().is_err());
+    }
+
+    #[test]
+    fn test_weight_preset_display() {
+        assert_eq!(WeightPreset::Balanced.to_string(), "balanced");
+        assert_eq!(WeightPreset::Conservative.to_string(), "conservative");
+        assert_eq!(WeightPreset::Aggressive.to_string(), "aggressive");
+    }
+
+    #[test]
+    fn test_custom_weights_affect_risk_score() {
+        // Use custom weights that heavily emphasize commit_gap
+        let custom_weights = RiskWeights::new(0.90, 0.02, 0.02, 0.02, 0.02, 0.02);
+        let config = PredictorConfig::new().with_weights(custom_weights);
+        let predictor = StagnationPredictor::new(config);
+
+        // Same signals should produce different scores with different weights
+        let signals = RiskSignals::new()
+            .with_commit_gap(15) // Max commit gap
+            .with_file_touches(vec![("a.rs".into(), 1)]) // Low churn
+            .with_errors(vec!["unique1".into(), "unique2".into()]) // No repeats
+            .with_test_history(vec![10, 11, 12]) // Growing tests
+            .with_mode_switches(0)
+            .with_warning_history(vec![0, 0]);
+
+        let score = predictor.risk_score(&signals);
+
+        // With 90% weight on commit_gap which is maxed, score should be very high
+        assert!(
+            score >= 80.0,
+            "Custom weights heavily on commit_gap with max gap should produce high score, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_predictor_with_preset() {
+        let predictor = StagnationPredictor::with_preset(WeightPreset::Conservative);
+
+        let conservative_weights = WeightPreset::Conservative.weights();
+        let config_weights = predictor.config().weights.clone();
+
+        assert!(
+            (config_weights.commit_gap - conservative_weights.commit_gap).abs() < 0.001,
+            "Predictor should use preset weights"
+        );
+    }
+
+    #[test]
+    fn test_risk_weights_validation_valid() {
+        // Valid weights
+        let weights = RiskWeights::new(0.25, 0.20, 0.20, 0.15, 0.10, 0.10);
+        assert!(weights.validate().is_ok());
+    }
+
+    #[test]
+    fn test_risk_weights_validation_negative() {
+        // Negative weights are invalid
+        let weights = RiskWeights::new(-0.1, 0.30, 0.30, 0.20, 0.15, 0.15);
+        let result = weights.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("negative"));
+    }
+
+    #[test]
+    fn test_risk_weights_validation_all_zero() {
+        // All zero weights are invalid
+        let weights = RiskWeights::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let result = weights.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("zero"));
+    }
+
+    #[test]
+    fn test_risk_weights_validation_nan() {
+        // NaN weights are invalid
+        let weights = RiskWeights::new(f64::NAN, 0.20, 0.20, 0.15, 0.10, 0.10);
+        let result = weights.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_risk_weights_validation_infinity() {
+        // Infinite weights are invalid
+        let weights = RiskWeights::new(f64::INFINITY, 0.20, 0.20, 0.15, 0.10, 0.10);
+        let result = weights.validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_weight_presets_serialization() {
+        let preset = WeightPreset::Conservative;
+        let json = serde_json::to_string(&preset).expect("Should serialize");
+        assert!(json.contains("conservative"));
+
+        let deserialized: WeightPreset =
+            serde_json::from_str(&json).expect("Should deserialize");
+        assert_eq!(deserialized, preset);
+    }
+
+    #[test]
+    fn test_predictor_config_with_preset() {
+        let config = PredictorConfig::with_preset(WeightPreset::Aggressive);
+
+        let aggressive_weights = WeightPreset::Aggressive.weights();
+        assert!(
+            (config.weights.commit_gap - aggressive_weights.commit_gap).abs() < 0.001,
+            "Config should use preset weights"
+        );
     }
 }

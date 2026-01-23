@@ -4,7 +4,7 @@
 > 
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 > 
-> **Current Focus: Sprint 10 (Predictor Action Enforcement)**
+> **Current Focus: Sprint 11 (Enhanced Checkpoint System)**
 
 ---
 
@@ -37,7 +37,9 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 ---
 
-## Sprint 10: Predictor Action Enforcement
+## Sprint 10: Predictor Action Enforcement ✅ COMPLETE
+
+> **Completed 2026-01-23**: All 3 phases (10.1-10.3). Added `PreventiveActionHandler`, predictor accuracy tracking with `PredictionStatistics`, and dynamic risk weight tuning with `WeightPreset` enum and `--predictor-profile` CLI flag.
 
 **Goal**: Wire `StagnationPredictor` preventive actions into the loop for proactive intervention.
 
@@ -97,22 +99,24 @@ cargo test --lib -- predictor_accuracy
 cargo test --lib -- prediction_history
 ```
 
-### 14. Phase 10.3: Dynamic Risk Weight Tuning
+### 14. Phase 10.3: Dynamic Risk Weight Tuning ✅ COMPLETE
 
 Allow risk weights to be tuned based on project characteristics.
 
+> **Completed 2026-01-23**: Added `WeightPreset` enum (Balanced, Conservative, Aggressive), `RiskWeights::validate()` for validation, `PredictorWeightsConfig` for settings.json, `--predictor-profile` CLI flag, 27 new tests covering all weight scenarios.
+
 **Test Requirements**:
-- [ ] Test custom weights can be specified in settings.json
-- [ ] Test weights are normalized to sum to 1.0
-- [ ] Test weight changes affect risk score calculation
-- [ ] Test preset weight profiles: "conservative", "aggressive", "balanced"
-- [ ] Test weight validation rejects invalid configurations
+- [x] Test custom weights can be specified in settings.json
+- [x] Test weights are normalized to sum to 1.0
+- [x] Test weight changes affect risk score calculation
+- [x] Test preset weight profiles: "conservative", "aggressive", "balanced"
+- [x] Test weight validation rejects invalid configurations
 
 **Implementation**:
-- [ ] Add `predictor_weights` section to `ProjectConfig`
-- [ ] Load custom weights in `StagnationPredictor::new()`
-- [ ] Add weight presets as static configurations
-- [ ] Add CLI flag: `--predictor-profile <preset>`
+- [x] Add `predictor_weights` section to `ProjectConfig`
+- [x] Load custom weights in `StagnationPredictor::new()`
+- [x] Add weight presets as static configurations
+- [x] Add CLI flag: `--predictor-profile <preset>`
 
 **Quality Gates**:
 ```bash

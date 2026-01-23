@@ -70,6 +70,10 @@ enum Commands {
         /// Skip security scans in quality checks
         #[arg(long)]
         skip_security: bool,
+
+        /// Stagnation predictor weight profile: balanced, conservative, or aggressive
+        #[arg(long, value_name = "PROFILE")]
+        predictor_profile: Option<String>,
     },
 
     /// Build context for LLM analysis
@@ -323,9 +327,28 @@ async fn main() -> anyhow::Result<()> {
             doc_sync_interval,
             skip_tests,
             skip_security,
+            predictor_profile,
         } => {
             // Load project configuration
-            let config = ProjectConfig::load(&project_path).unwrap_or_default();
+            let mut config = ProjectConfig::load(&project_path).unwrap_or_default();
+
+            // Override predictor weights with CLI profile if specified
+            if let Some(ref profile) = predictor_profile {
+                // Validate the profile name
+                match profile.to_lowercase().as_str() {
+                    "balanced" | "conservative" | "aggressive" => {
+                        config.predictor_weights.preset = Some(profile.to_lowercase());
+                    }
+                    _ => {
+                        eprintln!(
+                            "{} Invalid predictor profile '{}'. Valid options: balanced, conservative, aggressive",
+                            "Error:".red().bold(),
+                            profile
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
 
             let mut loop_config = LoopManagerConfig::new(project_path, config)
                 .with_mode(mode)

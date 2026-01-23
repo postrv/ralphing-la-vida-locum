@@ -52,7 +52,8 @@ pub use error::{IntoRalphError, RalphError, Result};
 // Re-export config types
 pub use config::{
     is_ssh_command, suggest_gh_alternative, verify_git_environment, GitEnvironmentCheck,
-    ProjectConfig, StagnationLevel, DANGEROUS_PATTERNS, SECRET_PATTERNS, SSH_BLOCKED_PATTERNS,
+    PredictorWeightsConfig, ProjectConfig, StagnationLevel, DANGEROUS_PATTERNS, SECRET_PATTERNS,
+    SSH_BLOCKED_PATTERNS,
 };
 
 // Re-export testing types for convenience
