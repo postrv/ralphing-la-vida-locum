@@ -850,6 +850,500 @@ impl Default for QualityTrend {
     }
 }
 
+// ============================================================================
+// Phase 16.1: Structured Event Logging
+// ============================================================================
+
+/// Current schema version for structured events.
+///
+/// Increment this when making breaking changes to the event schema.
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// Type-safe event types for structured logging.
+///
+/// Each variant represents a specific event that can occur during
+/// a Ralph session. This enables type-safe event filtering and
+/// processing.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::EventType;
+///
+/// let event_type = EventType::SessionStart;
+/// assert_eq!(event_type.as_str(), "session_start");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventType {
+    /// Session started.
+    SessionStart,
+    /// Session ended.
+    SessionEnd,
+    /// Iteration completed.
+    Iteration,
+    /// Iteration encountered an error.
+    IterationError,
+    /// Stagnation detected.
+    Stagnation,
+    /// Quality gate result.
+    GateResult,
+    /// Predictor made a decision.
+    PredictorDecision,
+    /// Documentation drift detected.
+    DocsDrift,
+    /// Quality metrics snapshot.
+    QualityMetrics,
+    /// Supervisor paused execution.
+    SupervisorPause,
+    /// Supervisor aborted execution.
+    SupervisorAbort,
+    /// Handler paused execution.
+    HandlerPause,
+    /// Prediction made (for accuracy tracking).
+    Prediction,
+    /// Predictor statistics recorded.
+    PredictorStats,
+    /// Quality gates run timing.
+    QualityGatesRun,
+}
+
+impl EventType {
+    /// Returns the string representation of the event type.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::analytics::EventType;
+    ///
+    /// assert_eq!(EventType::SessionStart.as_str(), "session_start");
+    /// assert_eq!(EventType::GateResult.as_str(), "gate_result");
+    /// ```
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::SessionStart => "session_start",
+            Self::SessionEnd => "session_end",
+            Self::Iteration => "iteration",
+            Self::IterationError => "iteration_error",
+            Self::Stagnation => "stagnation",
+            Self::GateResult => "gate_result",
+            Self::PredictorDecision => "predictor_decision",
+            Self::DocsDrift => "docs_drift",
+            Self::QualityMetrics => "quality_metrics",
+            Self::SupervisorPause => "supervisor_pause",
+            Self::SupervisorAbort => "supervisor_abort",
+            Self::HandlerPause => "handler_pause",
+            Self::Prediction => "prediction",
+            Self::PredictorStats => "predictor_stats",
+            Self::QualityGatesRun => "quality_gates_run",
+        }
+    }
+
+    /// Returns all variants of the event type.
+    ///
+    /// Useful for iteration and filtering operations.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::analytics::EventType;
+    ///
+    /// let all = EventType::all_variants();
+    /// assert!(all.contains(&EventType::SessionStart));
+    /// ```
+    #[must_use]
+    pub fn all_variants() -> Vec<Self> {
+        vec![
+            Self::SessionStart,
+            Self::SessionEnd,
+            Self::Iteration,
+            Self::IterationError,
+            Self::Stagnation,
+            Self::GateResult,
+            Self::PredictorDecision,
+            Self::DocsDrift,
+            Self::QualityMetrics,
+            Self::SupervisorPause,
+            Self::SupervisorAbort,
+            Self::HandlerPause,
+            Self::Prediction,
+            Self::PredictorStats,
+            Self::QualityGatesRun,
+        ]
+    }
+}
+
+impl std::fmt::Display for EventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// A structured event with consistent schema.
+///
+/// All events include:
+/// - Schema version for forward compatibility
+/// - Session ID for grouping
+/// - Event type for filtering
+/// - Timestamp for ordering
+/// - Type-specific data payload
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::{StructuredEvent, EventType, SCHEMA_VERSION};
+///
+/// let event = StructuredEvent::new(
+///     "session-123",
+///     EventType::SessionStart,
+///     serde_json::json!({"mode": "build"}),
+/// );
+///
+/// assert_eq!(event.schema_version, SCHEMA_VERSION);
+/// assert_eq!(event.event_type, EventType::SessionStart);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructuredEvent {
+    /// Schema version for forward compatibility.
+    pub schema_version: u32,
+    /// Session identifier.
+    pub session_id: String,
+    /// Type of event.
+    pub event_type: EventType,
+    /// When the event occurred.
+    pub timestamp: DateTime<Utc>,
+    /// Event-specific data.
+    pub data: serde_json::Value,
+}
+
+impl StructuredEvent {
+    /// Create a new structured event.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `event_type` - The type of event
+    /// * `data` - Event-specific data
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::analytics::{StructuredEvent, EventType};
+    ///
+    /// let event = StructuredEvent::new(
+    ///     "session-1",
+    ///     EventType::Iteration,
+    ///     serde_json::json!({"iteration": 5}),
+    /// );
+    /// ```
+    #[must_use]
+    pub fn new(session_id: impl Into<String>, event_type: EventType, data: serde_json::Value) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            session_id: session_id.into(),
+            event_type,
+            timestamp: Utc::now(),
+            data,
+        }
+    }
+}
+
+/// Structured data for gate result events.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::GateResultEventData;
+///
+/// let data = GateResultEventData {
+///     gate_name: "clippy".to_string(),
+///     passed: true,
+///     issue_count: 0,
+///     duration_ms: 1500,
+///     issues: vec![],
+/// };
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateResultEventData {
+    /// Name of the gate that was run.
+    pub gate_name: String,
+    /// Whether the gate passed.
+    pub passed: bool,
+    /// Number of issues found.
+    pub issue_count: usize,
+    /// Duration of the gate run in milliseconds.
+    pub duration_ms: u64,
+    /// Individual issues found.
+    pub issues: Vec<GateIssueEventData>,
+}
+
+/// Structured data for individual gate issues.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::GateIssueEventData;
+///
+/// let issue = GateIssueEventData {
+///     severity: "error".to_string(),
+///     message: "unused variable".to_string(),
+///     file: Some("src/main.rs".to_string()),
+///     line: Some(42),
+///     code: Some("E0001".to_string()),
+/// };
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateIssueEventData {
+    /// Severity level (error, warning, info).
+    pub severity: String,
+    /// Issue message.
+    pub message: String,
+    /// File where the issue was found.
+    pub file: Option<String>,
+    /// Line number.
+    pub line: Option<u32>,
+    /// Error code (e.g., E0308, clippy::unwrap_used).
+    pub code: Option<String>,
+}
+
+/// Structured data for predictor decision events.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::PredictorDecisionEventData;
+///
+/// let decision = PredictorDecisionEventData {
+///     risk_score: 65.5,
+///     risk_level: "high".to_string(),
+///     action_recommended: Some("pause".to_string()),
+///     contributing_factors: vec!["commit_gap: 8".to_string()],
+/// };
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PredictorDecisionEventData {
+    /// Risk score (0-100).
+    pub risk_score: f64,
+    /// Risk level (low, medium, high, critical).
+    pub risk_level: String,
+    /// Recommended action, if any.
+    pub action_recommended: Option<String>,
+    /// Factors contributing to the risk score.
+    pub contributing_factors: Vec<String>,
+}
+
+/// Filter for querying structured events.
+///
+/// Supports filtering by event type and session ID.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::{EventFilter, EventType};
+///
+/// let filter = EventFilter::new()
+///     .with_event_type(EventType::GateResult)
+///     .with_session_id("session-123");
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct EventFilter {
+    /// Event types to include (empty = all).
+    event_types: Vec<EventType>,
+    /// Session ID to filter by (None = all).
+    session_id: Option<String>,
+}
+
+impl EventFilter {
+    /// Create a new empty filter (matches all events).
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add an event type to filter by.
+    ///
+    /// Multiple event types can be added; events matching any will be included.
+    #[must_use]
+    pub fn with_event_type(mut self, event_type: EventType) -> Self {
+        self.event_types.push(event_type);
+        self
+    }
+
+    /// Set the session ID to filter by.
+    #[must_use]
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.session_id = Some(session_id.into());
+        self
+    }
+
+    /// Check if an event matches this filter.
+    #[must_use]
+    pub fn matches(&self, event: &StructuredEvent) -> bool {
+        // Check event type filter
+        let type_matches = self.event_types.is_empty()
+            || self.event_types.contains(&event.event_type);
+
+        // Check session ID filter
+        let session_matches = self.session_id.is_none()
+            || self.session_id.as_ref() == Some(&event.session_id);
+
+        type_matches && session_matches
+    }
+}
+
+// ============================================================================
+// Analytics Structured Event Methods
+// ============================================================================
+
+impl Analytics {
+    /// Log a structured event.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `event_type` - The type of event
+    /// * `data` - Event-specific data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the analytics file fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::analytics::{Analytics, EventType};
+    ///
+    /// let analytics = Analytics::new(project_dir);
+    /// analytics.log_structured_event(
+    ///     "session-1",
+    ///     EventType::SessionStart,
+    ///     serde_json::json!({"mode": "build"}),
+    /// )?;
+    /// ```
+    pub fn log_structured_event(
+        &self,
+        session_id: &str,
+        event_type: EventType,
+        data: serde_json::Value,
+    ) -> Result<()> {
+        let event = StructuredEvent::new(session_id, event_type, data);
+        self.write_structured_event(&event)
+    }
+
+    /// Log a structured gate result event.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `gate_data` - The gate result data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the analytics file fails.
+    pub fn log_structured_gate_result(
+        &self,
+        session_id: &str,
+        gate_data: &GateResultEventData,
+    ) -> Result<()> {
+        let data = serde_json::to_value(gate_data)?;
+        self.log_structured_event(session_id, EventType::GateResult, data)
+    }
+
+    /// Log a structured predictor decision event.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `decision_data` - The predictor decision data
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the analytics file fails.
+    pub fn log_structured_predictor_decision(
+        &self,
+        session_id: &str,
+        decision_data: &PredictorDecisionEventData,
+    ) -> Result<()> {
+        let data = serde_json::to_value(decision_data)?;
+        self.log_structured_event(session_id, EventType::PredictorDecision, data)
+    }
+
+    /// Write a structured event to the analytics file.
+    fn write_structured_event(&self, event: &StructuredEvent) -> Result<()> {
+        self.ensure_dir()?;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.structured_events_file())?;
+
+        let json = serde_json::to_string(event)?;
+        writeln!(file, "{}", json)?;
+
+        Ok(())
+    }
+
+    /// Get the path to the structured events file.
+    fn structured_events_file(&self) -> PathBuf {
+        self.project_dir.join(".ralph/structured_events.jsonl")
+    }
+
+    /// Read all structured events from the analytics file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the analytics file fails.
+    pub fn read_structured_events(&self) -> Result<Vec<StructuredEvent>> {
+        let file_path = self.structured_events_file();
+
+        if !file_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let file = File::open(&file_path).context("Failed to open structured events file")?;
+        let reader = BufReader::new(file);
+
+        let mut events = Vec::new();
+        for line in reader.lines().map_while(Result::ok) {
+            if let Ok(event) = serde_json::from_str::<StructuredEvent>(&line) {
+                events.push(event);
+            }
+        }
+
+        Ok(events)
+    }
+
+    /// Read structured events filtered by the given filter.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter` - The filter to apply
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the analytics file fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::analytics::{Analytics, EventFilter, EventType};
+    ///
+    /// let analytics = Analytics::new(project_dir);
+    /// let filter = EventFilter::new()
+    ///     .with_event_type(EventType::GateResult)
+    ///     .with_session_id("session-1");
+    /// let events = analytics.read_structured_events_filtered(&filter)?;
+    /// ```
+    pub fn read_structured_events_filtered(
+        &self,
+        filter: &EventFilter,
+    ) -> Result<Vec<StructuredEvent>> {
+        let events = self.read_structured_events()?;
+        Ok(events.into_iter().filter(|e| filter.matches(e)).collect())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1448,5 +1942,409 @@ mod tests {
         assert_eq!(history.len(), 3);
         // Should be newest first
         assert!((history[0].overall_accuracy.unwrap() - 0.85).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Phase 16.1: Structured Event Logging Tests
+    // ========================================================================
+
+    // ========================================================================
+    // EventType Enum Tests
+    // ========================================================================
+
+    #[test]
+    fn test_event_type_session_start_exists() {
+        // EventType enum should have a SessionStart variant
+        let event_type = EventType::SessionStart;
+        assert_eq!(event_type.as_str(), "session_start");
+    }
+
+    #[test]
+    fn test_event_type_session_end_exists() {
+        let event_type = EventType::SessionEnd;
+        assert_eq!(event_type.as_str(), "session_end");
+    }
+
+    #[test]
+    fn test_event_type_iteration_exists() {
+        let event_type = EventType::Iteration;
+        assert_eq!(event_type.as_str(), "iteration");
+    }
+
+    #[test]
+    fn test_event_type_stagnation_exists() {
+        let event_type = EventType::Stagnation;
+        assert_eq!(event_type.as_str(), "stagnation");
+    }
+
+    #[test]
+    fn test_event_type_gate_result_exists() {
+        let event_type = EventType::GateResult;
+        assert_eq!(event_type.as_str(), "gate_result");
+    }
+
+    #[test]
+    fn test_event_type_predictor_decision_exists() {
+        let event_type = EventType::PredictorDecision;
+        assert_eq!(event_type.as_str(), "predictor_decision");
+    }
+
+    #[test]
+    fn test_event_type_iteration_error_exists() {
+        let event_type = EventType::IterationError;
+        assert_eq!(event_type.as_str(), "iteration_error");
+    }
+
+    #[test]
+    fn test_event_type_docs_drift_exists() {
+        let event_type = EventType::DocsDrift;
+        assert_eq!(event_type.as_str(), "docs_drift");
+    }
+
+    #[test]
+    fn test_event_type_quality_metrics_exists() {
+        let event_type = EventType::QualityMetrics;
+        assert_eq!(event_type.as_str(), "quality_metrics");
+    }
+
+    #[test]
+    fn test_event_type_serialization() {
+        let event_type = EventType::SessionStart;
+        let json = serde_json::to_string(&event_type).unwrap();
+        assert_eq!(json, "\"session_start\"");
+
+        let restored: EventType = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, EventType::SessionStart);
+    }
+
+    #[test]
+    fn test_event_type_all_variants() {
+        // Ensure all event types can be iterated
+        let all_types = EventType::all_variants();
+        assert!(all_types.len() >= 9); // At minimum: session_start, session_end, iteration, etc.
+        assert!(all_types.contains(&EventType::SessionStart));
+        assert!(all_types.contains(&EventType::GateResult));
+        assert!(all_types.contains(&EventType::PredictorDecision));
+    }
+
+    // ========================================================================
+    // StructuredEvent Schema Tests
+    // ========================================================================
+
+    #[test]
+    fn test_structured_event_has_schema_version() {
+        let event = StructuredEvent::new(
+            "test-session",
+            EventType::SessionStart,
+            serde_json::json!({"mode": "build"}),
+        );
+
+        assert_eq!(event.schema_version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_structured_event_has_timestamp() {
+        let before = Utc::now();
+        let event = StructuredEvent::new(
+            "test-session",
+            EventType::SessionStart,
+            serde_json::json!({}),
+        );
+        let after = Utc::now();
+
+        assert!(event.timestamp >= before);
+        assert!(event.timestamp <= after);
+    }
+
+    #[test]
+    fn test_structured_event_has_session_id() {
+        let event = StructuredEvent::new(
+            "my-session-123",
+            EventType::Iteration,
+            serde_json::json!({}),
+        );
+
+        assert_eq!(event.session_id, "my-session-123");
+    }
+
+    #[test]
+    fn test_structured_event_has_event_type() {
+        let event = StructuredEvent::new(
+            "test-session",
+            EventType::GateResult,
+            serde_json::json!({}),
+        );
+
+        assert_eq!(event.event_type, EventType::GateResult);
+    }
+
+    #[test]
+    fn test_structured_event_serialization() {
+        let event = StructuredEvent::new(
+            "test-session",
+            EventType::SessionStart,
+            serde_json::json!({"mode": "build"}),
+        );
+
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("\"schema_version\""));
+        assert!(json.contains("\"session_id\""));
+        assert!(json.contains("\"event_type\""));
+        assert!(json.contains("\"timestamp\""));
+        assert!(json.contains("\"data\""));
+
+        let restored: StructuredEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.session_id, "test-session");
+        assert_eq!(restored.event_type, EventType::SessionStart);
+    }
+
+    // ========================================================================
+    // Gate Result Structured Event Tests
+    // ========================================================================
+
+    #[test]
+    fn test_gate_result_event_data_structure() {
+        let gate_data = GateResultEventData {
+            gate_name: "clippy".to_string(),
+            passed: true,
+            issue_count: 0,
+            duration_ms: 1500,
+            issues: vec![],
+        };
+
+        assert_eq!(gate_data.gate_name, "clippy");
+        assert!(gate_data.passed);
+    }
+
+    #[test]
+    fn test_gate_result_event_with_issues() {
+        let issue = GateIssueEventData {
+            severity: "error".to_string(),
+            message: "unused variable".to_string(),
+            file: Some("src/main.rs".to_string()),
+            line: Some(42),
+            code: Some("E0001".to_string()),
+        };
+
+        let gate_data = GateResultEventData {
+            gate_name: "clippy".to_string(),
+            passed: false,
+            issue_count: 1,
+            duration_ms: 2000,
+            issues: vec![issue],
+        };
+
+        assert!(!gate_data.passed);
+        assert_eq!(gate_data.issues.len(), 1);
+        assert_eq!(gate_data.issues[0].message, "unused variable");
+    }
+
+    #[test]
+    fn test_log_gate_result_structured() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        let gate_data = GateResultEventData {
+            gate_name: "test".to_string(),
+            passed: true,
+            issue_count: 0,
+            duration_ms: 500,
+            issues: vec![],
+        };
+
+        analytics
+            .log_structured_gate_result("test-session", &gate_data)
+            .unwrap();
+
+        let events = analytics.read_structured_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::GateResult);
+    }
+
+    // ========================================================================
+    // Predictor Decision Structured Event Tests
+    // ========================================================================
+
+    #[test]
+    fn test_predictor_decision_event_data_structure() {
+        let decision_data = PredictorDecisionEventData {
+            risk_score: 65.5,
+            risk_level: "high".to_string(),
+            action_recommended: Some("pause".to_string()),
+            contributing_factors: vec![
+                "commit_gap: 8 iterations".to_string(),
+                "error_repeat: 3 occurrences".to_string(),
+            ],
+        };
+
+        assert_eq!(decision_data.risk_score, 65.5);
+        assert_eq!(decision_data.risk_level, "high");
+        assert_eq!(decision_data.contributing_factors.len(), 2);
+    }
+
+    #[test]
+    fn test_log_predictor_decision_structured() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        let decision_data = PredictorDecisionEventData {
+            risk_score: 45.0,
+            risk_level: "medium".to_string(),
+            action_recommended: None,
+            contributing_factors: vec![],
+        };
+
+        analytics
+            .log_structured_predictor_decision("test-session", &decision_data)
+            .unwrap();
+
+        let events = analytics.read_structured_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::PredictorDecision);
+    }
+
+    #[test]
+    fn test_predictor_decision_serialization() {
+        let decision_data = PredictorDecisionEventData {
+            risk_score: 75.0,
+            risk_level: "high".to_string(),
+            action_recommended: Some("checkpoint".to_string()),
+            contributing_factors: vec!["file_churn: high".to_string()],
+        };
+
+        let json = serde_json::to_string(&decision_data).unwrap();
+        let restored: PredictorDecisionEventData = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.risk_score, 75.0);
+        assert_eq!(
+            restored.action_recommended,
+            Some("checkpoint".to_string())
+        );
+    }
+
+    // ========================================================================
+    // Event Filtering Tests
+    // ========================================================================
+
+    #[test]
+    fn test_filter_events_by_single_type() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log multiple event types
+        analytics
+            .log_structured_event("session1", EventType::SessionStart, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::SessionEnd, serde_json::json!({}))
+            .unwrap();
+
+        let filter = EventFilter::new().with_event_type(EventType::Iteration);
+        let events = analytics.read_structured_events_filtered(&filter).unwrap();
+
+        assert_eq!(events.len(), 2);
+        assert!(events
+            .iter()
+            .all(|e| e.event_type == EventType::Iteration));
+    }
+
+    #[test]
+    fn test_filter_events_by_multiple_types() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_structured_event("session1", EventType::SessionStart, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::GateResult, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::PredictorDecision, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::SessionEnd, serde_json::json!({}))
+            .unwrap();
+
+        let filter = EventFilter::new()
+            .with_event_type(EventType::GateResult)
+            .with_event_type(EventType::PredictorDecision);
+        let events = analytics.read_structured_events_filtered(&filter).unwrap();
+
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_events_by_session() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_structured_event("session1", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session2", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+
+        let filter = EventFilter::new().with_session_id("session1");
+        let events = analytics.read_structured_events_filtered(&filter).unwrap();
+
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|e| e.session_id == "session1"));
+    }
+
+    #[test]
+    fn test_filter_events_combined() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_structured_event("session1", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::GateResult, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session2", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session2", EventType::GateResult, serde_json::json!({}))
+            .unwrap();
+
+        let filter = EventFilter::new()
+            .with_session_id("session1")
+            .with_event_type(EventType::GateResult);
+        let events = analytics.read_structured_events_filtered(&filter).unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].session_id, "session1");
+        assert_eq!(events[0].event_type, EventType::GateResult);
+    }
+
+    #[test]
+    fn test_event_filter_default_returns_all() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_structured_event("session1", EventType::SessionStart, serde_json::json!({}))
+            .unwrap();
+        analytics
+            .log_structured_event("session1", EventType::Iteration, serde_json::json!({}))
+            .unwrap();
+
+        let filter = EventFilter::new();
+        let events = analytics.read_structured_events_filtered(&filter).unwrap();
+
+        assert_eq!(events.len(), 2);
     }
 }

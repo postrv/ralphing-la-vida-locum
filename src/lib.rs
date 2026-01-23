@@ -89,8 +89,9 @@ pub use narsil::{
 
 // Re-export analytics types
 pub use analytics::{
-    AggregateStats, Analytics, AnalyticsEvent, PredictorAccuracyStats, QualityMetricsSnapshot,
-    QualityTrend, SessionSummary, TrendDirection,
+    AggregateStats, Analytics, AnalyticsEvent, EventFilter, EventType, GateIssueEventData,
+    GateResultEventData, PredictorAccuracyStats, PredictorDecisionEventData, QualityMetricsSnapshot,
+    QualityTrend, SessionSummary, StructuredEvent, TrendDirection, SCHEMA_VERSION,
 };
 
 // Re-export LLM types

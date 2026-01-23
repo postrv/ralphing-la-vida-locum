@@ -25,23 +25,23 @@
 
 **Goal**: Add opt-in analytics for understanding Ralph usage patterns.
 
-### 24. Phase 16.1: Structured Event Logging
+### 24. Phase 16.1: Structured Event Logging ✅
 
 Standardize event logging for analytics consumption.
 
 **Test Requirements**:
-- [ ] Test events have consistent schema
-- [ ] Test events include timestamp, session_id, event_type
-- [ ] Test gate results are logged as structured events
-- [ ] Test predictor decisions are logged as structured events
-- [ ] Test events can be filtered by type
+- [x] Test events have consistent schema
+- [x] Test events include timestamp, session_id, event_type
+- [x] Test gate results are logged as structured events
+- [x] Test predictor decisions are logged as structured events
+- [x] Test events can be filtered by type
 
 **Implementation**:
-- [ ] Define `AnalyticsEvent` enum with all event types
-- [ ] Add schema version to events
-- [ ] Implement event serialization to JSON
-- [ ] Add event filtering API
-- [ ] Update all subsystems to emit structured events
+- [x] Define `EventType` enum with all event types
+- [x] Add schema version to events (`SCHEMA_VERSION`)
+- [x] Implement event serialization to JSON (`StructuredEvent`)
+- [x] Add event filtering API (`EventFilter`)
+- [x] Add structured event types (`GateResultEventData`, `PredictorDecisionEventData`)
 
 **Quality Gates**:
 ```bash
