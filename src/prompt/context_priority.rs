@@ -280,11 +280,17 @@ impl ContextPrioritizer {
         // Score each file
         let mut scored_files: Vec<ScoredFile> = files
             .into_iter()
-            .map(|path| self.score_file(&path, &changed_set, primary_language, &secondary_languages))
+            .map(|path| {
+                self.score_file(&path, &changed_set, primary_language, &secondary_languages)
+            })
             .collect();
 
         // Sort by score (descending)
-        scored_files.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored_files.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Extract paths
         scored_files.into_iter().map(|sf| sf.path).collect()
@@ -310,11 +316,17 @@ impl ContextPrioritizer {
         // Score each file
         let mut scored_files: Vec<ScoredFile> = files
             .into_iter()
-            .map(|path| self.score_file(&path, &changed_set, primary_language, &secondary_languages))
+            .map(|path| {
+                self.score_file(&path, &changed_set, primary_language, &secondary_languages)
+            })
             .collect();
 
         // Sort by score (descending)
-        scored_files.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored_files.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         scored_files
     }
@@ -447,10 +459,7 @@ impl ContextPrioritizer {
 
     /// Extract the base name from a test file name.
     fn extract_test_base_name(&self, path: &Path) -> String {
-        let file_name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let file_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
 
         // Remove common test prefixes/suffixes
         file_name
@@ -568,9 +577,9 @@ mod tests {
     fn test_primary_language_prioritized_over_secondary() {
         let prioritizer = ContextPrioritizer::with_defaults();
         let files = vec![
-            PathBuf::from("src/main.py"),       // secondary
-            PathBuf::from("src/main.rs"),       // primary
-            PathBuf::from("src/utils.go"),      // not in languages
+            PathBuf::from("src/main.py"),  // secondary
+            PathBuf::from("src/main.rs"),  // primary
+            PathBuf::from("src/utils.go"), // not in languages
         ];
 
         let scored = prioritizer.prioritize_with_scores(
@@ -582,7 +591,10 @@ mod tests {
 
         let rust_score = scored.iter().find(|s| s.path.ends_with("main.rs")).unwrap();
         let python_score = scored.iter().find(|s| s.path.ends_with("main.py")).unwrap();
-        let go_score = scored.iter().find(|s| s.path.ends_with("utils.go")).unwrap();
+        let go_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("utils.go"))
+            .unwrap();
 
         // Rust (primary) > Python (secondary) > Go (neither)
         assert!(
@@ -599,8 +611,8 @@ mod tests {
     fn test_secondary_languages_prioritized_over_other() {
         let prioritizer = ContextPrioritizer::with_defaults();
         let files = vec![
-            PathBuf::from("src/script.py"),     // secondary
-            PathBuf::from("src/readme.md"),     // other
+            PathBuf::from("src/script.py"), // secondary
+            PathBuf::from("src/readme.md"), // other
         ];
 
         let scored = prioritizer.prioritize_with_scores(
@@ -610,8 +622,14 @@ mod tests {
             Some(Language::Rust),
         );
 
-        let python_score = scored.iter().find(|s| s.path.ends_with("script.py")).unwrap();
-        let md_score = scored.iter().find(|s| s.path.ends_with("readme.md")).unwrap();
+        let python_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("script.py"))
+            .unwrap();
+        let md_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("readme.md"))
+            .unwrap();
 
         assert!(
             python_score.score > md_score.score,
@@ -628,9 +646,9 @@ mod tests {
         let prioritizer = ContextPrioritizer::with_defaults();
         let files = vec![
             PathBuf::from("low.txt"),
-            PathBuf::from("src/main.rs"),       // primary language
-            PathBuf::from("changed.rs"),         // will be marked as changed
-            PathBuf::from("Cargo.toml"),         // config file
+            PathBuf::from("src/main.rs"), // primary language
+            PathBuf::from("changed.rs"),  // will be marked as changed
+            PathBuf::from("Cargo.toml"),  // config file
         ];
         let changed = vec![PathBuf::from("changed.rs")];
 
@@ -642,18 +660,26 @@ mod tests {
         );
 
         // Changed file should be first, then primary language/config, then other
-        assert_eq!(result[0], PathBuf::from("changed.rs"), "Changed file should be first");
+        assert_eq!(
+            result[0],
+            PathBuf::from("changed.rs"),
+            "Changed file should be first"
+        );
 
         // low.txt should be last (lowest score)
-        assert_eq!(result[result.len() - 1], PathBuf::from("low.txt"), "Other file should be last");
+        assert_eq!(
+            result[result.len() - 1],
+            PathBuf::from("low.txt"),
+            "Other file should be last"
+        );
     }
 
     #[test]
     fn test_scores_are_cumulative() {
         let prioritizer = ContextPrioritizer::with_defaults();
         let files = vec![
-            PathBuf::from("src/main.rs"),       // primary + changed
-            PathBuf::from("Cargo.toml"),        // config only
+            PathBuf::from("src/main.rs"), // primary + changed
+            PathBuf::from("Cargo.toml"),  // config only
         ];
         let changed = vec![PathBuf::from("src/main.rs")];
 
@@ -698,15 +724,24 @@ mod tests {
             Some(Language::Rust),
         );
 
-        let parser_test = scored.iter().find(|s| s.path.ends_with("parser_test.rs")).unwrap();
-        let other_test = scored.iter().find(|s| s.path.ends_with("other_test.rs")).unwrap();
+        let parser_test = scored
+            .iter()
+            .find(|s| s.path.ends_with("parser_test.rs"))
+            .unwrap();
+        let other_test = scored
+            .iter()
+            .find(|s| s.path.ends_with("other_test.rs"))
+            .unwrap();
 
         assert!(
             parser_test.score > other_test.score,
             "Related test file should have higher score"
         );
         assert!(
-            parser_test.reasons.iter().any(|r| r.contains("related test")),
+            parser_test
+                .reasons
+                .iter()
+                .any(|r| r.contains("related test")),
             "Should include 'related test file' reason"
         );
     }
@@ -744,8 +779,8 @@ mod tests {
         let non_test_patterns = vec![
             "src/main.rs",
             "src/lib.py",
-            "contest.js",  // contains 'test' but not a test file
-            "latest.go",   // ends with 'test' in name but not a test file
+            "contest.js", // contains 'test' but not a test file
+            "latest.go",  // ends with 'test' in name but not a test file
         ];
 
         for pattern in non_test_patterns {
@@ -776,10 +811,16 @@ mod tests {
             Some(Language::Rust),
         );
 
-        let parser_test = scored.iter().find(|s| s.path.ends_with("parser_test.rs")).unwrap();
+        let parser_test = scored
+            .iter()
+            .find(|s| s.path.ends_with("parser_test.rs"))
+            .unwrap();
 
         assert!(
-            !parser_test.reasons.iter().any(|r| r.contains("related test")),
+            !parser_test
+                .reasons
+                .iter()
+                .any(|r| r.contains("related test")),
             "Should not include 'related test file' reason when disabled"
         );
     }
@@ -791,20 +832,19 @@ mod tests {
     #[test]
     fn test_config_files_prioritized() {
         let prioritizer = ContextPrioritizer::with_defaults();
-        let files = vec![
-            PathBuf::from("Cargo.toml"),
-            PathBuf::from("random.txt"),
-        ];
+        let files = vec![PathBuf::from("Cargo.toml"), PathBuf::from("random.txt")];
 
-        let scored = prioritizer.prioritize_with_scores(
-            files,
-            &[Language::Rust],
-            &[],
-            Some(Language::Rust),
-        );
+        let scored =
+            prioritizer.prioritize_with_scores(files, &[Language::Rust], &[], Some(Language::Rust));
 
-        let cargo_score = scored.iter().find(|s| s.path.ends_with("Cargo.toml")).unwrap();
-        let txt_score = scored.iter().find(|s| s.path.ends_with("random.txt")).unwrap();
+        let cargo_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("Cargo.toml"))
+            .unwrap();
+        let txt_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("random.txt"))
+            .unwrap();
 
         assert!(
             cargo_score.score > txt_score.score,
@@ -853,14 +893,13 @@ mod tests {
 
         let files = vec![PathBuf::from("Cargo.toml")];
 
-        let scored = prioritizer.prioritize_with_scores(
-            files,
-            &[Language::Rust],
-            &[],
-            Some(Language::Rust),
-        );
+        let scored =
+            prioritizer.prioritize_with_scores(files, &[Language::Rust], &[], Some(Language::Rust));
 
-        let cargo_score = scored.iter().find(|s| s.path.ends_with("Cargo.toml")).unwrap();
+        let cargo_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("Cargo.toml"))
+            .unwrap();
 
         assert!(
             !cargo_score.reasons.iter().any(|r| r.contains("config")),
@@ -907,8 +946,8 @@ mod tests {
         let prioritizer = ContextPrioritizer::new(config);
 
         let files = vec![
-            PathBuf::from("src/main.rs"),       // primary
-            PathBuf::from("src/main.py"),       // secondary
+            PathBuf::from("src/main.rs"), // primary
+            PathBuf::from("src/main.py"), // secondary
         ];
 
         let result = prioritizer.prioritize_by_language(
@@ -928,18 +967,11 @@ mod tests {
 
     #[test]
     fn test_convenience_function() {
-        let files = vec![
-            PathBuf::from("src/main.rs"),
-            PathBuf::from("src/lib.rs"),
-        ];
+        let files = vec![PathBuf::from("src/main.rs"), PathBuf::from("src/lib.rs")];
         let changed = vec![PathBuf::from("src/main.rs")];
 
-        let result = prioritize_by_language(
-            files,
-            &[Language::Rust],
-            &changed,
-            Some(Language::Rust),
-        );
+        let result =
+            prioritize_by_language(files, &[Language::Rust], &changed, Some(Language::Rust));
 
         assert_eq!(result[0], PathBuf::from("src/main.rs"));
     }
@@ -963,16 +995,13 @@ mod tests {
     #[test]
     fn test_no_languages_detected() {
         let prioritizer = ContextPrioritizer::with_defaults();
-        let files = vec![
-            PathBuf::from("src/main.rs"),
-            PathBuf::from("README.md"),
-        ];
+        let files = vec![PathBuf::from("src/main.rs"), PathBuf::from("README.md")];
 
         let result = prioritizer.prioritize_by_language(
             files,
-            &[],  // no languages
+            &[], // no languages
             &[],
-            None,  // no primary language
+            None, // no primary language
         );
 
         // Should still return files, just with base scores
@@ -982,16 +1011,13 @@ mod tests {
     #[test]
     fn test_no_primary_language() {
         let prioritizer = ContextPrioritizer::with_defaults();
-        let files = vec![
-            PathBuf::from("src/main.rs"),
-            PathBuf::from("src/main.py"),
-        ];
+        let files = vec![PathBuf::from("src/main.rs"), PathBuf::from("src/main.py")];
 
         let scored = prioritizer.prioritize_with_scores(
             files,
             &[Language::Rust, Language::Python],
             &[],
-            None,  // no primary - all are secondary
+            None, // no primary - all are secondary
         );
 
         let rust_score = scored.iter().find(|s| s.path.ends_with("main.rs")).unwrap();
@@ -1009,17 +1035,16 @@ mod tests {
         let prioritizer = ContextPrioritizer::with_defaults();
         let files = vec![
             PathBuf::from("src/main.rs"),
-            PathBuf::from("data.csv"),  // not a recognized language
+            PathBuf::from("data.csv"), // not a recognized language
         ];
 
-        let scored = prioritizer.prioritize_with_scores(
-            files,
-            &[Language::Rust],
-            &[],
-            Some(Language::Rust),
-        );
+        let scored =
+            prioritizer.prioritize_with_scores(files, &[Language::Rust], &[], Some(Language::Rust));
 
-        let csv_score = scored.iter().find(|s| s.path.ends_with("data.csv")).unwrap();
+        let csv_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("data.csv"))
+            .unwrap();
 
         // Should only have base score
         assert!(
@@ -1039,7 +1064,8 @@ mod tests {
             .with_primary_language_score(7.0);
 
         let json = serde_json::to_string(&config).expect("serialization should work");
-        let deserialized: ContextPriorityConfig = serde_json::from_str(&json).expect("deserialization should work");
+        let deserialized: ContextPriorityConfig =
+            serde_json::from_str(&json).expect("deserialization should work");
 
         assert!((deserialized.changed_score - 15.0).abs() < f64::EPSILON);
         assert!((deserialized.primary_language_score - 7.0).abs() < f64::EPSILON);
@@ -1064,8 +1090,8 @@ mod tests {
         // Alias for test_primary_language_prioritized_over_secondary
         let prioritizer = ContextPrioritizer::with_defaults();
         let files = vec![
-            PathBuf::from("src/app.py"),        // secondary
-            PathBuf::from("src/main.rs"),       // primary
+            PathBuf::from("src/app.py"),  // secondary
+            PathBuf::from("src/main.rs"), // primary
         ];
 
         let result = prioritizer.prioritize_by_language(
@@ -1075,7 +1101,11 @@ mod tests {
             Some(Language::Rust),
         );
 
-        assert_eq!(result[0], PathBuf::from("src/main.rs"), "Primary language should be prioritized");
+        assert_eq!(
+            result[0],
+            PathBuf::from("src/main.rs"),
+            "Primary language should be prioritized"
+        );
     }
 
     #[test]
@@ -1096,7 +1126,11 @@ mod tests {
             Some(Language::Rust),
         );
 
-        assert_eq!(result[0], PathBuf::from("src/changed.py"), "Changed files should be prioritized first");
+        assert_eq!(
+            result[0],
+            PathBuf::from("src/changed.py"),
+            "Changed files should be prioritized first"
+        );
     }
 
     #[test]
@@ -1104,10 +1138,10 @@ mod tests {
         // Test prioritization in a polyglot project with multiple languages
         let prioritizer = ContextPrioritizer::with_defaults();
         let files = vec![
-            PathBuf::from("src/main.rs"),       // primary (Rust)
-            PathBuf::from("src/app.py"),        // secondary (Python)
-            PathBuf::from("src/index.ts"),      // secondary (TypeScript)
-            PathBuf::from("README.md"),         // other
+            PathBuf::from("src/main.rs"),  // primary (Rust)
+            PathBuf::from("src/app.py"),   // secondary (Python)
+            PathBuf::from("src/index.ts"), // secondary (TypeScript)
+            PathBuf::from("README.md"),    // other
         ];
 
         let scored = prioritizer.prioritize_with_scores(
@@ -1119,7 +1153,10 @@ mod tests {
 
         let rust_score = scored.iter().find(|s| s.path.ends_with("main.rs")).unwrap();
         let python_score = scored.iter().find(|s| s.path.ends_with("app.py")).unwrap();
-        let md_score = scored.iter().find(|s| s.path.ends_with("README.md")).unwrap();
+        let md_score = scored
+            .iter()
+            .find(|s| s.path.ends_with("README.md"))
+            .unwrap();
 
         assert!(rust_score.score > python_score.score, "Primary > secondary");
         assert!(python_score.score > md_score.score, "Secondary > other");

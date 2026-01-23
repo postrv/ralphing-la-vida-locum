@@ -80,6 +80,6 @@ pub use context::{
     QualityGateStatus, SessionStats, TaskPhase,
 };
 pub use context_priority::{
-    prioritize_by_language, ContextPriorityConfig, ContextPrioritizer, ScoredFile,
+    prioritize_by_language, ContextPrioritizer, ContextPriorityConfig, ScoredFile,
 };
 pub use templates::{PromptTemplates, Template, TemplateMarker};

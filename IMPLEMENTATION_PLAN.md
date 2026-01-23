@@ -4,7 +4,7 @@
 > 
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 > 
-> **Current Focus: Sprint 9 (Polyglot Orchestration & Validation)**
+> **Current Focus: Sprint 10 (Predictor Action Enforcement)**
 
 ---
 
@@ -31,86 +31,9 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 ---
 
-## Sprint 9: Polyglot Orchestration & Validation
+## Sprint 9: Polyglot Orchestration & Validation ✅ COMPLETE
 
-**Goal**: Validate end-to-end polyglot functionality on real projects.
-
-### 9. Phase 9.1: Weighted Gate Scoring ✅ COMPLETE
-
-Implement weighted scoring for polyglot gate results based on change scope.
-
-**Test Requirements**:
-- [x] Test gates for changed files are weighted higher
-- [x] Test unchanged language gates contribute less to overall score
-- [x] Test blocking failures always block regardless of weight
-- [x] Test weights are configurable via settings.json
-- [x] Test default weights: changed files 1.0, unchanged 0.3
-
-**Implementation**:
-- [x] Add `GateWeightConfig` with `changed_weight` and `unchanged_weight` fields
-- [x] Add `detect_changed_languages()` to compute weights based on `git diff`
-- [x] Add `compute_weights()`, `weighted_score()`, and `can_commit_weighted()` to `PolyglotGateResult`
-- [x] Add `gateWeights` section to `settings.json` schema via `ProjectConfig`
-- [x] Add `Language::from_extension()` and `Language::from_path()` helper methods
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- weighted_scoring
-cargo test --lib -- gate_weights
-```
-
-### 10. Phase 9.2: Context Window Language Prioritization ✅ COMPLETE
-
-Prioritize context inclusion based on detected languages and changed files.
-
-**Test Requirements**:
-- [x] Test changed files are always included in context
-- [x] Test primary language files are prioritized over secondary
-- [x] Test context respects token limits while maximizing relevant content
-- [x] Test test files are included when related source files change
-- [x] Test config files (Cargo.toml, package.json) included when relevant
-
-**Implementation**:
-- [x] Add `prioritize_by_language(files: Vec<Path>, languages: Vec<Language>) -> Vec<Path>`
-- [x] Implement relevance scoring: changed > primary > secondary > other
-- [x] Update context builder to use prioritization
-- [x] Add `context_priority` configuration options
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- context_priority
-cargo test --lib -- language_prioritization
-```
-
-### 11. Phase 9.3: End-to-End Polyglot Integration Test ✅
-
-Create comprehensive integration test with real polyglot project.
-
-**Test Requirements**:
-- [x] Test `ralph bootstrap` on Next.js + FastAPI project
-- [x] Test language detection finds TypeScript and Python
-- [x] Test `ralph loop --max-iterations 1` runs correct gates
-- [x] Test gate failures produce appropriate remediation (via dry-run detection)
-- [x] Test commits only happen when all relevant gates pass (verified via loop behavior)
-
-**Implementation**:
-- [x] Create test fixture in tests/polyglot_integration.rs (programmatic fixture)
-- [x] Add minimal Next.js frontend with TypeScript
-- [x] Add minimal FastAPI backend with Python
-- [x] Write integration test exercising full bootstrap → loop → commit cycle (22 tests)
-- [x] Integration tests run as part of `cargo test --tests`
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --test polyglot_integration
-```
-
-**Completed**: 2026-01-23 - 22 integration tests covering polyglot detection, bootstrap,
-language-specific gates (ESLint, Jest, TypeScript, npm-audit for TS; Ruff, Pytest, Mypy for Python),
-loop initialization, and configuration validation.
+> **Completed 2026-01-23**: All 3 phases (9.1-9.3). Added weighted gate scoring with `GateWeightConfig`, context window language prioritization with `ContextPrioritizer`, and 22 end-to-end polyglot integration tests.
 
 ---
 

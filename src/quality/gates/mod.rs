@@ -1792,7 +1792,10 @@ impl PolyglotGateResult {
         let mut weighted_total = 0.0;
 
         for (lang, results) in &self.by_language {
-            let weight = weights.get(lang).copied().unwrap_or(config.unchanged_weight);
+            let weight = weights
+                .get(lang)
+                .copied()
+                .unwrap_or(config.unchanged_weight);
 
             for result in results {
                 weighted_total += weight;
