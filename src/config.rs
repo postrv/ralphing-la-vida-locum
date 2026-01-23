@@ -1070,6 +1070,276 @@ impl ConfigLoader {
     }
 }
 
+// ============================================================================
+// Shared Gate Configuration (Phase 17.2)
+// ============================================================================
+
+/// Configuration with optional `extends` field for shared configs.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ExtendableConfig {
+    /// Path to a config file to extend from (relative to project root).
+    ///
+    /// URLs are reserved for future cloud support but not currently implemented.
+    #[serde(default)]
+    pub extends: Option<String>,
+
+    /// All other configuration fields.
+    #[serde(flatten)]
+    pub config: serde_json::Value,
+}
+
+/// Error type for shared config operations.
+#[derive(Debug)]
+pub enum SharedConfigError {
+    /// The specified config file was not found.
+    NotFound { path: PathBuf },
+    /// URL extends is not yet supported.
+    UrlNotSupported { url: String },
+    /// Circular extends detected.
+    CircularExtends { cycle: Vec<PathBuf> },
+    /// Failed to parse config file.
+    ParseError { path: PathBuf, error: String },
+    /// Config validation failed.
+    ValidationError { path: PathBuf, error: String },
+    /// IO error reading config.
+    IoError { path: PathBuf, error: std::io::Error },
+}
+
+impl std::fmt::Display for SharedConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound { path } => {
+                write!(f, "Config file not found: {} does not exist", path.display())
+            }
+            Self::UrlNotSupported { url } => {
+                write!(
+                    f,
+                    "URL extends not yet supported (cloud feature coming soon): {}",
+                    url
+                )
+            }
+            Self::CircularExtends { cycle } => {
+                let paths: Vec<String> = cycle.iter().map(|p| p.display().to_string()).collect();
+                write!(f, "Circular extends detected: {}", paths.join(" -> "))
+            }
+            Self::ParseError { path, error } => {
+                write!(f, "Failed to parse config {}: {}", path.display(), error)
+            }
+            Self::ValidationError { path, error } => {
+                write!(
+                    f,
+                    "Validation error in config {}: {}",
+                    path.display(),
+                    error
+                )
+            }
+            Self::IoError { path, error } => {
+                write!(f, "Failed to read config {}: {}", path.display(), error)
+            }
+        }
+    }
+}
+
+impl std::error::Error for SharedConfigError {}
+
+/// Resolver for shared gate configurations with extends support.
+///
+/// This resolver handles loading configurations that can extend other
+/// configuration files, allowing teams to share common settings.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::config::SharedConfigResolver;
+/// use std::path::Path;
+///
+/// let resolver = SharedConfigResolver::new(Path::new("/path/to/project"));
+/// let config = resolver.load()?;
+/// ```
+///
+/// # Config Format
+///
+/// Configs can reference other configs via the `extends` field:
+///
+/// ```json
+/// {
+///   "extends": "config/team-defaults.json",
+///   "gateWeights": {
+///     "unchanged_weight": 0.5
+///   }
+/// }
+/// ```
+///
+/// The extended config's values are merged with the current config,
+/// with current config values taking precedence.
+#[derive(Debug, Clone)]
+pub struct SharedConfigResolver {
+    project_dir: PathBuf,
+    max_depth: usize,
+}
+
+impl SharedConfigResolver {
+    /// Create a new resolver for the given project directory.
+    #[must_use]
+    pub fn new(project_dir: &Path) -> Self {
+        Self {
+            project_dir: project_dir.to_path_buf(),
+            max_depth: 10, // Prevent runaway recursion
+        }
+    }
+
+    /// Set the maximum extends depth (default: 10).
+    #[must_use]
+    pub fn with_max_depth(mut self, depth: usize) -> Self {
+        self.max_depth = depth;
+        self
+    }
+
+    /// Load the project configuration with extends resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - An extended config file is not found
+    /// - A URL extends is used (not yet supported)
+    /// - Circular extends are detected
+    /// - A config file fails to parse
+    pub fn load(&self) -> Result<ProjectConfig, SharedConfigError> {
+        let settings_path = ProjectConfig::settings_path(&self.project_dir);
+
+        if !settings_path.exists() {
+            // No project settings, return defaults
+            return Ok(ProjectConfig::default());
+        }
+
+        // Track visited paths for circular detection
+        let mut visited = std::collections::HashSet::new();
+
+        // Load and merge the config chain
+        let merged = self.load_with_extends(&settings_path, &mut visited, 0)?;
+
+        // Parse the final merged config
+        serde_json::from_value(merged).map_err(|e| SharedConfigError::ParseError {
+            path: settings_path,
+            error: e.to_string(),
+        })
+    }
+
+    /// Validate the configuration including all extended configs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if validation fails for any config in the chain.
+    pub fn validate(&self) -> Result<(), SharedConfigError> {
+        let config = self.load()?;
+
+        // Validate predictor weights
+        if let Err(e) = config.predictor_weights.validate() {
+            return Err(SharedConfigError::ValidationError {
+                path: ProjectConfig::settings_path(&self.project_dir),
+                error: e,
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Load a config file and recursively resolve extends.
+    fn load_with_extends(
+        &self,
+        config_path: &Path,
+        visited: &mut std::collections::HashSet<PathBuf>,
+        depth: usize,
+    ) -> Result<serde_json::Value, SharedConfigError> {
+        // Check recursion depth
+        if depth > self.max_depth {
+            return Err(SharedConfigError::CircularExtends {
+                cycle: visited.iter().cloned().collect(),
+            });
+        }
+
+        // Canonicalize path for consistent comparison
+        let canonical_path = config_path
+            .canonicalize()
+            .unwrap_or_else(|_| config_path.to_path_buf());
+
+        // Check for circular reference
+        if visited.contains(&canonical_path) {
+            let mut cycle: Vec<PathBuf> = visited.iter().cloned().collect();
+            cycle.push(canonical_path);
+            return Err(SharedConfigError::CircularExtends { cycle });
+        }
+
+        // Check if file exists
+        if !config_path.exists() {
+            return Err(SharedConfigError::NotFound {
+                path: config_path.to_path_buf(),
+            });
+        }
+
+        // Mark as visited
+        visited.insert(canonical_path.clone());
+
+        // Read and parse the config
+        let content =
+            std::fs::read_to_string(config_path).map_err(|e| SharedConfigError::IoError {
+                path: config_path.to_path_buf(),
+                error: e,
+            })?;
+
+        let extendable: ExtendableConfig =
+            serde_json::from_str(&content).map_err(|e| SharedConfigError::ParseError {
+                path: config_path.to_path_buf(),
+                error: e.to_string(),
+            })?;
+
+        // Start with the base config (if extends is specified)
+        let mut merged = if let Some(ref extends_path) = extendable.extends {
+            // Check if it's a URL
+            if extends_path.starts_with("http://") || extends_path.starts_with("https://") {
+                return Err(SharedConfigError::UrlNotSupported {
+                    url: extends_path.clone(),
+                });
+            }
+
+            // Resolve path relative to project root
+            let resolved_path = self.project_dir.join(extends_path);
+            self.load_with_extends(&resolved_path, visited, depth + 1)?
+        } else {
+            serde_json::Value::Object(serde_json::Map::new())
+        };
+
+        // Merge current config on top of base
+        self.deep_merge(&mut merged, extendable.config);
+
+        // Unmark as visited (for non-circular paths that converge)
+        visited.remove(&canonical_path);
+
+        Ok(merged)
+    }
+
+    /// Deep merge two JSON values, with child overriding parent.
+    fn deep_merge(&self, parent: &mut serde_json::Value, child: serde_json::Value) {
+        match (parent, child) {
+            (serde_json::Value::Object(parent_map), serde_json::Value::Object(child_map)) => {
+                for (key, child_value) in child_map {
+                    match parent_map.get_mut(&key) {
+                        Some(parent_value) => {
+                            self.deep_merge(parent_value, child_value);
+                        }
+                        None => {
+                            parent_map.insert(key, child_value);
+                        }
+                    }
+                }
+            }
+            (parent, child) => {
+                *parent = child;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2066,5 +2336,302 @@ mod tests {
         assert!(ConfigLevel::System < ConfigLevel::User);
         assert!(ConfigLevel::User < ConfigLevel::Project);
         assert!(ConfigLevel::System < ConfigLevel::Project);
+    }
+
+    // =========================================================================
+    // Shared Gate Configuration Tests (Phase 17.2)
+    // =========================================================================
+
+    #[test]
+    fn test_shared_config_reference_external_file() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create a shared config file in the project
+        let shared_config_dir = project_dir.join("config");
+        std::fs::create_dir_all(&shared_config_dir).unwrap();
+        std::fs::write(
+            shared_config_dir.join("team-gates.json"),
+            r#"{
+                "gateWeights": {
+                    "changed_weight": 1.0,
+                    "unchanged_weight": 0.5
+                }
+            }"#,
+        )
+        .unwrap();
+
+        // Create project config that extends the shared config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "config/team-gates.json"}"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let config = resolver.load().unwrap();
+
+        // Should have inherited the gate weights from the external file
+        assert!(
+            (config.gate_weights.unchanged_weight - 0.5).abs() < f64::EPSILON,
+            "Should inherit unchanged_weight from external config"
+        );
+    }
+
+    #[test]
+    fn test_shared_config_resolved_relative_to_project_root() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create a shared config in a nested directory
+        let nested_dir = project_dir.join("configs/team/gates");
+        std::fs::create_dir_all(&nested_dir).unwrap();
+        std::fs::write(
+            nested_dir.join("strict.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.50}}"#,
+        )
+        .unwrap();
+
+        // Create project config with relative path
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "configs/team/gates/strict.json"}"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let config = resolver.load().unwrap();
+
+        // Path should resolve relative to project root
+        assert!(
+            (config.predictor_weights.commit_gap - 0.50).abs() < f64::EPSILON,
+            "Should resolve external config relative to project root"
+        );
+    }
+
+    #[test]
+    fn test_shared_config_url_placeholder_for_future_cloud() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create project config with a URL reference (future cloud feature)
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "https://example.com/team-config.json"}"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let result = resolver.load();
+
+        // URL extends should return a clear "not yet supported" error
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("URL") || err_msg.contains("not supported") || err_msg.contains("cloud"),
+            "Should indicate URL extends is not yet supported: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_shared_config_missing_external_produces_clear_error() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create project config referencing non-existent file
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "nonexistent/config.json"}"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let result = resolver.load();
+
+        // Should produce a clear error about missing file
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("nonexistent") || err_msg.contains("not found") || err_msg.contains("does not exist"),
+            "Error should mention the missing file path: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_shared_config_validation_includes_external_configs() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create a shared config with invalid values
+        let shared_config_dir = project_dir.join("config");
+        std::fs::create_dir_all(&shared_config_dir).unwrap();
+        std::fs::write(
+            shared_config_dir.join("invalid-config.json"),
+            r#"{"predictorWeights": {"commit_gap": -0.5}}"#,
+        )
+        .unwrap();
+
+        // Create project config that extends the invalid config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "config/invalid-config.json"}"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let validation_result = resolver.validate();
+
+        // Validation should catch errors in external configs
+        assert!(validation_result.is_err());
+        let err_msg = validation_result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("negative") || err_msg.contains("invalid"),
+            "Validation should catch invalid values in external config: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_shared_config_chained_extends() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create base config
+        let config_dir = project_dir.join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("base.json"),
+            r#"{"gateWeights": {"changed_weight": 0.8, "unchanged_weight": 0.2}}"#,
+        )
+        .unwrap();
+
+        // Create intermediate config that extends base
+        std::fs::write(
+            config_dir.join("team.json"),
+            r#"{"extends": "config/base.json", "predictorWeights": {"commit_gap": 0.35}}"#,
+        )
+        .unwrap();
+
+        // Create project config that extends team config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "config/team.json", "respectGitignore": false}"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let config = resolver.load().unwrap();
+
+        // Should inherit from both configs in chain
+        assert!(
+            (config.gate_weights.unchanged_weight - 0.2).abs() < f64::EPSILON,
+            "Should inherit unchanged_weight from base config"
+        );
+        assert!(
+            (config.predictor_weights.commit_gap - 0.35).abs() < f64::EPSILON,
+            "Should inherit commit_gap from team config"
+        );
+        assert!(
+            !config.respect_gitignore,
+            "Project's explicit value should override"
+        );
+    }
+
+    #[test]
+    fn test_shared_config_circular_extends_detected() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create config A that extends config B
+        let config_dir = project_dir.join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("a.json"),
+            r#"{"extends": "config/b.json"}"#,
+        )
+        .unwrap();
+
+        // Create config B that extends config A (circular)
+        std::fs::write(
+            config_dir.join("b.json"),
+            r#"{"extends": "config/a.json"}"#,
+        )
+        .unwrap();
+
+        // Create project config that extends config A
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "config/a.json"}"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let result = resolver.load();
+
+        // Should detect and error on circular extends
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        let err_msg_lower = err_msg.to_lowercase();
+        assert!(
+            err_msg_lower.contains("circular") || err_msg_lower.contains("cycle"),
+            "Should detect circular extends: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_shared_config_project_overrides_extended() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create a shared config with specific values
+        let config_dir = project_dir.join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("team.json"),
+            r#"{
+                "gateWeights": {"changed_weight": 0.8, "unchanged_weight": 0.4},
+                "predictorWeights": {"commit_gap": 0.40}
+            }"#,
+        )
+        .unwrap();
+
+        // Create project config that extends but overrides some values
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{
+                "extends": "config/team.json",
+                "gateWeights": {"unchanged_weight": 0.6}
+            }"#,
+        )
+        .unwrap();
+
+        let resolver = SharedConfigResolver::new(project_dir);
+        let config = resolver.load().unwrap();
+
+        // Project values should override extended values
+        assert!(
+            (config.gate_weights.unchanged_weight - 0.6).abs() < f64::EPSILON,
+            "Project's unchanged_weight should override extended config"
+        );
+        // But non-overridden values should be inherited
+        assert!(
+            (config.gate_weights.changed_weight - 0.8).abs() < f64::EPSILON,
+            "Should inherit changed_weight from extended config"
+        );
+        assert!(
+            (config.predictor_weights.commit_gap - 0.40).abs() < f64::EPSILON,
+            "Should inherit commit_gap from extended config"
+        );
     }
 }
