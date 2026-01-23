@@ -640,7 +640,10 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let gates: Vec<Box<dyn QualityGate>> = vec![
             Box::new(MockGate::failing("Clippy", vec!["rust warning 1"])),
-            Box::new(MockGate::failing("Ruff", vec!["python warning 1", "python warning 2"])),
+            Box::new(MockGate::failing(
+                "Ruff",
+                vec!["python warning 1", "python warning 2"],
+            )),
         ];
 
         let checker = RealQualityChecker::with_gates(temp.path().to_path_buf(), gates);

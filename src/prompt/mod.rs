@@ -66,6 +66,9 @@ pub mod templates;
 pub use antipatterns::{AntiPatternDetector, DetectorConfig, IterationSummary};
 pub use assembler::{AssemblerConfig, PromptAssembler};
 pub use builder::{DynamicPromptBuilder, SectionBuilder};
+pub use claude_md_generator::{
+    extract_user_custom_sections, ClaudeMdGenerator, USER_CUSTOM_END, USER_CUSTOM_START,
+};
 pub use code_antipatterns::{
     antipatterns_for_language, format_findings_for_prompt, language_from_extension,
     CodeAntipatternDetector, CodeAntipatternFinding, CodeAntipatternRule, CodeAntipatternSeverity,
@@ -74,8 +77,5 @@ pub use context::{
     AntiPattern, AntiPatternSeverity, AntiPatternType, AttemptOutcome, AttemptSummary,
     CurrentTaskContext, ErrorAggregator, ErrorContext, ErrorSeverity, GateResult, PromptContext,
     QualityGateStatus, SessionStats, TaskPhase,
-};
-pub use claude_md_generator::{
-    extract_user_custom_sections, ClaudeMdGenerator, USER_CUSTOM_END, USER_CUSTOM_START,
 };
 pub use templates::{PromptTemplates, Template, TemplateMarker};

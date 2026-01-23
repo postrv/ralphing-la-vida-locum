@@ -104,7 +104,10 @@ impl DynamicPromptBuilder {
         // Code antipattern warnings
         let code_antipattern_section =
             SectionBuilder::build_code_antipattern_section(&context.code_antipattern_warnings);
-        substitutions.insert(TemplateMarker::CodeAntipatternWarnings, code_antipattern_section);
+        substitutions.insert(
+            TemplateMarker::CodeAntipatternWarnings,
+            code_antipattern_section,
+        );
 
         // Historical guidance placeholder (populated by history module)
         substitutions.insert(TemplateMarker::HistoricalGuidance, String::new());

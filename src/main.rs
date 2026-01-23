@@ -17,8 +17,8 @@ use crate::archive::ArchiveManager;
 use crate::context::ContextBuilder;
 use crate::hooks::HookType;
 use crate::r#loop::{LoopManager, LoopManagerConfig, LoopMode};
-use ralph::bootstrap::Bootstrap;
 use ralph::bootstrap::language_detector::LanguageDetector;
+use ralph::bootstrap::Bootstrap;
 use ralph::quality::gates::{detect_available_gates, gates_for_language, is_gate_available};
 use ralph::quality::EnforcerConfig;
 use ralph::Analytics;
@@ -666,7 +666,9 @@ async fn main() -> anyhow::Result<()> {
                         // Show summary of available gates
                         let languages: Vec<_> = detected
                             .iter()
-                            .filter(|d| d.confidence >= LanguageDetector::DEFAULT_POLYGLOT_THRESHOLD)
+                            .filter(|d| {
+                                d.confidence >= LanguageDetector::DEFAULT_POLYGLOT_THRESHOLD
+                            })
                             .map(|d| d.language)
                             .collect();
 
@@ -677,10 +679,7 @@ async fn main() -> anyhow::Result<()> {
                                 "Gates:".cyan().bold(),
                                 available_gates.len()
                             );
-                            println!(
-                                "   Use {} for details",
-                                "--show-gates".cyan()
-                            );
+                            println!("   Use {} for details", "--show-gates".cyan());
                         }
                     }
                 }

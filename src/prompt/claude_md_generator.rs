@@ -542,7 +542,8 @@ panic("not implemented")    // Implement properly
         let mut result = new_content.to_string();
         for section in custom_sections {
             let empty_section = format!("{}\n\n{}", USER_CUSTOM_START, USER_CUSTOM_END);
-            let preserved_section = format!("{}\n{}{}", USER_CUSTOM_START, section, USER_CUSTOM_END);
+            let preserved_section =
+                format!("{}\n{}{}", USER_CUSTOM_START, section, USER_CUSTOM_END);
             result = result.replace(&empty_section, &preserved_section);
         }
 
@@ -966,13 +967,13 @@ mod tests {
 
     #[test]
     fn test_extract_user_custom_sections_whitespace_only() {
-        let content = format!(
-            "{}\n   \n   \n{}\n",
-            USER_CUSTOM_START, USER_CUSTOM_END
-        );
+        let content = format!("{}\n   \n   \n{}\n", USER_CUSTOM_START, USER_CUSTOM_END);
 
         let sections = extract_user_custom_sections(&content);
-        assert!(sections.is_empty(), "Whitespace-only sections should be filtered out");
+        assert!(
+            sections.is_empty(),
+            "Whitespace-only sections should be filtered out"
+        );
     }
 
     // =========================================================================

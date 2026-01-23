@@ -309,7 +309,11 @@ impl Bootstrap {
         if !available_gates.is_empty() {
             println!("\n{} Selected gates:", "Gates:".cyan());
             for gate in &available_gates {
-                let blocking_tag = if gate.is_blocking() { "" } else { " (non-blocking)" };
+                let blocking_tag = if gate.is_blocking() {
+                    ""
+                } else {
+                    " (non-blocking)"
+                };
                 println!("   ✓ {}{}", gate.name(), blocking_tag);
             }
         }

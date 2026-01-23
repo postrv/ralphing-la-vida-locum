@@ -1410,10 +1410,7 @@ impl PolyglotGateResult {
 
     /// Add a gate result for a specific language.
     pub fn add_result(&mut self, language: Language, result: GateResult) {
-        self.by_language
-            .entry(language)
-            .or_default()
-            .push(result);
+        self.by_language.entry(language).or_default().push(result);
     }
 
     /// Returns all gate results organized by language.
@@ -1440,7 +1437,9 @@ impl PolyglotGateResult {
         self.by_language
             .values()
             .flatten()
-            .filter(|result| !result.passed && result.issues.iter().any(|i| i.severity.is_blocking()))
+            .filter(|result| {
+                !result.passed && result.issues.iter().any(|i| i.severity.is_blocking())
+            })
             .collect()
     }
 
@@ -1455,8 +1454,7 @@ impl PolyglotGateResult {
             .flatten()
             .filter(|result| {
                 // Has warnings but no blocking issues
-                !result.issues.is_empty()
-                    && !result.issues.iter().any(|i| i.severity.is_blocking())
+                !result.issues.is_empty() && !result.issues.iter().any(|i| i.severity.is_blocking())
             })
             .collect()
     }
@@ -1521,10 +1519,7 @@ impl PolyglotGateResult {
         // Add overall summary
         lines.push(String::new());
         if total_failed == 0 {
-            lines.push(format!(
-                "✅ All {} gates passed",
-                total_passed
-            ));
+            lines.push(format!("✅ All {} gates passed", total_passed));
         } else {
             lines.push(format!(
                 "❌ {}/{} gates failed",
@@ -1562,7 +1557,11 @@ impl PolyglotGateResult {
 
                     if let Some(ref file) = issue.file {
                         if let Some(line) = issue.line {
-                            prompt.push_str(&format!("  - Location: {}:{}\n", file.display(), line));
+                            prompt.push_str(&format!(
+                                "  - Location: {}:{}\n",
+                                file.display(),
+                                line
+                            ));
                         } else {
                             prompt.push_str(&format!("  - Location: {}\n", file.display()));
                         }
@@ -1588,7 +1587,11 @@ impl PolyglotGateResult {
 
                     if let Some(ref file) = issue.file {
                         if let Some(line) = issue.line {
-                            prompt.push_str(&format!("  - Location: {}:{}\n", file.display(), line));
+                            prompt.push_str(&format!(
+                                "  - Location: {}:{}\n",
+                                file.display(),
+                                line
+                            ));
                         } else {
                             prompt.push_str(&format!("  - Location: {}\n", file.display()));
                         }
@@ -2531,7 +2534,10 @@ version = "0.1.0"
         let mut result = super::PolyglotGateResult::new();
 
         // Add critical issue
-        let issues = vec![GateIssue::new(IssueSeverity::Critical, "security vulnerability")];
+        let issues = vec![GateIssue::new(
+            IssueSeverity::Critical,
+            "security vulnerability",
+        )];
         result.add_result(Language::Rust, GateResult::fail("Security", issues));
 
         assert!(
@@ -2808,6 +2814,9 @@ version = "0.1.0"
         let result = super::PolyglotGateResult::default();
 
         assert!(result.can_commit(), "Default result should allow commit");
-        assert!(result.by_language().is_empty(), "Default result should be empty");
+        assert!(
+            result.by_language().is_empty(),
+            "Default result should be empty"
+        );
     }
 }

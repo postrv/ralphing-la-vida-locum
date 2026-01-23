@@ -1294,11 +1294,7 @@ impl PromptAssembler {
     /// Returns a formatted string of warnings suitable for prompt inclusion.
     fn scan_files_for_code_antipatterns(&self) -> String {
         let detector = CodeAntipatternDetector::new();
-        let files: Vec<&Path> = self
-            .session_files_modified
-            .iter()
-            .map(Path::new)
-            .collect();
+        let files: Vec<&Path> = self.session_files_modified.iter().map(Path::new).collect();
 
         let findings = detector.scan_files_for_languages(&files, &self.config.languages);
         format_findings_for_prompt(&findings)
@@ -2113,8 +2109,11 @@ mod tests {
     fn test_assembler_config_with_multiple_languages() {
         use crate::Language;
 
-        let config = AssemblerConfig::new()
-            .with_languages(vec![Language::Python, Language::TypeScript, Language::Go]);
+        let config = AssemblerConfig::new().with_languages(vec![
+            Language::Python,
+            Language::TypeScript,
+            Language::Go,
+        ]);
 
         assert_eq!(config.languages.len(), 3);
         assert!(config.languages.contains(&Language::Python));

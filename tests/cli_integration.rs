@@ -693,7 +693,9 @@ fn test_detect_empty_project() {
         .arg("detect")
         .assert()
         .success()
-        .stdout(predicate::str::contains("No programming languages detected"));
+        .stdout(predicate::str::contains(
+            "No programming languages detected",
+        ));
 }
 
 #[test]

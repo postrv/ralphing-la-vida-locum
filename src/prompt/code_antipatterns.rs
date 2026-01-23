@@ -183,7 +183,11 @@ pub struct CodeAntipatternFinding {
 impl CodeAntipatternFinding {
     /// Create a new finding from a rule match.
     #[must_use]
-    pub fn from_rule(rule: &CodeAntipatternRule, line: u32, matched_text: impl Into<String>) -> Self {
+    pub fn from_rule(
+        rule: &CodeAntipatternRule,
+        line: u32,
+        matched_text: impl Into<String>,
+    ) -> Self {
         Self {
             rule_id: rule.id.clone(),
             name: rule.name.clone(),
@@ -378,19 +382,16 @@ pub fn antipatterns_for_language(language: Language) -> Vec<CodeAntipatternRule>
 /// Python-specific antipattern rules.
 fn python_antipatterns() -> Vec<CodeAntipatternRule> {
     vec![
-        CodeAntipatternRule::new(
-            "bare-except",
-            "Bare except clause",
-            r"except\s*:",
-        )
-        .with_description(
-            "Catches all exceptions including KeyboardInterrupt and SystemExit, \
-             which can make programs hard to stop and hide bugs."
-        )
-        .with_remediation("Use specific exception types: except ValueError: or except Exception:")
-        .with_severity(CodeAntipatternSeverity::Error)
-        .for_language(Language::Python),
-
+        CodeAntipatternRule::new("bare-except", "Bare except clause", r"except\s*:")
+            .with_description(
+                "Catches all exceptions including KeyboardInterrupt and SystemExit, \
+             which can make programs hard to stop and hide bugs.",
+            )
+            .with_remediation(
+                "Use specific exception types: except ValueError: or except Exception:",
+            )
+            .with_severity(CodeAntipatternSeverity::Error)
+            .for_language(Language::Python),
         CodeAntipatternRule::new(
             "mutable-default-arg",
             "Mutable default argument",
@@ -398,43 +399,37 @@ fn python_antipatterns() -> Vec<CodeAntipatternRule> {
         )
         .with_description(
             "Default mutable arguments like [] or {} are shared across calls, \
-             causing unexpected behavior when modified."
+             causing unexpected behavior when modified.",
         )
         .with_remediation("Use None as default and create the mutable object inside the function")
         .with_severity(CodeAntipatternSeverity::Error)
         .for_language(Language::Python),
-
-        CodeAntipatternRule::new(
-            "global-statement",
-            "Global statement",
-            r"\bglobal\s+\w+",
-        )
-        .with_description(
-            "Global variables make code harder to test and reason about. \
-             They can cause unexpected side effects."
-        )
-        .with_remediation("Pass values as function arguments or use a class to encapsulate state")
-        .with_severity(CodeAntipatternSeverity::Warning)
-        .for_language(Language::Python),
+        CodeAntipatternRule::new("global-statement", "Global statement", r"\bglobal\s+\w+")
+            .with_description(
+                "Global variables make code harder to test and reason about. \
+             They can cause unexpected side effects.",
+            )
+            .with_remediation(
+                "Pass values as function arguments or use a class to encapsulate state",
+            )
+            .with_severity(CodeAntipatternSeverity::Warning)
+            .for_language(Language::Python),
     ]
 }
 
 /// TypeScript/JavaScript-specific antipattern rules.
 fn typescript_antipatterns() -> Vec<CodeAntipatternRule> {
     vec![
-        CodeAntipatternRule::new(
-            "any-type",
-            "Use of any type",
-            r":\s*any\b",
-        )
-        .with_description(
-            "Using 'any' bypasses TypeScript's type checking, \
-             defeating the purpose of using TypeScript."
-        )
-        .with_remediation("Use specific types, generics, or 'unknown' if the type is truly unknown")
-        .with_severity(CodeAntipatternSeverity::Warning)
-        .for_language(Language::TypeScript),
-
+        CodeAntipatternRule::new("any-type", "Use of any type", r":\s*any\b")
+            .with_description(
+                "Using 'any' bypasses TypeScript's type checking, \
+             defeating the purpose of using TypeScript.",
+            )
+            .with_remediation(
+                "Use specific types, generics, or 'unknown' if the type is truly unknown",
+            )
+            .with_severity(CodeAntipatternSeverity::Warning)
+            .for_language(Language::TypeScript),
         CodeAntipatternRule::new(
             "non-null-assertion",
             "Non-null assertion operator",
@@ -442,12 +437,11 @@ fn typescript_antipatterns() -> Vec<CodeAntipatternRule> {
         )
         .with_description(
             "The non-null assertion (!) tells TypeScript to ignore potential null/undefined, \
-             which can cause runtime errors."
+             which can cause runtime errors.",
         )
         .with_remediation("Use optional chaining (?.) or add proper null checks")
         .with_severity(CodeAntipatternSeverity::Warning)
         .for_language(Language::TypeScript),
-
         CodeAntipatternRule::new(
             "console-log",
             "Console.log statement",
@@ -455,7 +449,7 @@ fn typescript_antipatterns() -> Vec<CodeAntipatternRule> {
         )
         .with_description(
             "Console.log statements should be removed before production. \
-             Use a proper logging library instead."
+             Use a proper logging library instead.",
         )
         .with_remediation("Remove console.log or use a configurable logging library")
         .with_severity(CodeAntipatternSeverity::Info)
@@ -474,12 +468,11 @@ fn go_antipatterns() -> Vec<CodeAntipatternRule> {
         )
         .with_description(
             "Ignoring error returns can hide bugs and make debugging difficult. \
-             Go's error handling is explicit for a reason."
+             Go's error handling is explicit for a reason.",
         )
         .with_remediation("Handle the error: check it, wrap it, or return it")
         .with_severity(CodeAntipatternSeverity::Error)
         .for_language(Language::Go),
-
         CodeAntipatternRule::new(
             "empty-interface",
             "Empty interface parameter",
@@ -487,24 +480,19 @@ fn go_antipatterns() -> Vec<CodeAntipatternRule> {
         )
         .with_description(
             "Using interface{} (or any) loses type safety. \
-             Consider using generics or a more specific interface."
+             Consider using generics or a more specific interface.",
         )
         .with_remediation("Use generics with type constraints or define a specific interface")
         .with_severity(CodeAntipatternSeverity::Warning)
         .for_language(Language::Go),
-
-        CodeAntipatternRule::new(
-            "panic-in-library",
-            "Panic in library code",
-            r"\bpanic\s*\(",
-        )
-        .with_description(
-            "Libraries should return errors, not panic. \
-             Panics make the calling code's error handling impossible."
-        )
-        .with_remediation("Return an error instead of panicking")
-        .with_severity(CodeAntipatternSeverity::Warning)
-        .for_language(Language::Go),
+        CodeAntipatternRule::new("panic-in-library", "Panic in library code", r"\bpanic\s*\(")
+            .with_description(
+                "Libraries should return errors, not panic. \
+             Panics make the calling code's error handling impossible.",
+            )
+            .with_remediation("Return an error instead of panicking")
+            .with_severity(CodeAntipatternSeverity::Warning)
+            .for_language(Language::Go),
     ]
 }
 
@@ -568,11 +556,7 @@ fn format_finding(finding: &CodeAntipatternFinding) -> String {
 
     format!(
         "- **{}** at `{}`\n  - Matched: `{}`\n  - {}\n  - Fix: {}\n\n",
-        finding.name,
-        location,
-        finding.matched_text,
-        finding.description,
-        finding.remediation
+        finding.name, location, finding.matched_text, finding.description, finding.remediation
     )
 }
 
@@ -700,7 +684,10 @@ mod tests {
     #[test]
     fn test_typescript_antipatterns_exist() {
         let rules = antipatterns_for_language(Language::TypeScript);
-        assert!(!rules.is_empty(), "TypeScript should have antipattern rules");
+        assert!(
+            !rules.is_empty(),
+            "TypeScript should have antipattern rules"
+        );
     }
 
     #[test]
@@ -850,7 +837,10 @@ mod tests {
         let code = "fn main() { todo!() }";
         let findings = detector.scan_code(code, Language::Rust);
 
-        assert!(findings.is_empty(), "Rust should have no antipattern rules in this detector");
+        assert!(
+            findings.is_empty(),
+            "Rust should have no antipattern rules in this detector"
+        );
     }
 
     #[test]
@@ -905,14 +895,8 @@ mod tests {
 
     #[test]
     fn test_language_from_extension_unknown() {
-        assert_eq!(
-            language_from_extension(Path::new("file.unknown")),
-            None
-        );
-        assert_eq!(
-            language_from_extension(Path::new("file")),
-            None
-        );
+        assert_eq!(language_from_extension(Path::new("file.unknown")), None);
+        assert_eq!(language_from_extension(Path::new("file")), None);
     }
 
     #[test]
@@ -950,8 +934,7 @@ mod tests {
     #[test]
     fn test_finding_with_file() {
         let rule = CodeAntipatternRule::new("test", "Test", "pattern");
-        let finding = CodeAntipatternFinding::from_rule(&rule, 1, "text")
-            .with_file("src/main.py");
+        let finding = CodeAntipatternFinding::from_rule(&rule, 1, "text").with_file("src/main.py");
 
         assert_eq!(finding.file, Some("src/main.py".to_string()));
     }
@@ -970,8 +953,7 @@ mod tests {
             .with_remediation("Fix it")
             .with_severity(CodeAntipatternSeverity::Error);
 
-        let finding = CodeAntipatternFinding::from_rule(&rule, 10, "bad code")
-            .with_file("test.py");
+        let finding = CodeAntipatternFinding::from_rule(&rule, 10, "bad code").with_file("test.py");
 
         let output = format_findings_for_prompt(&[finding]);
 
