@@ -53,6 +53,8 @@ use std::process::Command;
 use std::sync::OnceLock;
 use tracing::debug;
 
+use std::collections::HashMap;
+
 use crate::bootstrap::language::Language;
 use crate::narsil::{NarsilClient, NarsilConfig, SecurityFinding, SecuritySeverity};
 
@@ -1366,6 +1368,242 @@ impl Gate for NoTodoGate {
 }
 
 // ============================================================================
+// PolyglotGateResult (Sprint 7, Phase 7.4)
+// ============================================================================
+
+/// Aggregated gate results across multiple languages.
+///
+/// This type collects results from quality gates across all detected languages
+/// in a polyglot project, providing methods to determine commit eligibility
+/// and generate summaries for remediation.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::{PolyglotGateResult, GateResult};
+/// use ralph::bootstrap::Language;
+///
+/// let mut result = PolyglotGateResult::new();
+/// result.add_result(Language::Rust, GateResult::pass("Clippy"));
+/// result.add_result(Language::Python, GateResult::pass("Ruff"));
+///
+/// if result.can_commit() {
+///     println!("All gates passed - safe to commit");
+/// } else {
+///     println!("{}", result.remediation_prompt());
+/// }
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct PolyglotGateResult {
+    /// Gate results organized by language.
+    by_language: HashMap<Language, Vec<GateResult>>,
+}
+
+impl PolyglotGateResult {
+    /// Create a new empty polyglot gate result.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            by_language: HashMap::new(),
+        }
+    }
+
+    /// Add a gate result for a specific language.
+    pub fn add_result(&mut self, language: Language, result: GateResult) {
+        self.by_language
+            .entry(language)
+            .or_default()
+            .push(result);
+    }
+
+    /// Returns all gate results organized by language.
+    #[must_use]
+    pub fn by_language(&self) -> &HashMap<Language, Vec<GateResult>> {
+        &self.by_language
+    }
+
+    /// Check if all blocking gates passed.
+    ///
+    /// Returns `true` if there are no blocking failures (errors or critical issues),
+    /// `false` otherwise. An empty result (no gates run) returns `true`.
+    #[must_use]
+    pub fn can_commit(&self) -> bool {
+        self.blocking_failures().is_empty()
+    }
+
+    /// Returns gate results that failed with blocking issues.
+    ///
+    /// A result is considered a blocking failure if it contains any issues
+    /// with severity `Error` or `Critical`.
+    #[must_use]
+    pub fn blocking_failures(&self) -> Vec<&GateResult> {
+        self.by_language
+            .values()
+            .flatten()
+            .filter(|result| !result.passed && result.issues.iter().any(|i| i.severity.is_blocking()))
+            .collect()
+    }
+
+    /// Returns gate results that have non-blocking warnings.
+    ///
+    /// A result is considered a warning if it has issues but none are blocking,
+    /// or if the gate passed but reported non-blocking issues.
+    #[must_use]
+    pub fn warnings(&self) -> Vec<&GateResult> {
+        self.by_language
+            .values()
+            .flatten()
+            .filter(|result| {
+                // Has warnings but no blocking issues
+                !result.issues.is_empty()
+                    && !result.issues.iter().any(|i| i.severity.is_blocking())
+            })
+            .collect()
+    }
+
+    /// Generate a summary showing per-language gate counts.
+    ///
+    /// The summary includes the number of passed and failed gates for each
+    /// language, along with issue counts by severity.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        if self.by_language.is_empty() {
+            return "No gates executed".to_string();
+        }
+
+        let mut lines = Vec::new();
+        let mut total_passed = 0;
+        let mut total_failed = 0;
+
+        // Sort languages for deterministic output
+        let mut languages: Vec<_> = self.by_language.keys().collect();
+        languages.sort_by_key(|l| format!("{}", l));
+
+        for lang in languages {
+            let results = &self.by_language[lang];
+            let passed = results.iter().filter(|r| r.passed).count();
+            let failed = results.len() - passed;
+            total_passed += passed;
+            total_failed += failed;
+
+            let status = if failed > 0 { "❌" } else { "✅" };
+            lines.push(format!(
+                "{} {}: {}/{} gates passed",
+                status,
+                lang,
+                passed,
+                results.len()
+            ));
+
+            // Add details for failed gates
+            for result in results.iter().filter(|r| !r.passed) {
+                let error_count = result.count_by_severity(IssueSeverity::Error);
+                let critical_count = result.count_by_severity(IssueSeverity::Critical);
+                let warning_count = result.count_by_severity(IssueSeverity::Warning);
+
+                let mut counts = Vec::new();
+                if critical_count > 0 {
+                    counts.push(format!("{} critical", critical_count));
+                }
+                if error_count > 0 {
+                    counts.push(format!("{} errors", error_count));
+                }
+                if warning_count > 0 {
+                    counts.push(format!("{} warnings", warning_count));
+                }
+
+                if !counts.is_empty() {
+                    lines.push(format!("   └─ {}: {}", result.gate_name, counts.join(", ")));
+                }
+            }
+        }
+
+        // Add overall summary
+        lines.push(String::new());
+        if total_failed == 0 {
+            lines.push(format!(
+                "✅ All {} gates passed",
+                total_passed
+            ));
+        } else {
+            lines.push(format!(
+                "❌ {}/{} gates failed",
+                total_failed,
+                total_passed + total_failed
+            ));
+        }
+
+        lines.join("\n")
+    }
+
+    /// Generate a remediation prompt for Claude feedback.
+    ///
+    /// This creates a structured prompt that describes the failures and
+    /// provides guidance for fixing them.
+    #[must_use]
+    pub fn remediation_prompt(&self) -> String {
+        let blocking = self.blocking_failures();
+        let warnings = self.warnings();
+
+        if blocking.is_empty() && warnings.is_empty() {
+            return "All quality gates passed. Safe to commit.".to_string();
+        }
+
+        let mut prompt = String::new();
+
+        if !blocking.is_empty() {
+            prompt.push_str("## Blocking Issues (Must Fix Before Commit)\n\n");
+
+            for result in &blocking {
+                prompt.push_str(&format!("### {} Gate Failed\n\n", result.gate_name));
+
+                for issue in result.blocking_issues() {
+                    prompt.push_str(&format!("- **[{}]** {}\n", issue.severity, issue.message));
+
+                    if let Some(ref file) = issue.file {
+                        if let Some(line) = issue.line {
+                            prompt.push_str(&format!("  - Location: {}:{}\n", file.display(), line));
+                        } else {
+                            prompt.push_str(&format!("  - Location: {}\n", file.display()));
+                        }
+                    }
+
+                    if let Some(ref suggestion) = issue.suggestion {
+                        prompt.push_str(&format!("  - Fix: {}\n", suggestion));
+                    }
+                }
+
+                prompt.push('\n');
+            }
+        }
+
+        if !warnings.is_empty() {
+            prompt.push_str("## Warnings (Non-blocking)\n\n");
+
+            for result in &warnings {
+                prompt.push_str(&format!("### {} Gate Warnings\n\n", result.gate_name));
+
+                for issue in &result.issues {
+                    prompt.push_str(&format!("- **[{}]** {}\n", issue.severity, issue.message));
+
+                    if let Some(ref file) = issue.file {
+                        if let Some(line) = issue.line {
+                            prompt.push_str(&format!("  - Location: {}:{}\n", file.display(), line));
+                        } else {
+                            prompt.push_str(&format!("  - Location: {}\n", file.display()));
+                        }
+                    }
+                }
+
+                prompt.push('\n');
+            }
+        }
+
+        prompt
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -2200,5 +2438,353 @@ version = "0.1.0"
     fn test_no_todo_gate_has_no_required_tool() {
         let gate = super::rust::NoTodoGate::new();
         assert_eq!(gate.required_tool(), None);
+    }
+
+    // =========================================================================
+    // PolyglotGateResult tests (Sprint 7, Phase 7.4)
+    // =========================================================================
+
+    #[test]
+    fn test_polyglot_gate_result_can_commit_returns_true_when_all_gates_pass() {
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add passing results for multiple languages
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+        result.add_result(Language::Rust, GateResult::pass("Tests"));
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+        result.add_result(Language::Python, GateResult::pass("Pytest"));
+
+        assert!(
+            result.can_commit(),
+            "can_commit() should return true when all gates pass"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_can_commit_returns_false_when_blocking_gate_fails() {
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add passing results
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+
+        // Add a failing result with blocking error
+        let issues = vec![GateIssue::new(IssueSeverity::Error, "compilation error")];
+        result.add_result(Language::Rust, GateResult::fail("Tests", issues));
+
+        assert!(
+            !result.can_commit(),
+            "can_commit() should return false when any blocking gate fails"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_can_commit_returns_true_with_warnings_only() {
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add a result with only warnings (non-blocking)
+        let issues = vec![GateIssue::new(IssueSeverity::Warning, "unused variable")];
+        let mut gate_result = GateResult::pass("NoTodo");
+        gate_result.issues = issues;
+        result.add_result(Language::Rust, gate_result);
+
+        assert!(
+            result.can_commit(),
+            "can_commit() should return true when only warnings exist"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_can_commit_returns_true_when_empty() {
+        let result = super::PolyglotGateResult::new();
+
+        assert!(
+            result.can_commit(),
+            "can_commit() should return true when no gates run (empty is success)"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_can_commit_returns_false_on_critical() {
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add critical issue
+        let issues = vec![GateIssue::new(IssueSeverity::Critical, "security vulnerability")];
+        result.add_result(Language::Rust, GateResult::fail("Security", issues));
+
+        assert!(
+            !result.can_commit(),
+            "can_commit() should return false when critical issue exists"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_summary_shows_per_language_breakdown() {
+        let mut result = super::PolyglotGateResult::new();
+
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+        result.add_result(Language::Rust, GateResult::pass("Tests"));
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+
+        let summary = result.summary();
+
+        // Should mention each language
+        assert!(
+            summary.contains("Rust"),
+            "Summary should mention Rust. Got: {}",
+            summary
+        );
+        assert!(
+            summary.contains("Python"),
+            "Summary should mention Python. Got: {}",
+            summary
+        );
+
+        // Should show pass counts
+        assert!(
+            summary.contains("2/2"),
+            "Summary should show 2/2 for Rust. Got: {}",
+            summary
+        );
+        assert!(
+            summary.contains("1/1"),
+            "Summary should show 1/1 for Python. Got: {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_summary_shows_failure_details() {
+        let mut result = super::PolyglotGateResult::new();
+
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+
+        let issues = vec![
+            GateIssue::new(IssueSeverity::Error, "test failure 1"),
+            GateIssue::new(IssueSeverity::Error, "test failure 2"),
+            GateIssue::new(IssueSeverity::Warning, "warning 1"),
+        ];
+        result.add_result(Language::Rust, GateResult::fail("Tests", issues));
+
+        let summary = result.summary();
+
+        // Should show failure indicator
+        assert!(
+            summary.contains("❌"),
+            "Summary should show failure indicator. Got: {}",
+            summary
+        );
+        assert!(
+            summary.contains("Tests"),
+            "Summary should mention failed gate name. Got: {}",
+            summary
+        );
+        assert!(
+            summary.contains("2 errors"),
+            "Summary should show error count. Got: {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_summary_returns_no_gates_when_empty() {
+        let result = super::PolyglotGateResult::new();
+        let summary = result.summary();
+
+        assert!(
+            summary.contains("No gates executed"),
+            "Empty result should say no gates executed. Got: {}",
+            summary
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_blocking_failures_returns_only_blocking() {
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add passing gate
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+
+        // Add warning-only gate (non-blocking)
+        let warning_issues = vec![GateIssue::new(IssueSeverity::Warning, "unused var")];
+        let mut warning_result = GateResult::pass("NoTodo");
+        warning_result.issues = warning_issues;
+        result.add_result(Language::Rust, warning_result);
+
+        // Add blocking failure
+        let error_issues = vec![GateIssue::new(IssueSeverity::Error, "compile error")];
+        result.add_result(Language::Rust, GateResult::fail("Tests", error_issues));
+
+        let blocking = result.blocking_failures();
+
+        assert_eq!(
+            blocking.len(),
+            1,
+            "Should have exactly 1 blocking failure. Got: {}",
+            blocking.len()
+        );
+        assert_eq!(
+            blocking[0].gate_name, "Tests",
+            "Blocking failure should be Tests gate"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_warnings_returns_non_blocking_issues() {
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add passing gate (no issues)
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+
+        // Add warning-only gate
+        let warning_issues = vec![
+            GateIssue::new(IssueSeverity::Warning, "unused var"),
+            GateIssue::new(IssueSeverity::Info, "consider refactoring"),
+        ];
+        let mut warning_result = GateResult::pass("NoTodo");
+        warning_result.issues = warning_issues;
+        result.add_result(Language::Rust, warning_result);
+
+        // Add blocking failure (should NOT appear in warnings)
+        let error_issues = vec![GateIssue::new(IssueSeverity::Error, "compile error")];
+        result.add_result(Language::Rust, GateResult::fail("Tests", error_issues));
+
+        let warnings = result.warnings();
+
+        assert_eq!(
+            warnings.len(),
+            1,
+            "Should have exactly 1 warning result. Got: {}",
+            warnings.len()
+        );
+        assert_eq!(
+            warnings[0].gate_name, "NoTodo",
+            "Warning should be from NoTodo gate"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_warnings_returns_empty_when_no_warnings() {
+        let mut result = super::PolyglotGateResult::new();
+
+        // Only passing gates with no issues
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+        result.add_result(Language::Rust, GateResult::pass("Tests"));
+
+        let warnings = result.warnings();
+
+        assert!(
+            warnings.is_empty(),
+            "Should have no warnings when all gates pass cleanly"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_remediation_prompt_all_pass() {
+        let mut result = super::PolyglotGateResult::new();
+
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+
+        let prompt = result.remediation_prompt();
+
+        assert!(
+            prompt.contains("All quality gates passed"),
+            "Should indicate all gates passed. Got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_remediation_prompt_shows_blocking_issues() {
+        let mut result = super::PolyglotGateResult::new();
+
+        let issues = vec![
+            GateIssue::new(IssueSeverity::Error, "undefined variable 'x'")
+                .with_location("src/main.rs", 42)
+                .with_suggestion("Define variable 'x' before use"),
+        ];
+        result.add_result(Language::Rust, GateResult::fail("Clippy", issues));
+
+        let prompt = result.remediation_prompt();
+
+        assert!(
+            prompt.contains("Blocking Issues"),
+            "Should have blocking issues section. Got: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("Clippy Gate Failed"),
+            "Should mention Clippy gate. Got: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("undefined variable"),
+            "Should include issue message. Got: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("src/main.rs:42"),
+            "Should include location. Got: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("Define variable"),
+            "Should include suggestion. Got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_remediation_prompt_shows_warnings() {
+        let mut result = super::PolyglotGateResult::new();
+
+        let warning_issues = vec![GateIssue::new(IssueSeverity::Warning, "unused import")];
+        let mut warning_result = GateResult::pass("Clippy");
+        warning_result.issues = warning_issues;
+        result.add_result(Language::Rust, warning_result);
+
+        let prompt = result.remediation_prompt();
+
+        assert!(
+            prompt.contains("Warnings"),
+            "Should have warnings section. Got: {}",
+            prompt
+        );
+        assert!(
+            prompt.contains("unused import"),
+            "Should include warning message. Got: {}",
+            prompt
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_by_language_accessor() {
+        let mut result = super::PolyglotGateResult::new();
+
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+        result.add_result(Language::Rust, GateResult::pass("Tests"));
+
+        let by_lang = result.by_language();
+
+        assert_eq!(by_lang.len(), 2, "Should have 2 languages");
+        assert_eq!(
+            by_lang.get(&Language::Rust).map(|v| v.len()),
+            Some(2),
+            "Rust should have 2 results"
+        );
+        assert_eq!(
+            by_lang.get(&Language::Python).map(|v| v.len()),
+            Some(1),
+            "Python should have 1 result"
+        );
+    }
+
+    #[test]
+    fn test_polyglot_gate_result_default() {
+        let result = super::PolyglotGateResult::default();
+
+        assert!(result.can_commit(), "Default result should allow commit");
+        assert!(result.by_language().is_empty(), "Default result should be empty");
     }
 }

@@ -98,23 +98,23 @@ cargo test --lib -- gate_available
 cargo test --lib -- detect_available
 ```
 
-### 4. Phase 7.4: PolyglotGateResult Aggregation
+### 4. Phase 7.4: PolyglotGateResult Aggregation ✅
 
 Create result type that aggregates gate results across multiple languages.
 
 **Test Requirements**:
-- [ ] Test `PolyglotGateResult::can_commit()` returns true when all gates pass
-- [ ] Test `PolyglotGateResult::can_commit()` returns false when any blocking gate fails
-- [ ] Test `PolyglotGateResult::summary()` shows per-language breakdown
-- [ ] Test `PolyglotGateResult::blocking_failures()` returns only blocking failures
-- [ ] Test `PolyglotGateResult::warnings()` returns non-blocking issues
+- [x] Test `PolyglotGateResult::can_commit()` returns true when all gates pass
+- [x] Test `PolyglotGateResult::can_commit()` returns false when any blocking gate fails
+- [x] Test `PolyglotGateResult::summary()` shows per-language breakdown
+- [x] Test `PolyglotGateResult::blocking_failures()` returns only blocking failures
+- [x] Test `PolyglotGateResult::warnings()` returns non-blocking issues
 
 **Implementation**:
-- [ ] Create `PolyglotGateResult` struct with `by_language: HashMap<Language, Vec<GateResult>>`
-- [ ] Add `blocking_failures: Vec<GateResult>` and `warnings: Vec<GateResult>` fields
-- [ ] Implement `can_commit(&self) -> bool`
-- [ ] Implement `summary(&self) -> String` with per-language gate counts
-- [ ] Implement `remediation_prompt(&self) -> String` for Claude feedback
+- [x] Create `PolyglotGateResult` struct with `by_language: HashMap<Language, Vec<GateResult>>`
+- [x] Add `blocking_failures()` and `warnings()` methods (computed from by_language)
+- [x] Implement `can_commit(&self) -> bool`
+- [x] Implement `summary(&self) -> String` with per-language gate counts
+- [x] Implement `remediation_prompt(&self) -> String` for Claude feedback
 
 **Quality Gates**:
 ```bash
