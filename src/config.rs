@@ -1,6 +1,7 @@
 //! Configuration management for Ralph automation suite.
 
 use crate::analytics::AnalyticsUploadConfig;
+use crate::campaign::CampaignConfig;
 use crate::llm::LlmConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -337,6 +338,13 @@ pub struct ProjectConfig {
     /// and what privacy settings to apply. Disabled by default.
     #[serde(default)]
     pub analytics: AnalyticsUploadConfig,
+
+    /// Configuration for campaign API (Phase 18.2).
+    ///
+    /// Controls whether cloud campaign features are enabled.
+    /// Cloud features are disabled by default (local-only mode).
+    #[serde(default)]
+    pub campaign: CampaignConfig,
 }
 
 fn default_true() -> bool {
@@ -354,6 +362,7 @@ impl Default for ProjectConfig {
             predictor_weights: PredictorWeightsConfig::default(),
             llm: LlmConfig::default(),
             analytics: AnalyticsUploadConfig::default(),
+            campaign: CampaignConfig::default(),
         }
     }
 }

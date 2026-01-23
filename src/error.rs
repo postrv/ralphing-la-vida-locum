@@ -121,6 +121,21 @@ pub enum RalphError {
     RestoreFailed { path: PathBuf },
 
     // =========================================================================
+    // Resource Errors
+    // =========================================================================
+    /// Resource not found
+    #[error("Not found: {0}")]
+    NotFound(String),
+
+    /// Operation not supported
+    #[error("Not supported: {0}")]
+    NotSupported(String),
+
+    /// Internal error (e.g., lock poisoning)
+    #[error("Internal error: {0}")]
+    Internal(String),
+
+    // =========================================================================
     // Context Errors
     // =========================================================================
     /// Context building failed

@@ -39,6 +39,7 @@
 pub mod analytics;
 pub mod audit;
 pub mod bootstrap;
+pub mod campaign;
 pub mod checkpoint;
 pub mod config;
 pub mod error;
@@ -101,6 +102,12 @@ pub use analytics::{
 // Re-export audit types
 pub use audit::{
     AuditEntry, AuditEventType, AuditLogger, RotationConfig, VerificationResult,
+};
+
+// Re-export campaign types
+pub use campaign::{
+    Campaign, CampaignApi, CampaignConfig, CampaignStatus, CampaignUpdate, CloudCampaignApi,
+    CloudOperationResult, LocalCampaignApi, create_campaign_api,
 };
 
 // Re-export LLM types

@@ -50,28 +50,28 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- analytics_upload_stub
 ```
 
-### 31. Phase 18.2: Remote Campaign API Stub
+### 31. Phase 18.2: Remote Campaign API Stub ✅
 
 Create stub for cloud-based campaign orchestration.
 
 **Test Requirements**:
-- [ ] Test campaign API trait is defined
-- [ ] Test stub returns "not available" for all methods
-- [ ] Test campaign ID can be specified in config
-- [ ] Test local campaigns work without cloud
-- [ ] Test cloud features are clearly marked as "coming soon"
+- [x] Test campaign API trait is defined
+- [x] Test stub returns "not available" for all methods
+- [x] Test campaign ID can be specified in config
+- [x] Test local campaigns work without cloud
+- [x] Test cloud features are clearly marked as "coming soon"
 
 **Implementation**:
-- [ ] Define `CampaignApi` trait with CRUD methods
-- [ ] Implement `LocalCampaignApi` for current behavior
-- [ ] Create `CloudCampaignApi` stub
-- [ ] Add feature flag for cloud features
-- [ ] Document cloud feature roadmap
+- [x] Define `CampaignApi` trait with CRUD methods
+- [x] Implement `LocalCampaignApi` for current behavior
+- [x] Create `CloudCampaignApi` stub
+- [x] Add feature flag for cloud features
+- [x] Document cloud feature roadmap
 
 **Quality Gates**:
 ```bash
 cargo clippy --all-targets -- -D warnings
-cargo test --lib -- campaign_api_stub
+cargo test --lib -- campaign::
 ```
 
 ### 32. Phase 18.3: CCG-Diff Verification Stub
