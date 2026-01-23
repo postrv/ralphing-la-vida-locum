@@ -90,7 +90,7 @@ pub use gates::{
 };
 
 // Re-export enforcer types
-pub use enforcer::{EnforcerConfig, EnforcerSummary, QualityGateEnforcer};
+pub use enforcer::{run_gates_parallel, EnforcerConfig, EnforcerSummary, QualityGateEnforcer};
 
 // Re-export remediation types
 pub use remediation::{

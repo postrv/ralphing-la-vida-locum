@@ -79,6 +79,15 @@ enum Commands {
         /// (Note: only claude is currently implemented)
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
+
+        /// Run quality gates in parallel for faster feedback (default: true).
+        /// Use --no-parallel-gates to disable.
+        #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+        parallel_gates: bool,
+
+        /// Timeout for individual gate execution in milliseconds (default: 60000)
+        #[arg(long, default_value = "60000", value_name = "MS")]
+        gate_timeout: u64,
     },
 
     /// Build context for LLM analysis
@@ -395,6 +404,8 @@ async fn main() -> anyhow::Result<()> {
             skip_security,
             predictor_profile,
             model,
+            parallel_gates,
+            gate_timeout,
         } => {
             // Load project configuration
             let mut config = ProjectConfig::load(&project_path).unwrap_or_default();
@@ -434,15 +445,16 @@ async fn main() -> anyhow::Result<()> {
                 .with_doc_sync_interval(doc_sync_interval)
                 .with_verbose(cli.verbose);
 
-            // Configure quality gates if any flags are set
-            if skip_tests || skip_security {
-                let quality_config = EnforcerConfig::new()
-                    .with_clippy(true)
-                    .with_tests(!skip_tests)
-                    .with_security(!skip_security)
-                    .with_no_allow(true);
-                loop_config = loop_config.with_quality_config(quality_config);
-            }
+            // Configure quality gates
+            // Always create config to apply parallel gates settings
+            let quality_config = EnforcerConfig::new()
+                .with_clippy(true)
+                .with_tests(!skip_tests)
+                .with_security(!skip_security)
+                .with_no_allow(true)
+                .with_parallel_gates(parallel_gates)
+                .with_gate_timeout_ms(gate_timeout);
+            loop_config = loop_config.with_quality_config(quality_config);
 
             let mut manager = LoopManager::new(loop_config)?;
 
@@ -1189,10 +1201,7 @@ async fn main() -> anyhow::Result<()> {
 
                         if !checkpoint.files_modified.is_empty() {
                             println!();
-                            println!(
-                                "   Modified files ({}):",
-                                checkpoint.files_modified.len()
-                            );
+                            println!("   Modified files ({}):", checkpoint.files_modified.len());
                             for f in &checkpoint.files_modified {
                                 println!("     - {}", f);
                             }

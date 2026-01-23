@@ -36,6 +36,10 @@ pub struct SessionSummary {
     pub duration_minutes: Option<i64>,
     /// Predictor accuracy for this session (0.0-1.0).
     pub predictor_accuracy: Option<f64>,
+    /// Total time spent running quality gates in milliseconds (Phase 15.1).
+    pub total_gate_execution_ms: u64,
+    /// Number of times quality gates were run.
+    pub gate_runs: usize,
 }
 
 /// Analytics manager
@@ -116,6 +120,38 @@ impl Analytics {
         Ok(())
     }
 
+    /// Log a quality gates execution event (Phase 15.1).
+    ///
+    /// Records timing information for quality gate execution, enabling
+    /// performance tracking and optimization.
+    ///
+    /// # Arguments
+    ///
+    /// * `session` - The current session ID
+    /// * `duration_ms` - Total time spent running gates in milliseconds
+    /// * `gates_count` - Number of gates that were run
+    /// * `passed_count` - Number of gates that passed
+    /// * `parallel` - Whether gates were run in parallel
+    pub fn log_gate_execution(
+        &self,
+        session: &str,
+        duration_ms: u64,
+        gates_count: usize,
+        passed_count: usize,
+        parallel: bool,
+    ) -> Result<()> {
+        self.log_event(
+            session,
+            "quality_gates_run",
+            serde_json::json!({
+                "duration_ms": duration_ms,
+                "gates_count": gates_count,
+                "passed_count": passed_count,
+                "parallel": parallel
+            }),
+        )
+    }
+
     /// Get recent session summaries
     pub fn get_recent_sessions(&self, count: usize) -> Result<Vec<SessionSummary>> {
         let events = self.read_events()?;
@@ -163,6 +199,8 @@ impl Analytics {
             docs_drift_events: 0,
             duration_minutes: None,
             predictor_accuracy: None,
+            total_gate_execution_ms: 0,
+            gate_runs: 0,
         };
 
         for event in events {
@@ -198,6 +236,15 @@ impl Analytics {
                 }
                 "docs_drift_detected" => {
                     summary.docs_drift_events += 1;
+                }
+                "quality_gates_run" => {
+                    // Track gate execution timing (Phase 15.1)
+                    summary.gate_runs += 1;
+                    if let Some(duration_ms) =
+                        event.data.get("duration_ms").and_then(|v| v.as_u64())
+                    {
+                        summary.total_gate_execution_ms += duration_ms;
+                    }
                 }
                 _ => {}
             }
@@ -254,6 +301,15 @@ impl Analytics {
                 );
             }
 
+            // Display gate execution timing if available (Phase 15.1)
+            if session.gate_runs > 0 {
+                let avg_gate_time = session.total_gate_execution_ms / session.gate_runs as u64;
+                println!(
+                    "   Gate runs: {} | Total time: {}ms | Avg: {}ms",
+                    session.gate_runs, session.total_gate_execution_ms, avg_gate_time
+                );
+            }
+
             if detailed {
                 // Could add more detailed event breakdown here
             }
@@ -287,6 +343,15 @@ impl Analytics {
                         .and_then(|v| v.as_f64())
                     {
                         predictor_accuracies.push(accuracy);
+                    }
+                }
+                "quality_gates_run" => {
+                    // Collect gate execution timing (Phase 15.1)
+                    stats.total_gate_runs += 1;
+                    if let Some(duration_ms) =
+                        event.data.get("duration_ms").and_then(|v| v.as_u64())
+                    {
+                        stats.total_gate_execution_ms += duration_ms;
                     }
                 }
                 _ => {}
@@ -536,6 +601,10 @@ pub struct AggregateStats {
     pub total_drift_events: usize,
     /// Average predictor accuracy across sessions that have accuracy data.
     pub avg_predictor_accuracy: Option<f64>,
+    /// Total number of quality gate runs across all sessions (Phase 15.1).
+    pub total_gate_runs: usize,
+    /// Total time spent running quality gates in milliseconds (Phase 15.1).
+    pub total_gate_execution_ms: u64,
 }
 
 // ============================================================================

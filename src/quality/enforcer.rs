@@ -20,11 +20,14 @@
 //! ```
 
 use super::gates::{
-    ClippyConfig, ClippyGate, Gate, GateResult, NoAllowGate, NoTodoGate, SecurityGate, TestConfig,
-    TestGate,
+    ClippyConfig, ClippyGate, Gate, GateResult, NoAllowGate, NoTodoGate, QualityGate, SecurityGate,
+    TestConfig, TestGate,
 };
 use anyhow::Result;
+use futures::future::join_all;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 // ============================================================================
 // Enforcer Configuration
@@ -51,6 +54,17 @@ pub struct EnforcerConfig {
     pub check_todos: bool,
     /// Stop on first failure (don't run remaining gates).
     pub fail_fast: bool,
+    /// Run gates in parallel (default: true).
+    ///
+    /// When enabled, independent gates are executed concurrently using
+    /// tokio's async runtime for faster feedback on quality issues.
+    pub parallel_gates: bool,
+    /// Timeout for individual gate execution in milliseconds (default: 60000).
+    ///
+    /// Gates that exceed this timeout will be cancelled and marked as failed
+    /// with a timeout error. This prevents slow gates from blocking the entire
+    /// quality check process.
+    pub gate_timeout_ms: u64,
 }
 
 impl Default for EnforcerConfig {
@@ -65,6 +79,8 @@ impl Default for EnforcerConfig {
             run_security: true,
             check_todos: false, // Disabled by default (non-blocking)
             fail_fast: false,
+            parallel_gates: true, // Parallel execution enabled by default
+            gate_timeout_ms: 60_000, // 60 seconds per gate
         }
     }
 }
@@ -123,6 +139,193 @@ impl EnforcerConfig {
     pub fn with_allowed_patterns(mut self, patterns: Vec<String>) -> Self {
         self.allowed_patterns = patterns;
         self
+    }
+
+    /// Enable/disable parallel gate execution.
+    ///
+    /// When enabled (default), independent gates run concurrently for faster
+    /// feedback. Disable for deterministic sequential execution or debugging.
+    #[must_use]
+    pub fn with_parallel_gates(mut self, enabled: bool) -> Self {
+        self.parallel_gates = enabled;
+        self
+    }
+
+    /// Set the timeout for individual gate execution in milliseconds.
+    ///
+    /// Gates exceeding this timeout are cancelled and report a timeout error.
+    /// Default is 60000ms (60 seconds).
+    #[must_use]
+    pub fn with_gate_timeout_ms(mut self, timeout_ms: u64) -> Self {
+        self.gate_timeout_ms = timeout_ms;
+        self
+    }
+}
+
+// ============================================================================
+// Parallel Gate Execution
+// ============================================================================
+
+/// Run quality gates, either in parallel or sequentially based on configuration.
+///
+/// This function executes a collection of quality gates on a project and returns
+/// the results. When `config.parallel_gates` is true, gates run concurrently
+/// using tokio's async runtime. When false, gates run sequentially.
+///
+/// # Arguments
+///
+/// * `gates` - A slice of Arc-wrapped quality gates to execute
+/// * `project_dir` - Path to the project directory to check
+/// * `config` - Enforcer configuration (controls parallelism and timeout)
+///
+/// # Returns
+///
+/// A vector of `Result<GateResult>` in the same order as the input gates.
+/// Each result contains either the gate's result or an error if the gate
+/// failed to execute (including timeout errors).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::enforcer::{run_gates_parallel, EnforcerConfig};
+/// use ralph::quality::gates::QualityGate;
+/// use std::sync::Arc;
+///
+/// async fn run_checks() {
+///     let gates: Vec<Arc<dyn QualityGate>> = vec![/* ... */];
+///     let config = EnforcerConfig::new().with_parallel_gates(true);
+///
+///     let results = run_gates_parallel(&gates, Path::new("."), &config).await;
+///
+///     for result in results {
+///         match result {
+///             Ok(gate_result) => println!("{}", gate_result.summary()),
+///             Err(e) => eprintln!("Gate execution error: {}", e),
+///         }
+///     }
+/// }
+/// ```
+pub async fn run_gates_parallel(
+    gates: &[Arc<dyn QualityGate>],
+    project_dir: &Path,
+    config: &EnforcerConfig,
+) -> Vec<Result<GateResult>> {
+    if gates.is_empty() {
+        return Vec::new();
+    }
+
+    if config.parallel_gates {
+        run_gates_concurrent(gates, project_dir, config).await
+    } else {
+        run_gates_sequential(gates, project_dir, config).await
+    }
+}
+
+/// Execute gates concurrently using tokio::spawn and futures::join_all.
+async fn run_gates_concurrent(
+    gates: &[Arc<dyn QualityGate>],
+    project_dir: &Path,
+    config: &EnforcerConfig,
+) -> Vec<Result<GateResult>> {
+    let timeout = Duration::from_millis(config.gate_timeout_ms);
+    let project_dir = project_dir.to_path_buf();
+
+    // Spawn each gate as a concurrent task
+    let handles: Vec<_> = gates
+        .iter()
+        .map(|gate| {
+            let gate = Arc::clone(gate);
+            let project_dir = project_dir.clone();
+
+            tokio::spawn(async move {
+                run_single_gate_with_timeout(gate, &project_dir, timeout).await
+            })
+        })
+        .collect();
+
+    // Wait for all tasks to complete
+    let join_results = join_all(handles).await;
+
+    // Convert JoinHandle results to our Result type
+    join_results
+        .into_iter()
+        .map(|join_result| {
+            join_result.unwrap_or_else(|e| {
+                Err(anyhow::anyhow!("Gate task panicked: {}", e))
+            })
+        })
+        .collect()
+}
+
+/// Execute gates sequentially, one at a time.
+async fn run_gates_sequential(
+    gates: &[Arc<dyn QualityGate>],
+    project_dir: &Path,
+    config: &EnforcerConfig,
+) -> Vec<Result<GateResult>> {
+    let timeout = Duration::from_millis(config.gate_timeout_ms);
+    let mut results = Vec::with_capacity(gates.len());
+
+    for gate in gates {
+        let result = run_single_gate_with_timeout(Arc::clone(gate), project_dir, timeout).await;
+        results.push(result);
+    }
+
+    results
+}
+
+/// Run a single gate with a timeout.
+///
+/// The gate execution happens in a blocking thread (via spawn_blocking) since
+/// quality gates may perform I/O-heavy operations like running cargo commands.
+async fn run_single_gate_with_timeout(
+    gate: Arc<dyn QualityGate>,
+    project_dir: &Path,
+    timeout: Duration,
+) -> Result<GateResult> {
+    let project_dir = project_dir.to_path_buf();
+    let gate_name = gate.name().to_string();
+    let start = Instant::now();
+
+    // Run the gate in a blocking thread since gates may do I/O
+    let gate_future = tokio::task::spawn_blocking(move || {
+        gate.run(&project_dir)
+    });
+
+    // Apply timeout
+    let result = tokio::time::timeout(timeout, gate_future).await;
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    match result {
+        Ok(Ok(issues_result)) => {
+            // spawn_blocking completed successfully
+            match issues_result {
+                Ok(issues) => {
+                    let passed = issues.iter().all(|i| !i.severity.is_blocking());
+                    Ok(GateResult {
+                        gate_name,
+                        passed,
+                        issues,
+                        raw_output: String::new(),
+                        duration_ms,
+                    })
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Ok(Err(e)) => {
+            // spawn_blocking panicked
+            Err(anyhow::anyhow!("Gate '{}' panicked: {}", gate_name, e))
+        }
+        Err(_elapsed) => {
+            // Timeout occurred - this is an execution failure
+            Err(anyhow::anyhow!(
+                "Gate '{}' timed out after {}ms",
+                gate_name,
+                timeout.as_millis()
+            ))
+        }
     }
 }
 
@@ -585,6 +788,427 @@ fn unused_function() {}
         assert!(
             failures.iter().any(|f| f.gate_name == "NoAllow"),
             "Failure should be from NoAllow gate"
+        );
+    }
+
+    // ========================================================================
+    // Phase 15.1: Parallel Gate Execution Tests
+    // ========================================================================
+
+    #[test]
+    fn test_enforcer_config_parallel_gates_default() {
+        // Parallel gate execution should be enabled by default
+        let config = EnforcerConfig::default();
+        assert!(
+            config.parallel_gates,
+            "parallel_gates should be enabled by default"
+        );
+    }
+
+    #[test]
+    fn test_enforcer_config_parallel_gates_builder() {
+        // Should be able to disable parallel gates via builder
+        let config = EnforcerConfig::new().with_parallel_gates(false);
+        assert!(!config.parallel_gates, "should be able to disable parallel_gates");
+    }
+
+    #[test]
+    fn test_enforcer_config_gate_timeout() {
+        // Should have a configurable per-gate timeout
+        let config = EnforcerConfig::new().with_gate_timeout_ms(5000);
+        assert_eq!(config.gate_timeout_ms, 5000);
+    }
+
+    #[test]
+    fn test_enforcer_config_gate_timeout_default() {
+        // Default gate timeout should be 60 seconds
+        let config = EnforcerConfig::default();
+        assert_eq!(
+            config.gate_timeout_ms, 60_000,
+            "default gate timeout should be 60 seconds"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parallel_gates_run_concurrently() {
+        // Gates should run in parallel when parallel_gates is enabled.
+        // This test uses mock gates that sleep to verify concurrency.
+        use super::super::gates::{GateIssue, QualityGate};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
+
+        // Track how many gates are running concurrently
+        static CONCURRENT_COUNT: AtomicU32 = AtomicU32::new(0);
+        static MAX_CONCURRENT: AtomicU32 = AtomicU32::new(0);
+
+        struct SlowGate {
+            name: String,
+            sleep_ms: u64,
+        }
+
+        impl QualityGate for SlowGate {
+            fn name(&self) -> &str {
+                &self.name
+            }
+
+            fn run(&self, _project_dir: &std::path::Path) -> anyhow::Result<Vec<GateIssue>> {
+                let current = CONCURRENT_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+                MAX_CONCURRENT.fetch_max(current, Ordering::SeqCst);
+
+                std::thread::sleep(Duration::from_millis(self.sleep_ms));
+
+                CONCURRENT_COUNT.fetch_sub(1, Ordering::SeqCst);
+                Ok(vec![])
+            }
+
+            fn remediation(&self, _issues: &[GateIssue]) -> String {
+                String::new()
+            }
+        }
+
+        // Reset atomics
+        CONCURRENT_COUNT.store(0, Ordering::SeqCst);
+        MAX_CONCURRENT.store(0, Ordering::SeqCst);
+
+        let gates: Vec<Arc<dyn QualityGate>> = vec![
+            Arc::new(SlowGate {
+                name: "Gate1".to_string(),
+                sleep_ms: 100,
+            }),
+            Arc::new(SlowGate {
+                name: "Gate2".to_string(),
+                sleep_ms: 100,
+            }),
+            Arc::new(SlowGate {
+                name: "Gate3".to_string(),
+                sleep_ms: 100,
+            }),
+        ];
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = EnforcerConfig::new()
+            .with_clippy(false)
+            .with_tests(false)
+            .with_security(false)
+            .with_no_allow(false)
+            .with_parallel_gates(true);
+
+        let start = Instant::now();
+        let results = run_gates_parallel(&gates, temp_dir.path(), &config).await;
+        let elapsed = start.elapsed();
+
+        // All gates should have passed
+        assert!(results.iter().all(|r| r.is_ok()), "All gates should pass");
+        assert_eq!(results.len(), 3, "Should have 3 results");
+
+        // If running in parallel, max concurrent should be > 1
+        let max_conc = MAX_CONCURRENT.load(Ordering::SeqCst);
+        assert!(
+            max_conc > 1,
+            "Gates should run concurrently (max concurrent was {})",
+            max_conc
+        );
+
+        // Total time should be ~100ms (parallel) not ~300ms (sequential)
+        assert!(
+            elapsed.as_millis() < 250,
+            "Parallel execution should be faster than sequential (took {}ms)",
+            elapsed.as_millis()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parallel_gates_results_collected_correctly() {
+        // Results from all gates should be collected even when running in parallel
+        use super::super::gates::{GateIssue, IssueSeverity, QualityGate};
+        use std::sync::Arc;
+
+        struct NamedGate {
+            name: String,
+            should_fail: bool,
+        }
+
+        impl QualityGate for NamedGate {
+            fn name(&self) -> &str {
+                &self.name
+            }
+
+            fn run(&self, _project_dir: &std::path::Path) -> anyhow::Result<Vec<GateIssue>> {
+                if self.should_fail {
+                    Ok(vec![GateIssue::new(
+                        IssueSeverity::Error,
+                        format!("{} failed", self.name),
+                    )])
+                } else {
+                    Ok(vec![])
+                }
+            }
+
+            fn remediation(&self, _issues: &[GateIssue]) -> String {
+                String::new()
+            }
+        }
+
+        let gates: Vec<Arc<dyn QualityGate>> = vec![
+            Arc::new(NamedGate {
+                name: "PassGate".to_string(),
+                should_fail: false,
+            }),
+            Arc::new(NamedGate {
+                name: "FailGate".to_string(),
+                should_fail: true,
+            }),
+            Arc::new(NamedGate {
+                name: "AnotherPassGate".to_string(),
+                should_fail: false,
+            }),
+        ];
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = EnforcerConfig::new()
+            .with_clippy(false)
+            .with_tests(false)
+            .with_security(false)
+            .with_no_allow(false)
+            .with_parallel_gates(true);
+
+        let results = run_gates_parallel(&gates, temp_dir.path(), &config).await;
+
+        // Should have all 3 results
+        assert_eq!(results.len(), 3, "Should collect all gate results");
+
+        // Convert to GateResults and verify
+        let gate_results: Vec<GateResult> = results
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert_eq!(gate_results.len(), 3, "All gates should complete");
+
+        // Verify we have the right mix of pass/fail
+        let passed_count = gate_results.iter().filter(|r| r.passed).count();
+        let failed_count = gate_results.iter().filter(|r| !r.passed).count();
+        assert_eq!(passed_count, 2, "Should have 2 passing gates");
+        assert_eq!(failed_count, 1, "Should have 1 failing gate");
+    }
+
+    #[tokio::test]
+    async fn test_parallel_gates_respects_timeout() {
+        // Gates should be cancelled if they exceed the timeout
+        use super::super::gates::{GateIssue, QualityGate};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        struct SlowGate {
+            name: String,
+            sleep_ms: u64,
+        }
+
+        impl QualityGate for SlowGate {
+            fn name(&self) -> &str {
+                &self.name
+            }
+
+            fn run(&self, _project_dir: &std::path::Path) -> anyhow::Result<Vec<GateIssue>> {
+                std::thread::sleep(Duration::from_millis(self.sleep_ms));
+                Ok(vec![])
+            }
+
+            fn remediation(&self, _issues: &[GateIssue]) -> String {
+                String::new()
+            }
+        }
+
+        let gates: Vec<Arc<dyn QualityGate>> = vec![
+            Arc::new(SlowGate {
+                name: "FastGate".to_string(),
+                sleep_ms: 10,
+            }),
+            Arc::new(SlowGate {
+                name: "SlowGate".to_string(),
+                sleep_ms: 5000, // This should timeout
+            }),
+        ];
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = EnforcerConfig::new()
+            .with_clippy(false)
+            .with_tests(false)
+            .with_security(false)
+            .with_no_allow(false)
+            .with_parallel_gates(true)
+            .with_gate_timeout_ms(100); // 100ms timeout
+
+        let start = std::time::Instant::now();
+        let results = run_gates_parallel(&gates, temp_dir.path(), &config).await;
+        let elapsed = start.elapsed();
+
+        // Should complete in reasonable time (not 5 seconds)
+        assert!(
+            elapsed.as_millis() < 1000,
+            "Should timeout slow gates (took {}ms)",
+            elapsed.as_millis()
+        );
+
+        // Should have 2 results (one pass, one timeout error)
+        assert_eq!(results.len(), 2, "Should have results for both gates");
+
+        // One should be error (timeout)
+        let error_count = results.iter().filter(|r| r.is_err()).count();
+        assert!(error_count >= 1, "Slow gate should timeout");
+    }
+
+    #[tokio::test]
+    async fn test_parallel_gates_failure_doesnt_cancel_others() {
+        // A failing gate should not prevent other gates from completing
+        use super::super::gates::{GateIssue, QualityGate};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        static SLOW_GATE_COMPLETED: AtomicBool = AtomicBool::new(false);
+
+        struct FailingGate;
+        struct SlowGate;
+
+        impl QualityGate for FailingGate {
+            fn name(&self) -> &str {
+                "FailingGate"
+            }
+
+            fn run(&self, _project_dir: &std::path::Path) -> anyhow::Result<Vec<GateIssue>> {
+                // Return an error (gate fails to execute, not just finding issues)
+                anyhow::bail!("Gate execution failed");
+            }
+
+            fn remediation(&self, _issues: &[GateIssue]) -> String {
+                String::new()
+            }
+        }
+
+        impl QualityGate for SlowGate {
+            fn name(&self) -> &str {
+                "SlowGate"
+            }
+
+            fn run(&self, _project_dir: &std::path::Path) -> anyhow::Result<Vec<GateIssue>> {
+                std::thread::sleep(Duration::from_millis(50));
+                SLOW_GATE_COMPLETED.store(true, Ordering::SeqCst);
+                Ok(vec![])
+            }
+
+            fn remediation(&self, _issues: &[GateIssue]) -> String {
+                String::new()
+            }
+        }
+
+        SLOW_GATE_COMPLETED.store(false, Ordering::SeqCst);
+
+        let gates: Vec<Arc<dyn QualityGate>> = vec![
+            Arc::new(FailingGate),
+            Arc::new(SlowGate),
+        ];
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = EnforcerConfig::new()
+            .with_clippy(false)
+            .with_tests(false)
+            .with_security(false)
+            .with_no_allow(false)
+            .with_parallel_gates(true);
+
+        let results = run_gates_parallel(&gates, temp_dir.path(), &config).await;
+
+        // Both gates should have results
+        assert_eq!(results.len(), 2, "Should have results for both gates");
+
+        // The slow gate should have completed despite the other gate failing
+        assert!(
+            SLOW_GATE_COMPLETED.load(Ordering::SeqCst),
+            "Slow gate should complete even when another gate fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sequential_execution_when_parallel_disabled() {
+        // When parallel_gates is disabled, gates should run sequentially
+        use super::super::gates::{GateIssue, QualityGate};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        static CONCURRENT_COUNT: AtomicU32 = AtomicU32::new(0);
+        static MAX_CONCURRENT: AtomicU32 = AtomicU32::new(0);
+
+        struct SlowGate {
+            name: String,
+            sleep_ms: u64,
+        }
+
+        impl QualityGate for SlowGate {
+            fn name(&self) -> &str {
+                &self.name
+            }
+
+            fn run(&self, _project_dir: &std::path::Path) -> anyhow::Result<Vec<GateIssue>> {
+                let current = CONCURRENT_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+                MAX_CONCURRENT.fetch_max(current, Ordering::SeqCst);
+
+                std::thread::sleep(Duration::from_millis(self.sleep_ms));
+
+                CONCURRENT_COUNT.fetch_sub(1, Ordering::SeqCst);
+                Ok(vec![])
+            }
+
+            fn remediation(&self, _issues: &[GateIssue]) -> String {
+                String::new()
+            }
+        }
+
+        // Reset atomics
+        CONCURRENT_COUNT.store(0, Ordering::SeqCst);
+        MAX_CONCURRENT.store(0, Ordering::SeqCst);
+
+        let gates: Vec<Arc<dyn QualityGate>> = vec![
+            Arc::new(SlowGate {
+                name: "Gate1".to_string(),
+                sleep_ms: 50,
+            }),
+            Arc::new(SlowGate {
+                name: "Gate2".to_string(),
+                sleep_ms: 50,
+            }),
+        ];
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = EnforcerConfig::new()
+            .with_clippy(false)
+            .with_tests(false)
+            .with_security(false)
+            .with_no_allow(false)
+            .with_parallel_gates(false); // Disabled!
+
+        let start = std::time::Instant::now();
+        let results = run_gates_parallel(&gates, temp_dir.path(), &config).await;
+        let elapsed = start.elapsed();
+
+        // All gates should have passed
+        assert!(results.iter().all(|r| r.is_ok()), "All gates should pass");
+        assert_eq!(results.len(), 2, "Should have 2 results");
+
+        // When running sequentially, max concurrent should be 1
+        let max_conc = MAX_CONCURRENT.load(Ordering::SeqCst);
+        assert_eq!(
+            max_conc, 1,
+            "Gates should run sequentially (max concurrent was {})",
+            max_conc
+        );
+
+        // Total time should be ~100ms (sequential)
+        assert!(
+            elapsed.as_millis() >= 90,
+            "Sequential execution should take at least 100ms (took {}ms)",
+            elapsed.as_millis()
         );
     }
 }
