@@ -153,22 +153,22 @@ cargo test --test cli_integration
 
 **Goal**: Generate prompts that include language-appropriate TDD guidance, antipatterns, and quality rules.
 
-### 6. Phase 8.1: PromptAssembler Language Awareness
+### 6. Phase 8.1: PromptAssembler Language Awareness ✅
 
 Extend `PromptAssembler` to accept detected languages and generate appropriate prompts.
 
 **Test Requirements**:
-- [ ] Test assembler includes Rust quality rules for Rust projects
-- [ ] Test assembler includes Python quality rules for Python projects
-- [ ] Test assembler includes TypeScript quality rules for TypeScript projects
-- [ ] Test polyglot projects get combined rules with clear separation
-- [ ] Test language-specific TDD patterns are included
+- [x] Test assembler includes Rust quality rules for Rust projects
+- [x] Test assembler includes Python quality rules for Python projects
+- [x] Test assembler includes TypeScript quality rules for TypeScript projects
+- [x] Test polyglot projects get combined rules with clear separation
+- [x] Test language-specific TDD patterns are included
 
 **Implementation**:
-- [ ] Add `languages: Vec<Language>` field to `AssemblerConfig`
-- [ ] Create `get_language_rules(lang: Language) -> String` helper
-- [ ] Modify `build()` to inject language-specific rules into prompt
-- [ ] Use `TemplateRegistry::get_polyglot_prompt()` for multi-language projects
+- [x] Add `languages: Vec<Language>` field to `AssemblerConfig`
+- [x] Create `get_language_rules(lang: Language) -> String` helper
+- [x] Modify `build()` to inject language-specific rules into prompt
+- [x] Add `build_language_rules()` for polyglot projects with rule combination
 
 **Quality Gates**:
 ```bash
