@@ -1,0 +1,225 @@
+openapi: 3.1.0
+info:
+  title: Task Manager API
+  description: |
+    A simple task management API demonstrating Ralph's polyglot features.
+    This API is implemented by the FastAPI backend and consumed by the Next.js frontend.
+  version: 1.0.0
+  contact:
+    name: Ralph Examples
+    url: https://github.com/ralph/ralph
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+paths:
+  /api/tasks:
+    get:
+      summary: List all tasks
+      operationId: listTasks
+      tags:
+        - Tasks
+      responses:
+        '200':
+          description: Successfully retrieved all tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+
+    post:
+      summary: Create a new task
+      operationId: createTask
+      tags:
+        - Tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/tasks/{task_id}:
+    parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The unique identifier of the task
+
+    get:
+      summary: Get a specific task
+      operationId: getTask
+      tags:
+        - Tasks
+      responses:
+        '200':
+          description: Successfully retrieved the task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    patch:
+      summary: Update a task
+      operationId: updateTask
+      tags:
+        - Tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    delete:
+      summary: Delete a task
+      operationId: deleteTask
+      tags:
+        - Tasks
+      responses:
+        '204':
+          description: Task deleted successfully
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/health:
+    get:
+      summary: Health check endpoint
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  version:
+                    type: string
+                    example: 1.0.0
+
+components:
+  schemas:
+    Task:
+      type: object
+      required:
+        - id
+        - title
+        - completed
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the task
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The task title/description
+          example: "Implement user authentication"
+        completed:
+          type: boolean
+          description: Whether the task has been completed
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          description: When the task was created
+          example: "2024-01-15T10:30:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: When the task was last updated
+          example: "2024-01-15T10:30:00Z"
+
+    TaskCreate:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The task title (required)
+          example: "Add unit tests for API endpoints"
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: New title for the task
+          example: "Add comprehensive unit tests"
+        completed:
+          type: boolean
+          description: New completion status
+          example: true
+
+    ApiError:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Human-readable error message
+          example: "Task not found"
