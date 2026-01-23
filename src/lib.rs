@@ -48,6 +48,7 @@ pub mod narsil;
 pub mod prompt;
 pub mod quality;
 pub mod testing;
+pub mod verify;
 
 // Re-export commonly used types
 pub use error::{IntoRalphError, RalphError, Result};
@@ -120,6 +121,12 @@ pub use llm::{
 pub use bootstrap::language::{Language, ParseLanguageError};
 pub use bootstrap::language_detector::{DetectedLanguage, LanguageDetector};
 pub use bootstrap::templates::{TemplateKind, TemplateRegistry};
+
+// Re-export verify types
+pub use verify::{
+    CcgVerifier, MockCcgVerifier, QualityDelta, VerificationConfig, VerificationFinding,
+    VerificationReport, VerificationSeverity, create_verifier,
+};
 
 // TestFixture is only available in test builds
 #[cfg(test)]

@@ -74,28 +74,28 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- campaign::
 ```
 
-### 32. Phase 18.3: CCG-Diff Verification Stub
+### 32. Phase 18.3: CCG-Diff Verification Stub ✅
 
 Create stub for provable quality improvement verification.
 
 **Test Requirements**:
-- [ ] Test CCG-diff trait is defined
-- [ ] Test stub returns mock "quality improved" result
-- [ ] Test CCG integration points are documented
-- [ ] Test narsil-mcp hooks are prepared
-- [ ] Test verification report format is defined
+- [x] Test CCG-diff trait is defined
+- [x] Test stub returns mock "quality improved" result
+- [x] Test CCG integration points are documented
+- [x] Test narsil-mcp hooks are prepared
+- [x] Test verification report format is defined
 
 **Implementation**:
-- [ ] Define `CcgVerifier` trait
-- [ ] Implement mock verifier for development
-- [ ] Document CCG integration requirements
-- [ ] Define verification report JSON schema
-- [ ] Add `ralph verify --mock` command
+- [x] Define `CcgVerifier` trait
+- [x] Implement mock verifier for development
+- [x] Document CCG integration requirements
+- [x] Define verification report JSON schema
+- [ ] Add `ralph verify --mock` command (CLI integration deferred to Sprint 19)
 
 **Quality Gates**:
 ```bash
 cargo clippy --all-targets -- -D warnings
-cargo test --lib -- ccg_verifier_stub
+cargo test --lib -- verify::
 ```
 
 ---
