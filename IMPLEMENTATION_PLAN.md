@@ -4,7 +4,7 @@
 > 
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 > 
-> **Current Focus: Sprint 7 (Polyglot Gate Integration)**
+> **Current Focus: Sprint 8 (Language-Specific Prompt Intelligence)**
 
 ---
 
@@ -19,9 +19,11 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 ---
 
-## Sprint 7: Polyglot Quality Gate Wiring
+## Sprint 7: Polyglot Quality Gate Wiring ✅ COMPLETE
 
 **Goal**: Wire language detection into quality gate selection so `ralph loop` runs the right gates for any project.
+
+> **Status**: All 5 phases complete (7.1-7.5). Committed 2026-01-22.
 
 ### 1. Phase 7.1: LoopDependencies Polyglot Constructor
 
