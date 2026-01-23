@@ -4,7 +4,7 @@
 >
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 >
-> **Current Focus: Sprint 16 (Analytics & Observability)**
+> **Current Focus: Sprint 17 (Enterprise Features Foundation)**
 
 ---
 
@@ -15,90 +15,10 @@
 | Phase 1: Polyglot Gate Integration | 7-9 | ✅ Complete |
 | Phase 2: Reliability Hardening | 10-12 | ✅ Complete |
 | Phase 3: Ecosystem & Extensibility | 13-15 | ✅ Complete |
-| **Phase 4: Commercial Foundation** | **16-18** | **In Progress** |
+| Phase 4: Commercial Foundation | 16 | ✅ Complete |
+| **Phase 4: Commercial Foundation (cont.)** | **17-18** | **In Progress** |
 
 > See `docs/COMPLETED_SPRINTS.md` for detailed archive of completed work.
-
----
-
-## Sprint 16: Analytics & Observability
-
-**Goal**: Add opt-in analytics for understanding Ralph usage patterns.
-
-### 24. Phase 16.1: Structured Event Logging ✅
-
-Standardize event logging for analytics consumption.
-
-**Test Requirements**:
-- [x] Test events have consistent schema
-- [x] Test events include timestamp, session_id, event_type
-- [x] Test gate results are logged as structured events
-- [x] Test predictor decisions are logged as structured events
-- [x] Test events can be filtered by type
-
-**Implementation**:
-- [x] Define `EventType` enum with all event types
-- [x] Add schema version to events (`SCHEMA_VERSION`)
-- [x] Implement event serialization to JSON (`StructuredEvent`)
-- [x] Add event filtering API (`EventFilter`)
-- [x] Add structured event types (`GateResultEventData`, `PredictorDecisionEventData`)
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- analytics_event
-cargo test --lib -- event_schema
-```
-
-### 25. Phase 16.2: Session Summary Report ✅
-
-Generate detailed summary report at end of each session.
-
-**Test Requirements**:
-- [x] Test summary includes iteration count
-- [x] Test summary includes tasks completed
-- [x] Test summary includes gate pass/fail rates
-- [x] Test summary includes predictor accuracy
-- [x] Test summary can be exported as JSON/Markdown
-
-**Implementation**:
-- [x] Create `SessionReport` struct with all metrics
-- [x] Collect metrics throughout session (`generate_session_report`)
-- [x] Generate report on session end (`generate_session_report`)
-- [x] Add `ReportFormat` enum with JSON/Markdown export
-- [x] Add `to_markdown()` and `to_json()` export methods
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- session_report
-cargo test --lib -- report_export
-```
-
-### 26. Phase 16.3: Quality Trend Visualization ✅
-
-Add command to visualize quality trends over time.
-
-**Test Requirements**:
-- [x] Test trend shows test count over sessions
-- [x] Test trend shows warning count over sessions
-- [x] Test trend shows commit frequency
-- [x] Test trend can be output as ASCII chart
-- [x] Test trend data can be exported for external visualization
-
-**Implementation**:
-- [x] Create `TrendData`, `TrendPoint`, `TrendMetric` types
-- [x] Aggregate metrics across sessions via `Analytics::get_trend_data()`
-- [x] Implement ASCII chart rendering via `TrendData::render_ascii_chart()`
-- [x] Add JSON export via `TrendData::to_json()`
-- [x] Add time range filtering via `get_trend_data(Some(days))`
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- test_trend
-cargo test --lib -- test_ascii
-```
 
 ---
 

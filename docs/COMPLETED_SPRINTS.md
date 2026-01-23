@@ -144,12 +144,44 @@ Added parallel gate execution with `tokio::spawn` and `futures::join_all`, incre
 
 ---
 
+## Phase 4: Commercial Foundation (Sprints 16-18)
+
+### Sprint 16: Analytics & Observability ✅
+
+**Completed 2026-01-23**
+
+Added structured event logging for analytics consumption, session summary reports with JSON/Markdown export, and quality trend visualization with ASCII charts.
+
+**Phases completed:**
+
+#### 16.1: Structured Event Logging
+- `EventType` enum with 15 event types
+- `StructuredEvent` with schema versioning
+- `GateResultEventData` and `PredictorDecisionEventData` typed data
+- `EventFilter` for event filtering by type and session
+- Structured logging methods in `Analytics`
+
+#### 16.2: Session Summary Report
+- `SessionReport` struct with iteration count, tasks, gate stats, predictor accuracy
+- `GateStats` with pass/fail rate calculation
+- `ReportFormat` enum (JSON/Markdown)
+- `to_json()` and `to_markdown()` export methods
+- `Analytics::generate_session_report()` from structured events
+
+#### 16.3: Quality Trend Visualization
+- `TrendData`, `TrendPoint`, `TrendMetric` types
+- `Analytics::get_trend_data()` with time range filtering
+- `TrendData::render_ascii_chart()` for terminal visualization
+- `TrendData::to_json()` for external visualization export
+
+---
+
 ## Summary Statistics
 
 | Metric | Value |
 |--------|-------|
-| Sprints Completed | 9 (7-15) |
-| Phases Completed | 24 |
+| Sprints Completed | 10 (7-16) |
+| Phases Completed | 27 |
 | Completion Date | 2026-01-23 |
 
 ## Key Artifacts Added
@@ -159,6 +191,7 @@ Added parallel gate execution with `tokio::spawn` and `futures::join_all`, incre
 - `src/checkpoint/` - Enhanced checkpoint system
 - `src/llm/` - Model abstraction layer
 - `src/plugin/` - Plugin architecture
+- `src/analytics.rs` - Structured event logging, session reports, trend visualization
 - `benches/` - Criterion benchmark suite
 - `.github/workflows/benchmarks.yml` - CI benchmark workflow
 - `docs/` - Quickstart guides and examples
