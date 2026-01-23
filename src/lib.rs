@@ -74,7 +74,9 @@ pub use quality::{
 pub use checkpoint::{
     manager::{CheckpointManager, CheckpointManagerConfig},
     rollback::{RollbackManager, RollbackResult},
-    Checkpoint, CheckpointId, QualityMetrics, RegressionThresholds,
+    Checkpoint, CheckpointId, LanguageRegression, LintRegressionResult, LintRegressionSeverity,
+    LintRegressionThresholds, QualityMetrics, RegressionThresholds, WarningTrend,
+    WarningTrendDirection, WarningTrendPoint,
 };
 
 // Re-export narsil types

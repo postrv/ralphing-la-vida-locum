@@ -71,28 +71,29 @@ cargo test --lib -- language_aware_metrics
 cargo test --lib -- per_language_regression
 ```
 
-### 13. Phase 11.2: Lint Warning Regression Detection
+### 13. Phase 11.2: Lint Warning Regression Detection ✅ COMPLETE
 
 Add regression detection for lint warning counts, not just test failures.
 
 **Test Requirements**:
-- [ ] Test lint warning increase triggers regression warning
-- [ ] Test lint warning threshold is configurable
-- [ ] Test small increases (1-2 warnings) produce warning, not rollback
-- [ ] Test large increases trigger automatic rollback
-- [ ] Test warning trend tracking across checkpoints
+- [x] Test lint warning increase triggers regression warning
+- [x] Test lint warning threshold is configurable
+- [x] Test small increases (1-2 warnings) produce warning, not rollback
+- [x] Test large increases trigger automatic rollback
+- [x] Test warning trend tracking across checkpoints
 
 **Implementation**:
-- [ ] Add `lint_warning_count: u32` to `QualityMetrics`
-- [ ] Add `max_warning_increase: u32` to `RegressionThresholds`
-- [ ] Update `has_regression()` to check warning delta
-- [ ] Add warning trend to checkpoint comparison
+- [x] Add `LintRegressionSeverity` enum (None/Warning/Rollback)
+- [x] Add `LintRegressionThresholds` struct with warning/rollback thresholds
+- [x] Add `LintRegressionResult` struct with detailed regression info
+- [x] Add `check_lint_regression()` method to `QualityMetrics`
+- [x] Add `WarningTrend` struct with `WarningTrendDirection` for trend analysis
 
 **Quality Gates**:
 ```bash
 cargo clippy --all-targets -- -D warnings
 cargo test --lib -- lint_regression
-cargo test --lib -- warning_threshold
+cargo test --lib -- warning_trend
 ```
 
 ### 14. Phase 11.3: Checkpoint Diff Visualization

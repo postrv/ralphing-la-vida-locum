@@ -376,6 +376,51 @@ impl QualityMetrics {
 
         parts.join(", ")
     }
+
+    /// Check for lint warning regression with tiered severity.
+    ///
+    /// Returns a `LintRegressionResult` indicating whether the warning count
+    /// has regressed, and if so, at what severity level.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::checkpoint::{QualityMetrics, LintRegressionThresholds, LintRegressionSeverity};
+    ///
+    /// let baseline = QualityMetrics::new().with_clippy_warnings(0);
+    /// let current = QualityMetrics::new().with_clippy_warnings(5);
+    /// let thresholds = LintRegressionThresholds::default();
+    ///
+    /// let result = current.check_lint_regression(&baseline, &thresholds);
+    /// assert_eq!(result.severity, LintRegressionSeverity::Warning);
+    /// assert_eq!(result.warning_delta, 5);
+    /// ```
+    #[must_use]
+    pub fn check_lint_regression(
+        &self,
+        baseline: &QualityMetrics,
+        thresholds: &LintRegressionThresholds,
+    ) -> LintRegressionResult {
+        let current = self.clippy_warnings;
+        let baseline_count = baseline.clippy_warnings;
+
+        // No regression if warnings stayed same or decreased
+        if current <= baseline_count {
+            return LintRegressionResult::no_regression(baseline_count, current);
+        }
+
+        let delta = current - baseline_count;
+
+        // Determine severity based on thresholds
+        if delta > thresholds.rollback_threshold {
+            LintRegressionResult::rollback(baseline_count, current)
+        } else if delta > thresholds.warning_threshold {
+            LintRegressionResult::warning(baseline_count, current)
+        } else {
+            // Delta is within warning threshold, no action needed
+            LintRegressionResult::no_regression(baseline_count, current)
+        }
+    }
 }
 
 // ============================================================================
@@ -534,6 +579,380 @@ impl LanguageRegression {
             regressed_metrics,
             summary,
         }
+    }
+}
+
+// ============================================================================
+// Lint Regression Detection (Phase 11.2)
+// ============================================================================
+
+/// Severity level of a lint warning regression.
+///
+/// Used to differentiate between minor increases that warrant a warning
+/// and large increases that should trigger an automatic rollback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum LintRegressionSeverity {
+    /// No regression detected (warnings stayed same or decreased).
+    #[default]
+    None,
+
+    /// Minor regression that warrants a warning but not a rollback.
+    ///
+    /// This typically means 1-3 new warnings appeared.
+    Warning,
+
+    /// Major regression that should trigger an automatic rollback.
+    ///
+    /// This typically means many new warnings appeared (10+).
+    Rollback,
+}
+
+impl fmt::Display for LintRegressionSeverity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::Warning => write!(f, "warning"),
+            Self::Rollback => write!(f, "rollback"),
+        }
+    }
+}
+
+/// Direction of a warning trend over time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum WarningTrendDirection {
+    /// Warnings are increasing over time.
+    Increasing,
+
+    /// Warnings are decreasing over time.
+    Decreasing,
+
+    /// Warnings are stable (no significant change).
+    Stable,
+
+    /// Not enough data points to determine trend.
+    #[default]
+    Unknown,
+}
+
+impl fmt::Display for WarningTrendDirection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Increasing => write!(f, "increasing"),
+            Self::Decreasing => write!(f, "decreasing"),
+            Self::Stable => write!(f, "stable"),
+            Self::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
+/// Configurable thresholds for lint warning regression detection.
+///
+/// These thresholds define when a lint warning increase should produce
+/// a warning vs. trigger an automatic rollback.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LintRegressionThresholds {
+    /// Maximum increase in warnings before a warning is issued.
+    ///
+    /// If the increase is <= this value, severity is `None`.
+    /// If the increase is > this value but <= `rollback_threshold`, severity is `Warning`.
+    pub warning_threshold: u32,
+
+    /// Maximum increase in warnings before a rollback is triggered.
+    ///
+    /// If the increase is > this value, severity is `Rollback`.
+    pub rollback_threshold: u32,
+}
+
+impl Default for LintRegressionThresholds {
+    fn default() -> Self {
+        Self {
+            warning_threshold: 3,   // Allow up to 3 new warnings without action
+            rollback_threshold: 10, // Rollback if 10+ new warnings
+        }
+    }
+}
+
+impl LintRegressionThresholds {
+    /// Create new thresholds with default values.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create strict thresholds (zero tolerance for warnings).
+    #[must_use]
+    pub fn strict() -> Self {
+        Self {
+            warning_threshold: 0,
+            rollback_threshold: 3,
+        }
+    }
+
+    /// Create lenient thresholds (for development/exploration).
+    #[must_use]
+    pub fn lenient() -> Self {
+        Self {
+            warning_threshold: 10,
+            rollback_threshold: 25,
+        }
+    }
+
+    /// Set the warning threshold.
+    #[must_use]
+    pub fn with_warning_threshold(mut self, threshold: u32) -> Self {
+        self.warning_threshold = threshold;
+        self
+    }
+
+    /// Set the rollback threshold.
+    #[must_use]
+    pub fn with_rollback_threshold(mut self, threshold: u32) -> Self {
+        self.rollback_threshold = threshold;
+        self
+    }
+}
+
+/// Result of checking for lint warning regression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LintRegressionResult {
+    /// Severity of the regression.
+    pub severity: LintRegressionSeverity,
+
+    /// Number of warnings added (0 if improved or unchanged).
+    pub warning_delta: u32,
+
+    /// Baseline warning count.
+    pub baseline_count: u32,
+
+    /// Current warning count.
+    pub current_count: u32,
+
+    /// Human-readable message describing the result.
+    pub message: String,
+}
+
+impl LintRegressionResult {
+    /// Create a result indicating no regression.
+    #[must_use]
+    pub fn no_regression(baseline: u32, current: u32) -> Self {
+        Self {
+            severity: LintRegressionSeverity::None,
+            warning_delta: 0,
+            baseline_count: baseline,
+            current_count: current,
+            message: if current < baseline {
+                format!(
+                    "Lint warnings improved: {} → {} (-{})",
+                    baseline,
+                    current,
+                    baseline - current
+                )
+            } else {
+                format!("Lint warnings unchanged: {}", current)
+            },
+        }
+    }
+
+    /// Create a result indicating a warning-level regression.
+    #[must_use]
+    pub fn warning(baseline: u32, current: u32) -> Self {
+        let delta = current.saturating_sub(baseline);
+        Self {
+            severity: LintRegressionSeverity::Warning,
+            warning_delta: delta,
+            baseline_count: baseline,
+            current_count: current,
+            message: format!(
+                "Lint warning increase detected: {} → {} (+{}). Consider fixing before proceeding.",
+                baseline, current, delta
+            ),
+        }
+    }
+
+    /// Create a result indicating a rollback-level regression.
+    #[must_use]
+    pub fn rollback(baseline: u32, current: u32) -> Self {
+        let delta = current.saturating_sub(baseline);
+        Self {
+            severity: LintRegressionSeverity::Rollback,
+            warning_delta: delta,
+            baseline_count: baseline,
+            current_count: current,
+            message: format!(
+                "Critical lint warning increase: {} → {} (+{}). Automatic rollback recommended.",
+                baseline, current, delta
+            ),
+        }
+    }
+
+    /// Check if this result indicates any regression (warning or rollback).
+    #[must_use]
+    pub fn has_regression(&self) -> bool {
+        self.severity != LintRegressionSeverity::None
+    }
+
+    /// Check if this result should trigger a rollback.
+    #[must_use]
+    pub fn should_rollback(&self) -> bool {
+        self.severity == LintRegressionSeverity::Rollback
+    }
+}
+
+/// A single data point in a warning trend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WarningTrendPoint {
+    /// Checkpoint ID this data point came from.
+    pub checkpoint_id: CheckpointId,
+
+    /// Iteration number of the checkpoint.
+    pub iteration: u32,
+
+    /// Warning count at this point.
+    pub warning_count: u32,
+}
+
+/// Tracks lint warning counts across multiple checkpoints.
+///
+/// Used to analyze trends in code quality over time.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WarningTrend {
+    /// Warning counts at each checkpoint, ordered by iteration.
+    pub data_points: Vec<WarningTrendPoint>,
+}
+
+impl WarningTrend {
+    /// Create a new empty warning trend.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a warning trend from a list of checkpoints.
+    ///
+    /// Checkpoints are sorted by iteration number.
+    #[must_use]
+    pub fn from_checkpoints(checkpoints: &[Checkpoint]) -> Self {
+        let mut data_points: Vec<WarningTrendPoint> = checkpoints
+            .iter()
+            .map(|cp| WarningTrendPoint {
+                checkpoint_id: cp.id.clone(),
+                iteration: cp.iteration,
+                warning_count: cp.metrics.clippy_warnings,
+            })
+            .collect();
+
+        // Sort by iteration
+        data_points.sort_by_key(|p| p.iteration);
+
+        Self { data_points }
+    }
+
+    /// Get the warning count from the first checkpoint.
+    #[must_use]
+    pub fn first_count(&self) -> Option<u32> {
+        self.data_points.first().map(|p| p.warning_count)
+    }
+
+    /// Get the warning count from the last checkpoint.
+    #[must_use]
+    pub fn last_count(&self) -> Option<u32> {
+        self.data_points.last().map(|p| p.warning_count)
+    }
+
+    /// Get the maximum warning count across all checkpoints.
+    #[must_use]
+    pub fn max_count(&self) -> u32 {
+        self.data_points
+            .iter()
+            .map(|p| p.warning_count)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Get the minimum warning count across all checkpoints.
+    #[must_use]
+    pub fn min_count(&self) -> u32 {
+        self.data_points
+            .iter()
+            .map(|p| p.warning_count)
+            .min()
+            .unwrap_or(0)
+    }
+
+    /// Calculate the overall direction of the trend.
+    #[must_use]
+    pub fn direction(&self) -> WarningTrendDirection {
+        if self.data_points.len() < 2 {
+            return WarningTrendDirection::Unknown;
+        }
+
+        // Compare last third to first third for trend direction
+        let len = self.data_points.len();
+        let first_third_end = len / 3;
+        let last_third_start = len - len / 3;
+
+        // Handle small arrays
+        let (first_third_end, last_third_start) = if len <= 3 {
+            (1, len - 1)
+        } else {
+            (first_third_end.max(1), last_third_start.min(len - 1))
+        };
+
+        let first_avg: f64 = self.data_points[..first_third_end]
+            .iter()
+            .map(|p| p.warning_count as f64)
+            .sum::<f64>()
+            / first_third_end as f64;
+
+        let last_avg: f64 = self.data_points[last_third_start..]
+            .iter()
+            .map(|p| p.warning_count as f64)
+            .sum::<f64>()
+            / (len - last_third_start) as f64;
+
+        let diff = last_avg - first_avg;
+
+        // Use a threshold of 0.5 to account for noise
+        if diff > 0.5 {
+            WarningTrendDirection::Increasing
+        } else if diff < -0.5 {
+            WarningTrendDirection::Decreasing
+        } else {
+            WarningTrendDirection::Stable
+        }
+    }
+
+    /// Check if the trend shows improvement (decreasing warnings).
+    #[must_use]
+    pub fn is_improving(&self) -> bool {
+        // Compare last two points if available
+        if self.data_points.len() >= 2 {
+            let last = self.data_points.last().unwrap().warning_count;
+            let second_last = self.data_points[self.data_points.len() - 2].warning_count;
+            last < second_last
+        } else {
+            false
+        }
+    }
+
+    /// Get a summary string describing the trend.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        if self.data_points.is_empty() {
+            return "No warning data available".to_string();
+        }
+
+        let direction = self.direction();
+        let first = self.first_count().unwrap_or(0);
+        let last = self.last_count().unwrap_or(0);
+
+        format!(
+            "Warning trend: {} → {} ({}, {} checkpoints)",
+            first,
+            last,
+            direction,
+            self.data_points.len()
+        )
     }
 }
 
@@ -1665,5 +2084,223 @@ mod tests {
 
         let rust_metrics = restored.metrics_by_language.get(&Language::Rust).unwrap();
         assert_eq!(rust_metrics.test_total, 50);
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 11.2: Lint Warning Regression Detection Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_lint_regression_increase_triggers_warning() {
+        use super::{LintRegressionSeverity, LintRegressionThresholds};
+
+        let baseline = QualityMetrics::new().with_clippy_warnings(0);
+        let current = QualityMetrics::new().with_clippy_warnings(5); // 5 > warning_threshold(3)
+        let thresholds = LintRegressionThresholds::default();
+
+        let result = current.check_lint_regression(&baseline, &thresholds);
+
+        assert_eq!(result.severity, LintRegressionSeverity::Warning);
+        assert!(result.warning_delta > 0);
+    }
+
+    #[test]
+    fn test_lint_regression_threshold_is_configurable() {
+        use super::{LintRegressionSeverity, LintRegressionThresholds};
+
+        let baseline = QualityMetrics::new().with_clippy_warnings(0);
+
+        // With strict threshold (0 tolerance), even 2 warnings triggers rollback
+        let current_small = QualityMetrics::new().with_clippy_warnings(2);
+        let strict = LintRegressionThresholds::new()
+            .with_warning_threshold(0)
+            .with_rollback_threshold(1);
+        let result_strict = current_small.check_lint_regression(&baseline, &strict);
+        assert_eq!(result_strict.severity, LintRegressionSeverity::Rollback);
+
+        // With lenient threshold (5 warning, 20 rollback), 7 is a warning, 3 is acceptable
+        let current_medium = QualityMetrics::new().with_clippy_warnings(7);
+        let lenient = LintRegressionThresholds::new()
+            .with_warning_threshold(5)
+            .with_rollback_threshold(20);
+        let result_lenient = current_medium.check_lint_regression(&baseline, &lenient);
+        assert_eq!(result_lenient.severity, LintRegressionSeverity::Warning);
+
+        // 3 warnings with lenient thresholds should be acceptable (None)
+        let current_small = QualityMetrics::new().with_clippy_warnings(3);
+        let result_acceptable = current_small.check_lint_regression(&baseline, &lenient);
+        assert_eq!(result_acceptable.severity, LintRegressionSeverity::None);
+    }
+
+    #[test]
+    fn test_lint_regression_small_increase_produces_warning_not_rollback() {
+        use super::{LintRegressionSeverity, LintRegressionThresholds};
+
+        let baseline = QualityMetrics::new().with_clippy_warnings(5);
+        let current = QualityMetrics::new().with_clippy_warnings(10); // +5 increase (> warning=3, <= rollback=10)
+        let thresholds = LintRegressionThresholds::default(); // default: warning=3, rollback=10
+
+        let result = current.check_lint_regression(&baseline, &thresholds);
+
+        // 5 warning increase should produce Warning, not Rollback
+        assert_eq!(result.severity, LintRegressionSeverity::Warning);
+        assert_eq!(result.warning_delta, 5);
+    }
+
+    #[test]
+    fn test_lint_regression_large_increase_triggers_rollback() {
+        use super::{LintRegressionSeverity, LintRegressionThresholds};
+
+        let baseline = QualityMetrics::new().with_clippy_warnings(0);
+        let current = QualityMetrics::new().with_clippy_warnings(15); // +15 increase
+        let thresholds = LintRegressionThresholds::default(); // default: rollback=10
+
+        let result = current.check_lint_regression(&baseline, &thresholds);
+
+        // 15 warning increase should trigger Rollback
+        assert_eq!(result.severity, LintRegressionSeverity::Rollback);
+        assert_eq!(result.warning_delta, 15);
+    }
+
+    #[test]
+    fn test_lint_regression_no_increase_is_none() {
+        use super::{LintRegressionSeverity, LintRegressionThresholds};
+
+        let baseline = QualityMetrics::new().with_clippy_warnings(5);
+        let current = QualityMetrics::new().with_clippy_warnings(5);
+        let thresholds = LintRegressionThresholds::default();
+
+        let result = current.check_lint_regression(&baseline, &thresholds);
+
+        assert_eq!(result.severity, LintRegressionSeverity::None);
+        assert_eq!(result.warning_delta, 0);
+    }
+
+    #[test]
+    fn test_lint_regression_improvement_is_none() {
+        use super::{LintRegressionSeverity, LintRegressionThresholds};
+
+        let baseline = QualityMetrics::new().with_clippy_warnings(10);
+        let current = QualityMetrics::new().with_clippy_warnings(5); // Improved!
+        let thresholds = LintRegressionThresholds::default();
+
+        let result = current.check_lint_regression(&baseline, &thresholds);
+
+        // Improvement should not be flagged as regression
+        assert_eq!(result.severity, LintRegressionSeverity::None);
+        assert_eq!(result.warning_delta, 0); // Delta is 0 when improved
+    }
+
+    #[test]
+    fn test_warning_trend_tracking_across_checkpoints() {
+        use super::WarningTrend;
+
+        // Create a series of checkpoints with varying warning counts
+        let checkpoints = vec![
+            Checkpoint::new("CP1", "abc1", "main", QualityMetrics::new().with_clippy_warnings(0), 1),
+            Checkpoint::new("CP2", "abc2", "main", QualityMetrics::new().with_clippy_warnings(2), 2),
+            Checkpoint::new("CP3", "abc3", "main", QualityMetrics::new().with_clippy_warnings(3), 3),
+            Checkpoint::new("CP4", "abc4", "main", QualityMetrics::new().with_clippy_warnings(1), 4),
+        ];
+
+        let trend = WarningTrend::from_checkpoints(&checkpoints);
+
+        // Verify trend data
+        assert_eq!(trend.data_points.len(), 4);
+        assert_eq!(trend.first_count(), Some(0));
+        assert_eq!(trend.last_count(), Some(1));
+        assert_eq!(trend.max_count(), 3);
+        assert_eq!(trend.min_count(), 0);
+        assert!(trend.is_improving()); // 0 -> 1 overall is slight increase, but 3 -> 1 at end is improving
+    }
+
+    #[test]
+    fn test_warning_trend_direction() {
+        use super::{WarningTrendDirection, WarningTrend};
+
+        // Consistently increasing trend
+        let increasing = vec![
+            Checkpoint::new("CP1", "a", "main", QualityMetrics::new().with_clippy_warnings(0), 1),
+            Checkpoint::new("CP2", "b", "main", QualityMetrics::new().with_clippy_warnings(5), 2),
+            Checkpoint::new("CP3", "c", "main", QualityMetrics::new().with_clippy_warnings(10), 3),
+        ];
+        let trend = WarningTrend::from_checkpoints(&increasing);
+        assert_eq!(trend.direction(), WarningTrendDirection::Increasing);
+
+        // Consistently decreasing trend
+        let decreasing = vec![
+            Checkpoint::new("CP1", "a", "main", QualityMetrics::new().with_clippy_warnings(10), 1),
+            Checkpoint::new("CP2", "b", "main", QualityMetrics::new().with_clippy_warnings(5), 2),
+            Checkpoint::new("CP3", "c", "main", QualityMetrics::new().with_clippy_warnings(0), 3),
+        ];
+        let trend = WarningTrend::from_checkpoints(&decreasing);
+        assert_eq!(trend.direction(), WarningTrendDirection::Decreasing);
+
+        // Stable trend
+        let stable = vec![
+            Checkpoint::new("CP1", "a", "main", QualityMetrics::new().with_clippy_warnings(5), 1),
+            Checkpoint::new("CP2", "b", "main", QualityMetrics::new().with_clippy_warnings(5), 2),
+            Checkpoint::new("CP3", "c", "main", QualityMetrics::new().with_clippy_warnings(5), 3),
+        ];
+        let trend = WarningTrend::from_checkpoints(&stable);
+        assert_eq!(trend.direction(), WarningTrendDirection::Stable);
+    }
+
+    #[test]
+    fn test_warning_trend_empty_checkpoints() {
+        use super::{WarningTrendDirection, WarningTrend};
+
+        let empty: Vec<Checkpoint> = vec![];
+        let trend = WarningTrend::from_checkpoints(&empty);
+
+        assert!(trend.data_points.is_empty());
+        assert_eq!(trend.first_count(), None);
+        assert_eq!(trend.last_count(), None);
+        assert_eq!(trend.direction(), WarningTrendDirection::Unknown);
+    }
+
+    #[test]
+    fn test_warning_trend_single_checkpoint() {
+        use super::{WarningTrendDirection, WarningTrend};
+
+        let single = vec![
+            Checkpoint::new("CP1", "abc", "main", QualityMetrics::new().with_clippy_warnings(5), 1),
+        ];
+        let trend = WarningTrend::from_checkpoints(&single);
+
+        assert_eq!(trend.data_points.len(), 1);
+        assert_eq!(trend.first_count(), Some(5));
+        assert_eq!(trend.last_count(), Some(5));
+        assert_eq!(trend.direction(), WarningTrendDirection::Unknown); // Need 2+ points
+    }
+
+    #[test]
+    fn test_lint_regression_thresholds_serialization() {
+        use super::LintRegressionThresholds;
+
+        let thresholds = LintRegressionThresholds::new()
+            .with_warning_threshold(5)
+            .with_rollback_threshold(15);
+
+        let json = serde_json::to_string(&thresholds).expect("serialize");
+        let restored: LintRegressionThresholds = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.warning_threshold, 5);
+        assert_eq!(restored.rollback_threshold, 15);
+    }
+
+    #[test]
+    fn test_lint_regression_result_has_message() {
+        use super::LintRegressionThresholds;
+
+        let baseline = QualityMetrics::new().with_clippy_warnings(0);
+        let current = QualityMetrics::new().with_clippy_warnings(5);
+        let thresholds = LintRegressionThresholds::default();
+
+        let result = current.check_lint_regression(&baseline, &thresholds);
+
+        // Result should have a human-readable message
+        assert!(!result.message.is_empty());
+        assert!(result.message.contains("5")); // Should mention the count
     }
 }
