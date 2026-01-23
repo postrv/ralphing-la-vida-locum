@@ -4,7 +4,7 @@
 > 
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 > 
-> **Current Focus: Sprint 8 (Language-Specific Prompt Intelligence)**
+> **Current Focus: Sprint 9 (Polyglot Orchestration & Validation)**
 
 ---
 
@@ -12,218 +12,22 @@
 
 This plan implements the strategic roadmap to make Ralph genuinely best-in-class for Python, TypeScript, Go, and beyond. The architecture is already excellent—this work is about completing the integration.
 
-**Phase 1**: Polyglot Gate Integration (Sprints 7-9)  
-**Phase 2**: Reliability Hardening (Sprints 10-12)  
-**Phase 3**: Ecosystem & Extensibility (Sprints 13-15)  
+**Phase 1**: Polyglot Gate Integration (Sprints 7-9)
+**Phase 2**: Reliability Hardening (Sprints 10-12)
+**Phase 3**: Ecosystem & Extensibility (Sprints 13-15)
 **Phase 4**: Commercial Foundation (Sprints 16-18)
 
 ---
 
 ## Sprint 7: Polyglot Quality Gate Wiring ✅ COMPLETE
 
-**Goal**: Wire language detection into quality gate selection so `ralph loop` runs the right gates for any project.
-
-> **Status**: All 5 phases complete (7.1-7.5). Committed 2026-01-22.
-
-### 1. Phase 7.1: LoopDependencies Polyglot Constructor
-
-Create `LoopDependencies::real_polyglot()` that detects languages and selects appropriate gates.
-
-**Test Requirements**:
-- [x] Test that `real_polyglot()` detects Rust project and returns ClippyGate, TestGate
-- [x] Test that `real_polyglot()` detects Python project and returns RuffGate, PytestGate, MypyGate
-- [x] Test that `real_polyglot()` detects TypeScript project and returns EslintGate, JestGate, TscGate
-- [x] Test that `real_polyglot()` detects polyglot project and returns gates for all detected languages
-- [x] Test graceful degradation when no language detected (returns empty gates, not error)
-
-**Implementation**:
-- [x] Add `real_polyglot(project_dir: PathBuf) -> Self` method to `LoopDependencies`
-- [x] Call `LanguageDetector::new(&project_dir).detect()` to get languages
-- [x] Filter to languages with confidence >= 0.10
-- [x] Call `detect_available_gates(&project_dir, &languages)` for gate selection
-- [ ] Create `RealQualityChecker::with_gates()` with selected gates (deferred to Phase 7.2)
-- [x] Update `LoopManager::new()` to use `real_polyglot()` by default
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings  # 0 warnings
-cargo test --lib -- loop_dependencies      # All pass
-cargo test --lib -- real_polyglot          # All pass
-```
-
-### 2. Phase 7.2: RealQualityChecker Gate Injection
-
-Extend `RealQualityChecker` to accept injected gates instead of hardcoded Rust gates.
-
-**Test Requirements**:
-- [x] Test `RealQualityChecker::with_gates()` stores provided gates
-- [x] Test `run_gates()` executes all injected gates
-- [x] Test `run_gates()` returns combined results from multiple languages
-- [x] Test empty gates list returns success (no gates to fail)
-- [x] Test gate execution order is deterministic
-
-**Implementation**:
-- [x] Add `gates: Vec<Box<dyn QualityGate>>` field to `RealQualityChecker`
-- [x] Add `with_gates(project_dir: PathBuf, gates: Vec<Box<dyn QualityGate>>) -> Self`
-- [x] Modify `run_gates()` to iterate over `self.gates` instead of hardcoded list
-- [x] Ensure backward compatibility: `new()` defaults to Rust gates for existing projects
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- real_quality_checker
-cargo test --lib -- with_gates
-```
-
-### 3. Phase 7.3: Gate Availability Detection ✅
-
-Implement tool availability checking so gates only run when tools are installed.
-
-**Test Requirements**:
-- [x] Test `is_gate_available()` returns true when tool exists in PATH
-- [x] Test `is_gate_available()` returns false when tool missing
-- [x] Test `detect_available_gates()` filters out unavailable gates
-- [x] Test Python gates check for `ruff`, `pytest`, `mypy`, `bandit`
-- [x] Test TypeScript gates check for `eslint`, `jest`, `npx tsc`, `npm`
-- [x] Test Go gates check for `go`, `golangci-lint`, `govulncheck`
-
-**Implementation**:
-- [x] Add `fn required_tool(&self) -> Option<&str>` to `QualityGate` trait
-- [x] Implement `is_gate_available(gate: &dyn QualityGate) -> bool` using `which`
-- [x] Update `detect_available_gates()` to filter using availability check
-- [x] Add logging when gates are skipped due to missing tools
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- gate_available
-cargo test --lib -- detect_available
-```
-
-### 4. Phase 7.4: PolyglotGateResult Aggregation ✅
-
-Create result type that aggregates gate results across multiple languages.
-
-**Test Requirements**:
-- [x] Test `PolyglotGateResult::can_commit()` returns true when all gates pass
-- [x] Test `PolyglotGateResult::can_commit()` returns false when any blocking gate fails
-- [x] Test `PolyglotGateResult::summary()` shows per-language breakdown
-- [x] Test `PolyglotGateResult::blocking_failures()` returns only blocking failures
-- [x] Test `PolyglotGateResult::warnings()` returns non-blocking issues
-
-**Implementation**:
-- [x] Create `PolyglotGateResult` struct with `by_language: HashMap<Language, Vec<GateResult>>`
-- [x] Add `blocking_failures()` and `warnings()` methods (computed from by_language)
-- [x] Implement `can_commit(&self) -> bool`
-- [x] Implement `summary(&self) -> String` with per-language gate counts
-- [x] Implement `remediation_prompt(&self) -> String` for Claude feedback
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- polyglot_gate_result
-```
-
-### 5. Phase 7.5: CLI Integration ✅
-
-Update CLI commands to display polyglot gate information.
-
-**Test Requirements**:
-- [x] Test `ralph detect` shows all detected languages with confidence
-- [x] Test `ralph bootstrap` reports detected languages during setup
-- [x] Test `ralph loop` logs which gates are being run
-- [x] Test `ralph loop --verbose` shows per-language gate results
-
-**Implementation**:
-- [x] Add `detect` command to show all detected languages with confidence
-- [x] Add `--show-gates` flag to detect command to show gate availability per language
-- [x] Update `bootstrap` to log detected languages and selected gates
-- [x] Add gate count to loop banner output
-- [x] Add detailed gate list in verbose mode
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --test cli_integration
-```
+> **Completed 2026-01-22**: All 5 phases (7.1-7.5). Added `LoopDependencies::real_polyglot()`, `RealQualityChecker::with_gates()`, gate availability detection, `PolyglotGateResult`, and `ralph detect` command.
 
 ---
 
-## Sprint 8: Language-Specific Prompt Intelligence
+## Sprint 8: Language-Specific Prompt Intelligence ✅ COMPLETE
 
-**Goal**: Generate prompts that include language-appropriate TDD guidance, antipatterns, and quality rules.
-
-### 6. Phase 8.1: PromptAssembler Language Awareness ✅
-
-Extend `PromptAssembler` to accept detected languages and generate appropriate prompts.
-
-**Test Requirements**:
-- [x] Test assembler includes Rust quality rules for Rust projects
-- [x] Test assembler includes Python quality rules for Python projects
-- [x] Test assembler includes TypeScript quality rules for TypeScript projects
-- [x] Test polyglot projects get combined rules with clear separation
-- [x] Test language-specific TDD patterns are included
-
-**Implementation**:
-- [x] Add `languages: Vec<Language>` field to `AssemblerConfig`
-- [x] Create `get_language_rules(lang: Language) -> String` helper
-- [x] Modify `build()` to inject language-specific rules into prompt
-- [x] Add `build_language_rules()` for polyglot projects with rule combination
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- prompt_assembler
-cargo test --lib -- language_rules
-```
-
-### 7. Phase 8.2: Language-Specific Antipattern Detection ✅
-
-Add antipattern detection rules for Python, TypeScript, and Go.
-
-**Test Requirements**:
-- [x] Test Python antipatterns: bare except, mutable default args, global state
-- [x] Test TypeScript antipatterns: any type, non-null assertion, console.log
-- [x] Test Go antipatterns: ignored errors, empty interface abuse, panic in library
-- [x] Test antipattern detector accepts language parameter
-- [x] Test polyglot projects check antipatterns for changed file types only
-
-**Implementation**:
-- [x] Add `antipatterns_for_language(lang: Language) -> Vec<AntipatternRule>`
-- [x] Create antipattern rules for Python, TypeScript, Go
-- [x] Modify antipattern detector to filter by file extension
-- [x] Add antipattern results to remediation prompt
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- antipattern
-cargo test --lib -- python_antipattern
-cargo test --lib -- typescript_antipattern
-```
-
-### 8. Phase 8.3: Dynamic CLAUDE.md Generation ✅
-
-Generate project-specific CLAUDE.md with detected languages and their rules.
-
-**Test Requirements**:
-- [x] Test generated CLAUDE.md includes detected primary language
-- [x] Test generated CLAUDE.md includes quality gate commands for each language
-- [x] Test generated CLAUDE.md includes TDD methodology for each language
-- [x] Test polyglot CLAUDE.md has clear sections per language
-- [x] Test regeneration preserves user customizations (marked sections)
-
-**Implementation**:
-- [x] Create `ClaudeMdGenerator` struct with language list
-- [x] Implement `generate(&self) -> String` method
-- [x] Add user customization markers: `<!-- USER_CUSTOM_START -->` / `<!-- USER_CUSTOM_END -->`
-- [x] Update bootstrap to use generator instead of static template
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- claude_md_generator
-```
+> **Completed 2026-01-23**: All 3 phases (8.1-8.3). Added language-aware `PromptAssembler`, code antipattern detection for Python/TypeScript/Go, and `ClaudeMdGenerator` for dynamic CLAUDE.md generation.
 
 ---
 
