@@ -74,6 +74,11 @@ enum Commands {
         /// Stagnation predictor weight profile: balanced, conservative, or aggressive
         #[arg(long, value_name = "PROFILE")]
         predictor_profile: Option<String>,
+
+        /// LLM model to use: claude, openai, gemini, or ollama
+        /// (Note: only claude is currently implemented)
+        #[arg(long, value_name = "MODEL")]
+        model: Option<String>,
     },
 
     /// Build context for LLM analysis
@@ -367,6 +372,7 @@ async fn main() -> anyhow::Result<()> {
             skip_tests,
             skip_security,
             predictor_profile,
+            model,
         } => {
             // Load project configuration
             let mut config = ProjectConfig::load(&project_path).unwrap_or_default();
@@ -386,6 +392,16 @@ async fn main() -> anyhow::Result<()> {
                         );
                         std::process::exit(1);
                     }
+                }
+            }
+
+            // Override LLM model with CLI flag if specified
+            if let Some(ref model_name) = model {
+                config.llm.model = model_name.to_lowercase();
+                // Validate the model
+                if let Err(e) = config.llm.validate() {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(1);
                 }
             }
 

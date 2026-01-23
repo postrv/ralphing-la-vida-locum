@@ -1,5 +1,6 @@
 //! Configuration management for Ralph automation suite.
 
+use crate::llm::LlmConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -322,6 +323,12 @@ pub struct ProjectConfig {
     /// Controls the risk factor weights used by the stagnation predictor.
     #[serde(default, rename = "predictorWeights")]
     pub predictor_weights: PredictorWeightsConfig,
+
+    /// Configuration for LLM backend (Phase 12.2).
+    ///
+    /// Controls which LLM model to use and its options.
+    #[serde(default)]
+    pub llm: LlmConfig,
 }
 
 fn default_true() -> bool {
@@ -337,6 +344,7 @@ impl Default for ProjectConfig {
             gate_weights: crate::quality::gates::GateWeightConfig::default(),
             context_priority: crate::prompt::context_priority::ContextPriorityConfig::default(),
             predictor_weights: PredictorWeightsConfig::default(),
+            llm: LlmConfig::default(),
         }
     }
 }
@@ -1324,5 +1332,78 @@ mod tests {
         let config = ProjectConfig::load(temp.path()).unwrap();
         assert!(config.predictor_weights.preset.is_none());
         assert!((config.predictor_weights.commit_gap - 0.25).abs() < f64::EPSILON);
+    }
+
+    // =========================================================================
+    // LLM Configuration Tests (Phase 12.2)
+    // =========================================================================
+
+    #[test]
+    fn test_project_config_llm_default() {
+        let config = ProjectConfig::default();
+        assert_eq!(config.llm.model, "claude");
+        assert_eq!(config.llm.api_key_env, "ANTHROPIC_API_KEY");
+        assert!(config.llm.options.is_empty());
+    }
+
+    #[test]
+    fn test_project_config_load_with_llm_model() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"llm": {"model": "claude", "api_key_env": "MY_KEY"}}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert_eq!(config.llm.model, "claude");
+        assert_eq!(config.llm.api_key_env, "MY_KEY");
+    }
+
+    #[test]
+    fn test_project_config_load_with_llm_options() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"llm": {"model": "claude", "options": {"variant": "sonnet"}}}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert_eq!(config.llm.model, "claude");
+        assert_eq!(config.llm.claude_variant(), "sonnet");
+    }
+
+    #[test]
+    fn test_project_config_llm_missing_uses_default() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert_eq!(config.llm.model, "claude");
+        assert_eq!(config.llm.api_key_env, "ANTHROPIC_API_KEY");
+    }
+
+    #[test]
+    fn test_project_config_llm_partial_uses_defaults() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        // Only specify model, api_key_env should use default
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"llm": {"model": "claude"}}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert_eq!(config.llm.model, "claude");
+        assert_eq!(config.llm.api_key_env, "ANTHROPIC_API_KEY");
     }
 }

@@ -93,7 +93,7 @@ pub use analytics::{
 };
 
 // Re-export LLM types
-pub use llm::{ClaudeClient, LlmClient, MockLlmClient};
+pub use llm::{create_llm_client, ClaudeClient, LlmClient, LlmConfig, MockLlmClient};
 
 // Re-export bootstrap types
 pub use bootstrap::language::{Language, ParseLanguageError};

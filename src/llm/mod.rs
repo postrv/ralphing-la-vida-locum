@@ -32,7 +32,9 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command as AsyncCommand;
@@ -352,9 +354,463 @@ impl LlmClient for MockLlmClient {
     }
 }
 
+// =============================================================================
+// LLM Configuration (Phase 12.2)
+// =============================================================================
+
+/// Configuration for LLM backend selection and options.
+///
+/// This configuration is typically loaded from the `llm` section of
+/// `.claude/settings.json` and can be overridden via CLI flags.
+///
+/// # Example settings.json
+///
+/// ```json
+/// {
+///   "llm": {
+///     "model": "claude",
+///     "api_key_env": "ANTHROPIC_API_KEY",
+///     "options": {
+///       "variant": "opus"
+///     }
+///   }
+/// }
+/// ```
+///
+/// # Supported Models
+///
+/// - `claude`: Claude models via Anthropic API (default)
+/// - `openai`: OpenAI models (coming soon)
+/// - `gemini`: Google Gemini models (coming soon)
+/// - `ollama`: Local models via Ollama (coming soon)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmConfig {
+    /// The LLM backend to use.
+    ///
+    /// Valid values: "claude", "openai", "gemini", "ollama".
+    /// Default: "claude".
+    #[serde(default = "default_model")]
+    pub model: String,
+
+    /// Environment variable name containing the API key.
+    ///
+    /// Default: "ANTHROPIC_API_KEY" for Claude.
+    #[serde(default = "default_api_key_env")]
+    pub api_key_env: String,
+
+    /// Model-specific options.
+    ///
+    /// For Claude:
+    /// - `variant`: Model variant ("opus", "sonnet", "haiku"). Default: "opus".
+    ///
+    /// For OpenAI:
+    /// - `variant`: Model variant ("gpt-4", "gpt-4o", "o1"). Default: "gpt-4o".
+    ///
+    /// For Gemini:
+    /// - `variant`: Model variant ("pro", "flash"). Default: "pro".
+    ///
+    /// For Ollama:
+    /// - `model_name`: Local model name. Required.
+    /// - `host`: Ollama host URL. Default: "http://localhost:11434".
+    #[serde(default)]
+    pub options: HashMap<String, serde_json::Value>,
+}
+
+fn default_model() -> String {
+    "claude".to_string()
+}
+
+fn default_api_key_env() -> String {
+    "ANTHROPIC_API_KEY".to_string()
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            model: default_model(),
+            api_key_env: default_api_key_env(),
+            options: HashMap::new(),
+        }
+    }
+}
+
+impl LlmConfig {
+    /// Validate the LLM configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The model name is not recognized
+    /// - Model-specific options are invalid
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        // Validate model name
+        let valid_models = ["claude", "openai", "gemini", "ollama"];
+        if !valid_models.contains(&self.model.as_str()) {
+            return Err(format!(
+                "Invalid model '{}'. Valid options: {}",
+                self.model,
+                valid_models.join(", ")
+            ));
+        }
+
+        // Validate model-specific options
+        match self.model.as_str() {
+            "claude" => self.validate_claude_options()?,
+            "openai" => self.validate_openai_options()?,
+            "gemini" => self.validate_gemini_options()?,
+            "ollama" => self.validate_ollama_options()?,
+            _ => {} // Already validated above
+        }
+
+        Ok(())
+    }
+
+    fn validate_claude_options(&self) -> std::result::Result<(), String> {
+        if let Some(variant) = self.options.get("variant") {
+            if let Some(variant_str) = variant.as_str() {
+                let valid_variants = ["opus", "sonnet", "haiku"];
+                if !valid_variants.contains(&variant_str) {
+                    return Err(format!(
+                        "Invalid Claude variant '{}'. Valid options: {}",
+                        variant_str,
+                        valid_variants.join(", ")
+                    ));
+                }
+            } else {
+                return Err("Claude variant must be a string".to_string());
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_openai_options(&self) -> std::result::Result<(), String> {
+        if let Some(variant) = self.options.get("variant") {
+            if let Some(variant_str) = variant.as_str() {
+                let valid_variants = ["gpt-4", "gpt-4o", "gpt-4o-mini", "o1", "o1-mini"];
+                if !valid_variants.contains(&variant_str) {
+                    return Err(format!(
+                        "Invalid OpenAI variant '{}'. Valid options: {}",
+                        variant_str,
+                        valid_variants.join(", ")
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_gemini_options(&self) -> std::result::Result<(), String> {
+        if let Some(variant) = self.options.get("variant") {
+            if let Some(variant_str) = variant.as_str() {
+                let valid_variants = ["pro", "flash", "ultra"];
+                if !valid_variants.contains(&variant_str) {
+                    return Err(format!(
+                        "Invalid Gemini variant '{}'. Valid options: {}",
+                        variant_str,
+                        valid_variants.join(", ")
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_ollama_options(&self) -> std::result::Result<(), String> {
+        // Ollama requires model_name in options
+        // But we allow empty options for validation (will fail at runtime)
+        Ok(())
+    }
+
+    /// Get the Claude variant from options, defaulting to "opus".
+    #[must_use]
+    pub fn claude_variant(&self) -> &str {
+        self.options
+            .get("variant")
+            .and_then(|v| v.as_str())
+            .unwrap_or("opus")
+    }
+}
+
+/// Create an LLM client based on configuration.
+///
+/// This factory function creates the appropriate LLM client implementation
+/// based on the model specified in the configuration.
+///
+/// # Arguments
+///
+/// * `config` - The LLM configuration specifying which model to use
+/// * `project_dir` - The project directory for the client to operate in
+///
+/// # Returns
+///
+/// A boxed `LlmClient` trait object for the configured model.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The model is not yet implemented (OpenAI, Gemini, Ollama)
+/// - The configuration is invalid
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::llm::{LlmConfig, create_llm_client};
+///
+/// let config = LlmConfig::default();
+/// let client = create_llm_client(&config, Path::new("."))?;
+/// ```
+pub fn create_llm_client(
+    config: &LlmConfig,
+    project_dir: &Path,
+) -> Result<Box<dyn LlmClient>> {
+    // Validate configuration first
+    config.validate().map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    match config.model.as_str() {
+        "claude" => {
+            let variant = config.claude_variant();
+            let client = ClaudeClient::new(project_dir).with_model(variant);
+            Ok(Box::new(client))
+        }
+        "openai" => {
+            anyhow::bail!(
+                "OpenAI model support is not yet implemented (coming soon). \
+                Use --model claude or set \"model\": \"claude\" in settings.json"
+            )
+        }
+        "gemini" => {
+            anyhow::bail!(
+                "Gemini model support is not yet implemented (coming soon). \
+                Use --model claude or set \"model\": \"claude\" in settings.json"
+            )
+        }
+        "ollama" => {
+            anyhow::bail!(
+                "Ollama model support is not yet implemented (coming soon). \
+                Use --model claude or set \"model\": \"claude\" in settings.json"
+            )
+        }
+        other => {
+            anyhow::bail!(
+                "Unknown model '{}'. Valid options: claude, openai, gemini, ollama",
+                other
+            )
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // =========================================================================
+    // LlmConfig Tests (Phase 12.2)
+    // =========================================================================
+
+    /// Test model can be specified in settings - LlmConfig default values.
+    #[test]
+    fn test_llm_config_default_model_is_claude() {
+        let config = LlmConfig::default();
+        assert_eq!(config.model, "claude");
+        assert_eq!(config.api_key_env, "ANTHROPIC_API_KEY");
+    }
+
+    /// Test LlmConfig can be created with custom model.
+    #[test]
+    fn test_llm_config_with_custom_model() {
+        let config = LlmConfig {
+            model: "openai".to_string(),
+            api_key_env: "OPENAI_API_KEY".to_string(),
+            options: std::collections::HashMap::new(),
+        };
+        assert_eq!(config.model, "openai");
+        assert_eq!(config.api_key_env, "OPENAI_API_KEY");
+    }
+
+    /// Test LlmConfig can store model-specific options.
+    #[test]
+    fn test_llm_config_with_options() {
+        let mut options = std::collections::HashMap::new();
+        options.insert("variant".to_string(), serde_json::json!("opus"));
+        options.insert("temperature".to_string(), serde_json::json!(0.7));
+
+        let config = LlmConfig {
+            model: "claude".to_string(),
+            api_key_env: "ANTHROPIC_API_KEY".to_string(),
+            options,
+        };
+
+        assert_eq!(config.options.get("variant"), Some(&serde_json::json!("opus")));
+        assert_eq!(config.options.get("temperature"), Some(&serde_json::json!(0.7)));
+    }
+
+    /// Test LlmConfig can be deserialized from JSON.
+    #[test]
+    fn test_llm_config_deserialize_from_json() {
+        let json = r#"{
+            "model": "claude",
+            "api_key_env": "MY_API_KEY",
+            "options": {
+                "variant": "sonnet"
+            }
+        }"#;
+
+        let config: LlmConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.model, "claude");
+        assert_eq!(config.api_key_env, "MY_API_KEY");
+        assert_eq!(config.options.get("variant"), Some(&serde_json::json!("sonnet")));
+    }
+
+    /// Test LlmConfig deserialize with missing fields uses defaults.
+    #[test]
+    fn test_llm_config_deserialize_partial() {
+        // Only specify model, others should use defaults
+        let json = r#"{"model": "gemini"}"#;
+        let config: LlmConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.model, "gemini");
+        assert_eq!(config.api_key_env, "ANTHROPIC_API_KEY"); // default
+        assert!(config.options.is_empty());
+    }
+
+    /// Test LlmConfig deserialize empty object uses all defaults.
+    #[test]
+    fn test_llm_config_deserialize_empty() {
+        let json = r#"{}"#;
+        let config: LlmConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.model, "claude");
+        assert_eq!(config.api_key_env, "ANTHROPIC_API_KEY");
+    }
+
+    /// Test LlmConfig serializes correctly.
+    #[test]
+    fn test_llm_config_serialize() {
+        let config = LlmConfig::default();
+        let json = serde_json::to_string(&config).unwrap();
+
+        assert!(json.contains(r#""model":"claude""#));
+        assert!(json.contains(r#""api_key_env":"ANTHROPIC_API_KEY""#));
+    }
+
+    /// Test invalid model name produces helpful error during validation.
+    #[test]
+    fn test_llm_config_validate_invalid_model() {
+        let config = LlmConfig {
+            model: "unknown_model_xyz".to_string(),
+            api_key_env: "API_KEY".to_string(),
+            options: std::collections::HashMap::new(),
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("unknown_model_xyz"));
+        assert!(err.contains("claude") || err.contains("Valid"));
+    }
+
+    /// Test valid model names pass validation.
+    #[test]
+    fn test_llm_config_validate_valid_models() {
+        let valid_models = ["claude", "openai", "gemini", "ollama"];
+
+        for model_name in valid_models {
+            let config = LlmConfig {
+                model: model_name.to_string(),
+                api_key_env: "API_KEY".to_string(),
+                options: std::collections::HashMap::new(),
+            };
+            assert!(config.validate().is_ok(), "Model '{}' should be valid", model_name);
+        }
+    }
+
+    /// Test model-specific options are validated for Claude.
+    #[test]
+    fn test_llm_config_validate_claude_options() {
+        let mut options = std::collections::HashMap::new();
+        options.insert("variant".to_string(), serde_json::json!("opus"));
+
+        let config = LlmConfig {
+            model: "claude".to_string(),
+            api_key_env: "ANTHROPIC_API_KEY".to_string(),
+            options,
+        };
+
+        assert!(config.validate().is_ok());
+    }
+
+    /// Test invalid Claude variant produces error.
+    #[test]
+    fn test_llm_config_validate_invalid_claude_variant() {
+        let mut options = std::collections::HashMap::new();
+        options.insert("variant".to_string(), serde_json::json!("invalid_variant"));
+
+        let config = LlmConfig {
+            model: "claude".to_string(),
+            api_key_env: "ANTHROPIC_API_KEY".to_string(),
+            options,
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("variant"));
+    }
+
+    // =========================================================================
+    // Model Factory Tests (Phase 12.2)
+    // =========================================================================
+
+    /// Test model factory creates ClaudeClient for claude model.
+    #[test]
+    fn test_create_llm_client_claude() {
+        let config = LlmConfig::default();
+        let project_dir = std::path::PathBuf::from(".");
+
+        let client = create_llm_client(&config, &project_dir).unwrap();
+        assert!(client.model_name().contains("claude"));
+        assert!(client.supports_tools());
+    }
+
+    /// Test model factory with claude variant option.
+    #[test]
+    fn test_create_llm_client_claude_with_variant() {
+        let mut options = std::collections::HashMap::new();
+        options.insert("variant".to_string(), serde_json::json!("sonnet"));
+
+        let config = LlmConfig {
+            model: "claude".to_string(),
+            api_key_env: "ANTHROPIC_API_KEY".to_string(),
+            options,
+        };
+        let project_dir = std::path::PathBuf::from(".");
+
+        let client = create_llm_client(&config, &project_dir).unwrap();
+        assert!(client.model_name().contains("sonnet"));
+    }
+
+    /// Test model factory returns error for unsupported model.
+    #[test]
+    fn test_create_llm_client_unsupported_model() {
+        let config = LlmConfig {
+            model: "openai".to_string(),
+            api_key_env: "OPENAI_API_KEY".to_string(),
+            options: std::collections::HashMap::new(),
+        };
+        let project_dir = std::path::PathBuf::from(".");
+
+        let result = create_llm_client(&config, &project_dir);
+        match result {
+            Ok(_) => panic!("Expected error for unsupported model"),
+            Err(e) => {
+                let err = e.to_string();
+                assert!(
+                    err.contains("not yet implemented") || err.contains("coming soon"),
+                    "Error should mention model not implemented: {}",
+                    err
+                );
+            }
+        }
+    }
 
     // =========================================================================
     // LlmClient Trait Tests

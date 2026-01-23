@@ -77,22 +77,22 @@ cargo test --lib -- llm_client_trait
 cargo test --lib -- claude_client
 ```
 
-### 13. Phase 12.2: Model Configuration
+### 13. Phase 12.2: Model Configuration ✅ COMPLETE
 
 Add configuration for selecting and configuring LLM backend.
 
 **Test Requirements**:
-- [ ] Test model can be specified in settings.json
-- [ ] Test model can be overridden via CLI flag
-- [ ] Test invalid model name produces helpful error
-- [ ] Test model-specific options are validated
-- [ ] Test default model is Claude
+- [x] Test model can be specified in settings.json
+- [x] Test model can be overridden via CLI flag
+- [x] Test invalid model name produces helpful error
+- [x] Test model-specific options are validated
+- [x] Test default model is Claude
 
 **Implementation**:
-- [ ] Add `llm` section to `ProjectConfig`
-- [ ] Define `LlmConfig` with `model: String`, `api_key_env: String`, `options: Map`
-- [ ] Add `--model <name>` CLI flag
-- [ ] Implement model factory based on config
+- [x] Add `llm` section to `ProjectConfig`
+- [x] Define `LlmConfig` with `model: String`, `api_key_env: String`, `options: Map`
+- [x] Add `--model <name>` CLI flag
+- [x] Implement model factory based on config
 
 **Quality Gates**:
 ```bash
