@@ -922,10 +922,7 @@ impl LlmClient for OllamaClient {
 /// let config = LlmConfig::default();
 /// let client = create_llm_client(&config, Path::new("."))?;
 /// ```
-pub fn create_llm_client(
-    config: &LlmConfig,
-    project_dir: &Path,
-) -> Result<Box<dyn LlmClient>> {
+pub fn create_llm_client(config: &LlmConfig, project_dir: &Path) -> Result<Box<dyn LlmClient>> {
     // Validate configuration first
     config.validate().map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -942,8 +939,7 @@ pub fn create_llm_client(
                 .get("variant")
                 .and_then(|v| v.as_str())
                 .unwrap_or("gpt-4o");
-            let client = OpenAiClient::new(variant)
-                .with_api_key_env(&config.api_key_env);
+            let client = OpenAiClient::new(variant).with_api_key_env(&config.api_key_env);
             Ok(Box::new(client))
         }
         "gemini" => {
@@ -953,8 +949,7 @@ pub fn create_llm_client(
                 .get("variant")
                 .and_then(|v| v.as_str())
                 .unwrap_or("pro");
-            let client = GeminiClient::new(variant)
-                .with_api_key_env(&config.api_key_env);
+            let client = GeminiClient::new(variant).with_api_key_env(&config.api_key_env);
             Ok(Box::new(client))
         }
         "ollama" => {
@@ -964,10 +959,7 @@ pub fn create_llm_client(
                 .get("model_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("llama3");
-            let host = config
-                .options
-                .get("host")
-                .and_then(|v| v.as_str());
+            let host = config.options.get("host").and_then(|v| v.as_str());
             let client = OllamaClient::new(model, host);
             Ok(Box::new(client))
         }
@@ -1021,8 +1013,14 @@ mod tests {
             options,
         };
 
-        assert_eq!(config.options.get("variant"), Some(&serde_json::json!("opus")));
-        assert_eq!(config.options.get("temperature"), Some(&serde_json::json!(0.7)));
+        assert_eq!(
+            config.options.get("variant"),
+            Some(&serde_json::json!("opus"))
+        );
+        assert_eq!(
+            config.options.get("temperature"),
+            Some(&serde_json::json!(0.7))
+        );
     }
 
     /// Test LlmConfig can be deserialized from JSON.
@@ -1039,7 +1037,10 @@ mod tests {
         let config: LlmConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.model, "claude");
         assert_eq!(config.api_key_env, "MY_API_KEY");
-        assert_eq!(config.options.get("variant"), Some(&serde_json::json!("sonnet")));
+        assert_eq!(
+            config.options.get("variant"),
+            Some(&serde_json::json!("sonnet"))
+        );
     }
 
     /// Test LlmConfig deserialize with missing fields uses defaults.
@@ -1101,7 +1102,11 @@ mod tests {
                 api_key_env: "API_KEY".to_string(),
                 options: std::collections::HashMap::new(),
             };
-            assert!(config.validate().is_ok(), "Model '{}' should be valid", model_name);
+            assert!(
+                config.validate().is_ok(),
+                "Model '{}' should be valid",
+                model_name
+            );
         }
     }
 
@@ -1606,8 +1611,16 @@ mod tests {
         let models = get_supported_models();
 
         for model in &models {
-            assert!(!model.description.is_empty(), "Model {} should have description", model.name);
-            assert!(!model.variants.is_empty(), "Model {} should have variants", model.name);
+            assert!(
+                !model.description.is_empty(),
+                "Model {} should have description",
+                model.name
+            );
+            assert!(
+                !model.variants.is_empty(),
+                "Model {} should have variants",
+                model.name
+            );
         }
     }
 

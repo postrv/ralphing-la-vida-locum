@@ -598,9 +598,8 @@ impl PluginExecutor {
         let _timeout = plugin.timeout();
 
         // Catch panics from the plugin
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            plugin.run(project_dir)
-        }));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| plugin.run(project_dir)));
 
         match result {
             Ok(Ok(issues)) => Ok(issues),
@@ -667,9 +666,7 @@ mod humantime_serde {
             Ok(Duration::from_secs(secs))
         } else {
             // Try parsing as seconds
-            let secs: u64 = s
-                .parse()
-                .map_err(|_| format!("invalid duration: {}", s))?;
+            let secs: u64 = s.parse().map_err(|_| format!("invalid duration: {}", s))?;
             Ok(Duration::from_secs(secs))
         }
     }
@@ -869,7 +866,8 @@ impl PluginLoader {
     /// A [`PluginLoadResult`] containing loaded manifests and any issues.
     pub fn load_plugins(&self) -> PluginLoadResult {
         let mut result = PluginLoadResult::default();
-        let mut seen_names: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut seen_names: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for dir in self.plugin_directories() {
             if !dir.exists() {
@@ -1449,8 +1447,7 @@ path = "target/release/libtest_plugin.dylib"
             .expect("failed to write manifest");
 
         // Create loader and discover plugins
-        let loader = PluginLoader::new()
-            .with_user_plugins_dir(&plugins_dir);
+        let loader = PluginLoader::new().with_user_plugins_dir(&plugins_dir);
 
         let discovered = loader.discover_manifests();
 
@@ -1487,8 +1484,7 @@ path = "target/release/libproject_plugin.so"
             .expect("failed to write manifest");
 
         // Create loader and discover plugins
-        let loader = PluginLoader::new()
-            .with_project_dir(project_dir);
+        let loader = PluginLoader::new().with_project_dir(project_dir);
 
         let discovered = loader.discover_manifests();
 
@@ -1528,8 +1524,7 @@ path = "lib.so"
             .expect("failed to create project plugins dir");
 
         let project_plugin_dir = project_plugins_dir.join("project-gate");
-        std::fs::create_dir_all(&project_plugin_dir)
-            .expect("failed to create project plugin dir");
+        std::fs::create_dir_all(&project_plugin_dir).expect("failed to create project plugin dir");
         std::fs::write(
             project_plugin_dir.join("plugin.toml"),
             r#"
@@ -1583,12 +1578,14 @@ path = "lib.so"
         std::fs::write(plugin_dir.join("plugin.toml"), invalid_manifest)
             .expect("failed to write invalid manifest");
 
-        let loader = PluginLoader::new()
-            .with_user_plugins_dir(&plugins_dir);
+        let loader = PluginLoader::new().with_user_plugins_dir(&plugins_dir);
 
         // discover_manifests should skip invalid manifests
         let discovered = loader.discover_manifests();
-        assert!(discovered.is_empty(), "invalid manifests should be filtered out");
+        assert!(
+            discovered.is_empty(),
+            "invalid manifests should be filtered out"
+        );
 
         // Try to load should return load result with error
         let load_results = loader.load_plugins();
@@ -1629,8 +1626,7 @@ path = "lib.so"
         let project_dir = temp_dir.path().join("project");
         let project_plugins_dir = project_dir.join(".ralph").join("plugins");
         let project_plugin_dir = project_plugins_dir.join("duplicate-gate");
-        std::fs::create_dir_all(&project_plugin_dir)
-            .expect("failed to create project plugin dir");
+        std::fs::create_dir_all(&project_plugin_dir).expect("failed to create project plugin dir");
         std::fs::write(
             project_plugin_dir.join("plugin.toml"),
             r#"
@@ -1653,7 +1649,10 @@ path = "lib.so"
 
         // Should have a warning about duplicate
         assert!(
-            load_results.warnings.iter().any(|w| w.contains("duplicate")),
+            load_results
+                .warnings
+                .iter()
+                .any(|w| w.contains("duplicate")),
             "should warn about duplicate plugin names: {:?}",
             load_results.warnings
         );
@@ -1667,7 +1666,10 @@ path = "lib.so"
 
         // Should only have one plugin with that name
         assert_eq!(
-            plugin_names.iter().filter(|&&n| n == "duplicate-gate").count(),
+            plugin_names
+                .iter()
+                .filter(|&&n| n == "duplicate-gate")
+                .count(),
             1
         );
     }
@@ -1716,8 +1718,7 @@ path = "valid.so"
         )
         .expect("failed to write valid manifest");
 
-        let loader = PluginLoader::new()
-            .with_user_plugins_dir(&plugins_dir);
+        let loader = PluginLoader::new().with_user_plugins_dir(&plugins_dir);
 
         // Loading should not panic
         let load_results = loader.load_plugins();

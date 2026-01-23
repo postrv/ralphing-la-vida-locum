@@ -66,7 +66,7 @@ pub use testing::{
 // Re-export quality gate types
 pub use quality::{
     generate_minimal_remediation, generate_remediation_prompt, ClippyConfig, ClippyGate,
-    EnforcerConfig, EnforcerSummary, Gate, GateIssue, GateResult, GatePlugin, IssueSeverity,
+    EnforcerConfig, EnforcerSummary, Gate, GateIssue, GatePlugin, GateResult, IssueSeverity,
     LibraryConfig, NoAllowGate, NoTodoGate, PluginConfig, PluginError, PluginExecutor,
     PluginManifest, PluginMetadata, QualityGateEnforcer, RemediationConfig, RemediationGenerator,
     SecurityGate, TestConfig, TestGate,

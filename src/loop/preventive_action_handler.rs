@@ -143,7 +143,10 @@ impl PreventiveActionHandler {
             }
 
             PreventiveAction::InjectGuidance { guidance } => {
-                info!("Injecting guidance: {}", &guidance[..guidance.len().min(80)]);
+                info!(
+                    "Injecting guidance: {}",
+                    &guidance[..guidance.len().min(80)]
+                );
                 context.add_guidance(guidance);
                 self.guidance_count += 1;
                 Ok(HandlerResult::Continue)

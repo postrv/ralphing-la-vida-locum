@@ -1167,10 +1167,7 @@ impl Checkpoint {
     /// assert_eq!(checkpoint.metrics_by_language.len(), 1);
     /// ```
     #[must_use]
-    pub fn with_language_metrics(
-        mut self,
-        metrics: HashMap<Language, QualityMetrics>,
-    ) -> Self {
+    pub fn with_language_metrics(mut self, metrics: HashMap<Language, QualityMetrics>) -> Self {
         self.metrics_by_language = metrics;
         self
     }
@@ -1192,7 +1189,11 @@ impl Checkpoint {
     /// assert!(checkpoint.metrics_by_language.contains_key(&Language::Python));
     /// ```
     #[must_use]
-    pub fn with_metrics_for_language(mut self, language: Language, metrics: QualityMetrics) -> Self {
+    pub fn with_metrics_for_language(
+        mut self,
+        language: Language,
+        metrics: QualityMetrics,
+    ) -> Self {
         self.metrics_by_language.insert(language, metrics);
         self
     }
@@ -1512,10 +1513,8 @@ impl CheckpointDiff {
             .intersection(&to_files)
             .map(|s| (*s).clone())
             .collect();
-        let files_changed: Vec<String> = from_files
-            .union(&to_files)
-            .map(|s| (*s).clone())
-            .collect();
+        let files_changed: Vec<String> =
+            from_files.union(&to_files).map(|s| (*s).clone()).collect();
 
         let iteration_delta = to.iteration as i32 - from.iteration as i32;
 
@@ -1672,18 +1671,9 @@ impl CheckpointDiff {
         lines.push(String::new());
 
         lines.push("Quality Metrics:".to_string());
-        lines.push(format!(
-            "  Tests total:     {:+}",
-            self.test_total_delta
-        ));
-        lines.push(format!(
-            "  Tests passed:    {:+}",
-            self.test_passed_delta
-        ));
-        lines.push(format!(
-            "  Tests failed:    {:+}",
-            self.test_failed_delta
-        ));
+        lines.push(format!("  Tests total:     {:+}", self.test_total_delta));
+        lines.push(format!("  Tests passed:    {:+}", self.test_passed_delta));
+        lines.push(format!("  Tests failed:    {:+}", self.test_failed_delta));
         lines.push(format!(
             "  Clippy warnings: {:+}",
             self.clippy_warnings_delta
@@ -2128,8 +2118,14 @@ mod tests {
             QualityMetrics::new().with_test_counts(30, 28, 2),
         );
 
-        let checkpoint = Checkpoint::new("Multi-lang tests", "abc123", "main", QualityMetrics::new(), 1)
-            .with_language_metrics(metrics_by_lang);
+        let checkpoint = Checkpoint::new(
+            "Multi-lang tests",
+            "abc123",
+            "main",
+            QualityMetrics::new(),
+            1,
+        )
+        .with_language_metrics(metrics_by_lang);
 
         assert_eq!(checkpoint.metrics_by_language.len(), 2);
 
@@ -2138,7 +2134,10 @@ mod tests {
         assert_eq!(rust_metrics.test_passed, 50);
         assert_eq!(rust_metrics.test_failed, 0);
 
-        let python_metrics = checkpoint.metrics_by_language.get(&Language::Python).unwrap();
+        let python_metrics = checkpoint
+            .metrics_by_language
+            .get(&Language::Python)
+            .unwrap();
         assert_eq!(python_metrics.test_total, 30);
         assert_eq!(python_metrics.test_passed, 28);
         assert_eq!(python_metrics.test_failed, 2);
@@ -2162,18 +2161,30 @@ mod tests {
             QualityMetrics::new().with_clippy_warnings(3), // Ruff/flake8 warnings
         );
 
-        let checkpoint = Checkpoint::new("Multi-lang lint", "def456", "main", QualityMetrics::new(), 2)
-            .with_language_metrics(metrics_by_lang);
+        let checkpoint = Checkpoint::new(
+            "Multi-lang lint",
+            "def456",
+            "main",
+            QualityMetrics::new(),
+            2,
+        )
+        .with_language_metrics(metrics_by_lang);
 
         assert_eq!(checkpoint.metrics_by_language.len(), 3);
 
         let rust_metrics = checkpoint.metrics_by_language.get(&Language::Rust).unwrap();
         assert_eq!(rust_metrics.clippy_warnings, 0);
 
-        let ts_metrics = checkpoint.metrics_by_language.get(&Language::TypeScript).unwrap();
+        let ts_metrics = checkpoint
+            .metrics_by_language
+            .get(&Language::TypeScript)
+            .unwrap();
         assert_eq!(ts_metrics.clippy_warnings, 5);
 
-        let py_metrics = checkpoint.metrics_by_language.get(&Language::Python).unwrap();
+        let py_metrics = checkpoint
+            .metrics_by_language
+            .get(&Language::Python)
+            .unwrap();
         assert_eq!(py_metrics.clippy_warnings, 3);
     }
 
@@ -2191,13 +2202,22 @@ mod tests {
             QualityMetrics::new().with_test_coverage(92.0),
         );
 
-        let checkpoint = Checkpoint::new("Coverage checkpoint", "ghi789", "main", QualityMetrics::new(), 3)
-            .with_language_metrics(metrics_by_lang);
+        let checkpoint = Checkpoint::new(
+            "Coverage checkpoint",
+            "ghi789",
+            "main",
+            QualityMetrics::new(),
+            3,
+        )
+        .with_language_metrics(metrics_by_lang);
 
         let rust_metrics = checkpoint.metrics_by_language.get(&Language::Rust).unwrap();
         assert_eq!(rust_metrics.test_coverage, Some(85.5));
 
-        let python_metrics = checkpoint.metrics_by_language.get(&Language::Python).unwrap();
+        let python_metrics = checkpoint
+            .metrics_by_language
+            .get(&Language::Python)
+            .unwrap();
         assert_eq!(python_metrics.test_coverage, Some(92.0));
     }
 
@@ -2232,13 +2252,17 @@ mod tests {
         let mut baseline_metrics = std::collections::HashMap::new();
         baseline_metrics.insert(
             Language::Rust,
-            QualityMetrics::new().with_clippy_warnings(0).with_test_counts(50, 50, 0),
+            QualityMetrics::new()
+                .with_clippy_warnings(0)
+                .with_test_counts(50, 50, 0),
         );
 
         let mut current_metrics = std::collections::HashMap::new();
         current_metrics.insert(
             Language::Rust,
-            QualityMetrics::new().with_clippy_warnings(5).with_test_counts(50, 48, 2),
+            QualityMetrics::new()
+                .with_clippy_warnings(5)
+                .with_test_counts(50, 48, 2),
         );
 
         let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
@@ -2360,13 +2384,17 @@ mod tests {
         let mut baseline_metrics = std::collections::HashMap::new();
         baseline_metrics.insert(
             Language::Rust,
-            QualityMetrics::new().with_clippy_warnings(5).with_test_counts(50, 48, 2),
+            QualityMetrics::new()
+                .with_clippy_warnings(5)
+                .with_test_counts(50, 48, 2),
         );
 
         let mut current_metrics = std::collections::HashMap::new();
         current_metrics.insert(
             Language::Rust,
-            QualityMetrics::new().with_clippy_warnings(2).with_test_counts(50, 50, 0), // Improved
+            QualityMetrics::new()
+                .with_clippy_warnings(2)
+                .with_test_counts(50, 50, 0), // Improved
         );
 
         let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
@@ -2385,7 +2413,9 @@ mod tests {
         let mut baseline_metrics = std::collections::HashMap::new();
         baseline_metrics.insert(
             Language::Rust,
-            QualityMetrics::new().with_clippy_warnings(0).with_test_counts(50, 50, 0),
+            QualityMetrics::new()
+                .with_clippy_warnings(0)
+                .with_test_counts(50, 50, 0),
         );
         baseline_metrics.insert(
             Language::Python,
@@ -2395,7 +2425,9 @@ mod tests {
         let mut current_metrics = std::collections::HashMap::new();
         current_metrics.insert(
             Language::Rust,
-            QualityMetrics::new().with_clippy_warnings(3).with_test_counts(50, 48, 2),
+            QualityMetrics::new()
+                .with_clippy_warnings(3)
+                .with_test_counts(50, 48, 2),
         );
         current_metrics.insert(
             Language::Python,
@@ -2422,15 +2454,23 @@ mod tests {
         let mut metrics_by_lang = std::collections::HashMap::new();
         metrics_by_lang.insert(
             Language::Rust,
-            QualityMetrics::new().with_clippy_warnings(0).with_test_counts(50, 50, 0),
+            QualityMetrics::new()
+                .with_clippy_warnings(0)
+                .with_test_counts(50, 50, 0),
         );
         metrics_by_lang.insert(
             Language::Python,
             QualityMetrics::new().with_test_coverage(85.0),
         );
 
-        let checkpoint = Checkpoint::new("Serialization test", "abc123", "main", QualityMetrics::new(), 5)
-            .with_language_metrics(metrics_by_lang);
+        let checkpoint = Checkpoint::new(
+            "Serialization test",
+            "abc123",
+            "main",
+            QualityMetrics::new(),
+            5,
+        )
+        .with_language_metrics(metrics_by_lang);
 
         let json = serde_json::to_string(&checkpoint).expect("serialize");
         let restored: Checkpoint = serde_json::from_str(&json).expect("deserialize");
@@ -2554,10 +2594,34 @@ mod tests {
 
         // Create a series of checkpoints with varying warning counts
         let checkpoints = vec![
-            Checkpoint::new("CP1", "abc1", "main", QualityMetrics::new().with_clippy_warnings(0), 1),
-            Checkpoint::new("CP2", "abc2", "main", QualityMetrics::new().with_clippy_warnings(2), 2),
-            Checkpoint::new("CP3", "abc3", "main", QualityMetrics::new().with_clippy_warnings(3), 3),
-            Checkpoint::new("CP4", "abc4", "main", QualityMetrics::new().with_clippy_warnings(1), 4),
+            Checkpoint::new(
+                "CP1",
+                "abc1",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(0),
+                1,
+            ),
+            Checkpoint::new(
+                "CP2",
+                "abc2",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(2),
+                2,
+            ),
+            Checkpoint::new(
+                "CP3",
+                "abc3",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(3),
+                3,
+            ),
+            Checkpoint::new(
+                "CP4",
+                "abc4",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(1),
+                4,
+            ),
         ];
 
         let trend = WarningTrend::from_checkpoints(&checkpoints);
@@ -2573,31 +2637,85 @@ mod tests {
 
     #[test]
     fn test_warning_trend_direction() {
-        use super::{WarningTrendDirection, WarningTrend};
+        use super::{WarningTrend, WarningTrendDirection};
 
         // Consistently increasing trend
         let increasing = vec![
-            Checkpoint::new("CP1", "a", "main", QualityMetrics::new().with_clippy_warnings(0), 1),
-            Checkpoint::new("CP2", "b", "main", QualityMetrics::new().with_clippy_warnings(5), 2),
-            Checkpoint::new("CP3", "c", "main", QualityMetrics::new().with_clippy_warnings(10), 3),
+            Checkpoint::new(
+                "CP1",
+                "a",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(0),
+                1,
+            ),
+            Checkpoint::new(
+                "CP2",
+                "b",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(5),
+                2,
+            ),
+            Checkpoint::new(
+                "CP3",
+                "c",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(10),
+                3,
+            ),
         ];
         let trend = WarningTrend::from_checkpoints(&increasing);
         assert_eq!(trend.direction(), WarningTrendDirection::Increasing);
 
         // Consistently decreasing trend
         let decreasing = vec![
-            Checkpoint::new("CP1", "a", "main", QualityMetrics::new().with_clippy_warnings(10), 1),
-            Checkpoint::new("CP2", "b", "main", QualityMetrics::new().with_clippy_warnings(5), 2),
-            Checkpoint::new("CP3", "c", "main", QualityMetrics::new().with_clippy_warnings(0), 3),
+            Checkpoint::new(
+                "CP1",
+                "a",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(10),
+                1,
+            ),
+            Checkpoint::new(
+                "CP2",
+                "b",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(5),
+                2,
+            ),
+            Checkpoint::new(
+                "CP3",
+                "c",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(0),
+                3,
+            ),
         ];
         let trend = WarningTrend::from_checkpoints(&decreasing);
         assert_eq!(trend.direction(), WarningTrendDirection::Decreasing);
 
         // Stable trend
         let stable = vec![
-            Checkpoint::new("CP1", "a", "main", QualityMetrics::new().with_clippy_warnings(5), 1),
-            Checkpoint::new("CP2", "b", "main", QualityMetrics::new().with_clippy_warnings(5), 2),
-            Checkpoint::new("CP3", "c", "main", QualityMetrics::new().with_clippy_warnings(5), 3),
+            Checkpoint::new(
+                "CP1",
+                "a",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(5),
+                1,
+            ),
+            Checkpoint::new(
+                "CP2",
+                "b",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(5),
+                2,
+            ),
+            Checkpoint::new(
+                "CP3",
+                "c",
+                "main",
+                QualityMetrics::new().with_clippy_warnings(5),
+                3,
+            ),
         ];
         let trend = WarningTrend::from_checkpoints(&stable);
         assert_eq!(trend.direction(), WarningTrendDirection::Stable);
@@ -2605,7 +2723,7 @@ mod tests {
 
     #[test]
     fn test_warning_trend_empty_checkpoints() {
-        use super::{WarningTrendDirection, WarningTrend};
+        use super::{WarningTrend, WarningTrendDirection};
 
         let empty: Vec<Checkpoint> = vec![];
         let trend = WarningTrend::from_checkpoints(&empty);
@@ -2618,11 +2736,15 @@ mod tests {
 
     #[test]
     fn test_warning_trend_single_checkpoint() {
-        use super::{WarningTrendDirection, WarningTrend};
+        use super::{WarningTrend, WarningTrendDirection};
 
-        let single = vec![
-            Checkpoint::new("CP1", "abc", "main", QualityMetrics::new().with_clippy_warnings(5), 1),
-        ];
+        let single = vec![Checkpoint::new(
+            "CP1",
+            "abc",
+            "main",
+            QualityMetrics::new().with_clippy_warnings(5),
+            1,
+        )];
         let trend = WarningTrend::from_checkpoints(&single);
 
         assert_eq!(trend.data_points.len(), 1);

@@ -1203,7 +1203,9 @@ mod tests {
         };
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Invalid predictor weight preset"));
+        assert!(result
+            .unwrap_err()
+            .contains("Invalid predictor weight preset"));
     }
 
     #[test]
@@ -1298,7 +1300,10 @@ mod tests {
         .unwrap();
 
         let config = ProjectConfig::load(temp.path()).unwrap();
-        assert_eq!(config.predictor_weights.preset.as_deref(), Some("conservative"));
+        assert_eq!(
+            config.predictor_weights.preset.as_deref(),
+            Some("conservative")
+        );
     }
 
     #[test]

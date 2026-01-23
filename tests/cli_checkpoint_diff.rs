@@ -160,7 +160,15 @@ fn test_cli_checkpoint_diff_json_output_is_machine_readable() {
     std::fs::create_dir_all(&checkpoint_dir).unwrap();
 
     create_checkpoint_file(&checkpoint_dir, "cp_a", 10, 10, 0, 5, &["file1.rs"]);
-    create_checkpoint_file(&checkpoint_dir, "cp_b", 15, 14, 1, 3, &["file1.rs", "file2.rs"]);
+    create_checkpoint_file(
+        &checkpoint_dir,
+        "cp_b",
+        15,
+        14,
+        1,
+        3,
+        &["file1.rs", "file2.rs"],
+    );
 
     let output = ralph()
         .arg("--project")

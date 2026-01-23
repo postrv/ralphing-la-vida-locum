@@ -649,7 +649,6 @@ pub struct PredictionStatistics {
     pub false_negatives: usize,
 }
 
-
 /// Preventive actions that can be taken to avoid stagnation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PreventiveAction {
@@ -1816,19 +1815,35 @@ mod tests {
 
         // Low: 2/3 correct = 66.67%
         let low_acc = breakdown.get(&RiskLevel::Low).unwrap().unwrap();
-        assert!((low_acc - 0.6667).abs() < 0.01, "Low accuracy was {}", low_acc);
+        assert!(
+            (low_acc - 0.6667).abs() < 0.01,
+            "Low accuracy was {}",
+            low_acc
+        );
 
         // Medium: 1/2 correct = 50%
         let medium_acc = breakdown.get(&RiskLevel::Medium).unwrap().unwrap();
-        assert!((medium_acc - 0.5).abs() < 0.01, "Medium accuracy was {}", medium_acc);
+        assert!(
+            (medium_acc - 0.5).abs() < 0.01,
+            "Medium accuracy was {}",
+            medium_acc
+        );
 
         // High: 2/2 correct = 100%
         let high_acc = breakdown.get(&RiskLevel::High).unwrap().unwrap();
-        assert!((high_acc - 1.0).abs() < 0.01, "High accuracy was {}", high_acc);
+        assert!(
+            (high_acc - 1.0).abs() < 0.01,
+            "High accuracy was {}",
+            high_acc
+        );
 
         // Critical: 1/2 correct = 50%
         let critical_acc = breakdown.get(&RiskLevel::Critical).unwrap().unwrap();
-        assert!((critical_acc - 0.5).abs() < 0.01, "Critical accuracy was {}", critical_acc);
+        assert!(
+            (critical_acc - 0.5).abs() < 0.01,
+            "Critical accuracy was {}",
+            critical_acc
+        );
     }
 
     #[test]
@@ -1843,10 +1858,38 @@ mod tests {
         let stats = predictor.prediction_statistics();
 
         assert_eq!(stats.total_predictions, 4);
-        assert_eq!(stats.predictions_by_level.get(&RiskLevel::Low).copied().unwrap_or(0), 1);
-        assert_eq!(stats.predictions_by_level.get(&RiskLevel::Medium).copied().unwrap_or(0), 1);
-        assert_eq!(stats.predictions_by_level.get(&RiskLevel::High).copied().unwrap_or(0), 1);
-        assert_eq!(stats.predictions_by_level.get(&RiskLevel::Critical).copied().unwrap_or(0), 1);
+        assert_eq!(
+            stats
+                .predictions_by_level
+                .get(&RiskLevel::Low)
+                .copied()
+                .unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            stats
+                .predictions_by_level
+                .get(&RiskLevel::Medium)
+                .copied()
+                .unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            stats
+                .predictions_by_level
+                .get(&RiskLevel::High)
+                .copied()
+                .unwrap_or(0),
+            1
+        );
+        assert_eq!(
+            stats
+                .predictions_by_level
+                .get(&RiskLevel::Critical)
+                .copied()
+                .unwrap_or(0),
+            1
+        );
         assert!(stats.overall_accuracy.is_some());
     }
 
@@ -2064,8 +2107,7 @@ mod tests {
         let json = serde_json::to_string(&preset).expect("Should serialize");
         assert!(json.contains("conservative"));
 
-        let deserialized: WeightPreset =
-            serde_json::from_str(&json).expect("Should deserialize");
+        let deserialized: WeightPreset = serde_json::from_str(&json).expect("Should deserialize");
         assert_eq!(deserialized, preset);
     }
 
