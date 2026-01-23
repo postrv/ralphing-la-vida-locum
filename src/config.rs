@@ -758,6 +758,318 @@ pub fn verify_git_environment() -> GitEnvironmentCheck {
     check
 }
 
+// ============================================================================
+// Configuration Inheritance (Phase 17.1)
+// ============================================================================
+
+/// Configuration level in the inheritance hierarchy.
+///
+/// Lower levels are overridden by higher levels:
+/// System < User < Project
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ConfigLevel {
+    /// System-wide configuration (lowest priority)
+    System,
+    /// User-specific configuration
+    User,
+    /// Project-specific configuration (highest priority)
+    Project,
+}
+
+impl std::fmt::Display for ConfigLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::System => write!(f, "system"),
+            Self::User => write!(f, "user"),
+            Self::Project => write!(f, "project"),
+        }
+    }
+}
+
+/// A source in the configuration inheritance chain.
+#[derive(Debug, Clone)]
+pub struct ConfigSource {
+    /// The level of this config source
+    pub level: ConfigLevel,
+    /// Path to the config file
+    pub path: PathBuf,
+    /// Whether the config was successfully loaded
+    pub loaded: bool,
+}
+
+/// The full inheritance chain showing which configs were loaded.
+#[derive(Debug, Clone, Default)]
+pub struct InheritanceChain {
+    /// All config sources in order (system, user, project)
+    pub sources: Vec<ConfigSource>,
+}
+
+impl InheritanceChain {
+    /// Create a new empty inheritance chain.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add a source to the chain.
+    pub fn add_source(&mut self, level: ConfigLevel, path: PathBuf, loaded: bool) {
+        self.sources.push(ConfigSource {
+            level,
+            path,
+            loaded,
+        });
+    }
+
+    /// Get a formatted description of the inheritance chain for logging.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        let mut lines = vec!["Configuration inheritance chain:".to_string()];
+        for source in &self.sources {
+            let status = if source.loaded { "✓" } else { "✗" };
+            lines.push(format!(
+                "  {} [{}] {}",
+                status,
+                source.level,
+                source.path.display()
+            ));
+        }
+        lines.join("\n")
+    }
+}
+
+/// Strategy for merging arrays during config inheritance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ArrayMergeStrategy {
+    /// Replace arrays entirely (child replaces parent)
+    #[default]
+    Replace,
+    /// Merge arrays (combine parent and child, deduplicating)
+    Merge,
+}
+
+/// Default config file locations for different platforms.
+#[derive(Debug, Clone)]
+pub struct ConfigLocations {
+    system: Option<PathBuf>,
+    user: Option<PathBuf>,
+}
+
+impl Default for ConfigLocations {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConfigLocations {
+    /// Create default config locations for the current platform.
+    #[must_use]
+    pub fn new() -> Self {
+        let system = Self::default_system_path();
+        let user = Self::default_user_path();
+        Self { system, user }
+    }
+
+    /// Get the default system config path.
+    #[must_use]
+    pub fn default_system_path() -> Option<PathBuf> {
+        #[cfg(target_os = "windows")]
+        {
+            std::env::var("PROGRAMDATA")
+                .ok()
+                .map(|p| PathBuf::from(p).join("ralph").join("config.json"))
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Some(PathBuf::from("/etc/ralph/config.json"))
+        }
+    }
+
+    /// Get the default user config path.
+    #[must_use]
+    pub fn default_user_path() -> Option<PathBuf> {
+        dirs::config_dir().map(|p| p.join("ralph").join("config.json"))
+    }
+
+    /// Get the system config path.
+    #[must_use]
+    pub fn system_path(&self) -> Option<&PathBuf> {
+        self.system.as_ref()
+    }
+
+    /// Get the user config path.
+    #[must_use]
+    pub fn user_path(&self) -> Option<&PathBuf> {
+        self.user.as_ref()
+    }
+}
+
+/// Configuration loader with inheritance support.
+///
+/// Loads configuration from system, user, and project levels,
+/// merging them according to the inheritance hierarchy.
+#[derive(Debug, Clone)]
+pub struct ConfigLoader {
+    system_config_path: Option<PathBuf>,
+    user_config_path: Option<PathBuf>,
+    array_merge_strategy: ArrayMergeStrategy,
+    verbose: bool,
+}
+
+impl Default for ConfigLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ConfigLoader {
+    /// Create a new config loader with default paths.
+    #[must_use]
+    pub fn new() -> Self {
+        let locations = ConfigLocations::new();
+        Self {
+            system_config_path: locations.system,
+            user_config_path: locations.user,
+            array_merge_strategy: ArrayMergeStrategy::default(),
+            verbose: false,
+        }
+    }
+
+    /// Set a custom system config path.
+    #[must_use]
+    pub fn with_system_config_path(mut self, path: PathBuf) -> Self {
+        self.system_config_path = Some(path);
+        self
+    }
+
+    /// Set a custom user config path.
+    #[must_use]
+    pub fn with_user_config_path(mut self, path: PathBuf) -> Self {
+        self.user_config_path = Some(path);
+        self
+    }
+
+    /// Set the array merge strategy.
+    #[must_use]
+    pub fn with_array_merge_strategy(mut self, strategy: ArrayMergeStrategy) -> Self {
+        self.array_merge_strategy = strategy;
+        self
+    }
+
+    /// Enable or disable verbose logging.
+    #[must_use]
+    pub fn with_verbose(mut self, verbose: bool) -> Self {
+        self.verbose = verbose;
+        self
+    }
+
+    /// Load configuration with inheritance from the given project directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing a config file fails. Missing config files
+    /// are silently ignored.
+    pub fn load(&self, project_dir: &Path) -> anyhow::Result<ProjectConfig> {
+        let (config, chain) = self.load_with_chain(project_dir)?;
+        if self.verbose {
+            eprintln!("{}", chain.describe());
+        }
+        Ok(config)
+    }
+
+    /// Load configuration and return the inheritance chain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parsing a config file fails.
+    pub fn load_with_chain(
+        &self,
+        project_dir: &Path,
+    ) -> anyhow::Result<(ProjectConfig, InheritanceChain)> {
+        let mut chain = InheritanceChain::new();
+        let mut merged = serde_json::Value::Object(serde_json::Map::new());
+
+        // Load system config
+        if let Some(ref system_path) = self.system_config_path {
+            let loaded = self.load_and_merge(&mut merged, system_path)?;
+            chain.add_source(ConfigLevel::System, system_path.clone(), loaded);
+        }
+
+        // Load user config
+        if let Some(ref user_path) = self.user_config_path {
+            let loaded = self.load_and_merge(&mut merged, user_path)?;
+            chain.add_source(ConfigLevel::User, user_path.clone(), loaded);
+        }
+
+        // Load project config
+        let project_path = ProjectConfig::settings_path(project_dir);
+        let loaded = self.load_and_merge(&mut merged, &project_path)?;
+        chain.add_source(ConfigLevel::Project, project_path, loaded);
+
+        // Parse the merged config
+        let config: ProjectConfig = serde_json::from_value(merged)?;
+
+        Ok((config, chain))
+    }
+
+    /// Load a config file and merge it into the accumulated config.
+    ///
+    /// Returns true if the file was loaded, false if it doesn't exist.
+    fn load_and_merge(
+        &self,
+        accumulated: &mut serde_json::Value,
+        path: &Path,
+    ) -> anyhow::Result<bool> {
+        if !path.exists() {
+            return Ok(false);
+        }
+
+        let content = std::fs::read_to_string(path)?;
+        let value: serde_json::Value = serde_json::from_str(&content)?;
+
+        self.deep_merge(accumulated, value);
+        Ok(true)
+    }
+
+    /// Deep merge two JSON values, with child overriding parent.
+    fn deep_merge(&self, parent: &mut serde_json::Value, child: serde_json::Value) {
+        match (parent, child) {
+            (serde_json::Value::Object(parent_map), serde_json::Value::Object(child_map)) => {
+                for (key, child_value) in child_map {
+                    match parent_map.get_mut(&key) {
+                        Some(parent_value) => {
+                            self.deep_merge(parent_value, child_value);
+                        }
+                        None => {
+                            parent_map.insert(key, child_value);
+                        }
+                    }
+                }
+            }
+            (
+                serde_json::Value::Array(parent_arr),
+                serde_json::Value::Array(child_arr),
+            ) => {
+                match self.array_merge_strategy {
+                    ArrayMergeStrategy::Replace => {
+                        *parent_arr = child_arr;
+                    }
+                    ArrayMergeStrategy::Merge => {
+                        // Add child elements that aren't in parent
+                        for child_elem in child_arr {
+                            if !parent_arr.contains(&child_elem) {
+                                parent_arr.push(child_elem);
+                            }
+                        }
+                    }
+                }
+            }
+            (parent, child) => {
+                *parent = child;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1410,5 +1722,349 @@ mod tests {
         let config = ProjectConfig::load(temp.path()).unwrap();
         assert_eq!(config.llm.model, "claude");
         assert_eq!(config.llm.api_key_env, "ANTHROPIC_API_KEY");
+    }
+
+    // =========================================================================
+    // Configuration Inheritance Tests (Phase 17.1)
+    // =========================================================================
+
+    #[test]
+    fn test_config_inheritance_project_inherits_from_user() {
+        let temp = TempDir::new().unwrap();
+
+        // Create user config with some values
+        let user_config_dir = temp.path().join("user_config");
+        std::fs::create_dir_all(&user_config_dir).unwrap();
+        std::fs::write(
+            user_config_dir.join("config.json"),
+            r#"{"respectGitignore": false, "predictorWeights": {"commit_gap": 0.40}}"#,
+        )
+        .unwrap();
+
+        // Create project config with different values (should override)
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"predictorWeights": {"file_churn": 0.35}}"#,
+        )
+        .unwrap();
+
+        // Load with inheritance
+        let loader = ConfigLoader::new()
+            .with_user_config_path(user_config_dir.join("config.json"));
+        let config = loader.load(&project_dir).unwrap();
+
+        // Project value should be used (file_churn from project)
+        assert!(
+            (config.predictor_weights.file_churn - 0.35).abs() < f64::EPSILON,
+            "Project's file_churn should be used"
+        );
+        // User value should be inherited (commit_gap from user)
+        assert!(
+            (config.predictor_weights.commit_gap - 0.40).abs() < f64::EPSILON,
+            "User's commit_gap should be inherited"
+        );
+        // User value should be inherited (respectGitignore from user)
+        assert!(
+            !config.respect_gitignore,
+            "User's respectGitignore should be inherited"
+        );
+    }
+
+    #[test]
+    fn test_config_inheritance_user_inherits_from_system() {
+        let temp = TempDir::new().unwrap();
+
+        // Create system config
+        let system_config_dir = temp.path().join("system_config");
+        std::fs::create_dir_all(&system_config_dir).unwrap();
+        std::fs::write(
+            system_config_dir.join("config.json"),
+            r#"{"respectGitignore": false, "llm": {"model": "claude", "api_key_env": "SYSTEM_KEY"}}"#,
+        )
+        .unwrap();
+
+        // Create user config (should override system)
+        let user_config_dir = temp.path().join("user_config");
+        std::fs::create_dir_all(&user_config_dir).unwrap();
+        std::fs::write(
+            user_config_dir.join("config.json"),
+            r#"{"llm": {"api_key_env": "USER_KEY"}}"#,
+        )
+        .unwrap();
+
+        // Create empty project dir
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        // Load with inheritance
+        let loader = ConfigLoader::new()
+            .with_system_config_path(system_config_dir.join("config.json"))
+            .with_user_config_path(user_config_dir.join("config.json"));
+        let config = loader.load(&project_dir).unwrap();
+
+        // User value should override system
+        assert_eq!(
+            config.llm.api_key_env, "USER_KEY",
+            "User's api_key_env should override system"
+        );
+        // System value should be inherited (respectGitignore)
+        assert!(
+            !config.respect_gitignore,
+            "System's respectGitignore should be inherited"
+        );
+    }
+
+    #[test]
+    fn test_config_inheritance_explicit_override() {
+        let temp = TempDir::new().unwrap();
+
+        // Create system config
+        let system_config_dir = temp.path().join("system_config");
+        std::fs::create_dir_all(&system_config_dir).unwrap();
+        std::fs::write(
+            system_config_dir.join("config.json"),
+            r#"{"respectGitignore": false, "predictorWeights": {"commit_gap": 0.10}}"#,
+        )
+        .unwrap();
+
+        // Create user config (overrides system)
+        let user_config_dir = temp.path().join("user_config");
+        std::fs::create_dir_all(&user_config_dir).unwrap();
+        std::fs::write(
+            user_config_dir.join("config.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.20}}"#,
+        )
+        .unwrap();
+
+        // Create project config (overrides user and system)
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.30}}"#,
+        )
+        .unwrap();
+
+        // Load with inheritance
+        let loader = ConfigLoader::new()
+            .with_system_config_path(system_config_dir.join("config.json"))
+            .with_user_config_path(user_config_dir.join("config.json"));
+        let config = loader.load(&project_dir).unwrap();
+
+        // Project value should override all
+        assert!(
+            (config.predictor_weights.commit_gap - 0.30).abs() < f64::EPSILON,
+            "Project's commit_gap should override user and system"
+        );
+        // System value should be inherited where not overridden
+        assert!(
+            !config.respect_gitignore,
+            "System's respectGitignore should be inherited"
+        );
+    }
+
+    #[test]
+    fn test_config_inheritance_arrays_merged() {
+        let temp = TempDir::new().unwrap();
+
+        // Create user config with some allowed commands
+        let user_config_dir = temp.path().join("user_config");
+        std::fs::create_dir_all(&user_config_dir).unwrap();
+        std::fs::write(
+            user_config_dir.join("config.json"),
+            r#"{"permissions": {"allow": ["Bash(git *)"], "deny": []}}"#,
+        )
+        .unwrap();
+
+        // Create project config with additional allowed commands
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"permissions": {"allow": ["Bash(cargo *)"], "deny": []}}"#,
+        )
+        .unwrap();
+
+        // Load with inheritance and array merging
+        let loader = ConfigLoader::new()
+            .with_user_config_path(user_config_dir.join("config.json"))
+            .with_array_merge_strategy(ArrayMergeStrategy::Merge);
+        let config = loader.load(&project_dir).unwrap();
+
+        // Arrays should be merged
+        assert!(
+            config.permissions.allow.contains(&"Bash(git *)".to_string()),
+            "User's git permission should be in merged array"
+        );
+        assert!(
+            config.permissions.allow.contains(&"Bash(cargo *)".to_string()),
+            "Project's cargo permission should be in merged array"
+        );
+        assert_eq!(
+            config.permissions.allow.len(),
+            2,
+            "Merged array should have 2 elements"
+        );
+    }
+
+    #[test]
+    fn test_config_inheritance_arrays_replaced_when_configured() {
+        let temp = TempDir::new().unwrap();
+
+        // Create user config with some allowed commands
+        let user_config_dir = temp.path().join("user_config");
+        std::fs::create_dir_all(&user_config_dir).unwrap();
+        std::fs::write(
+            user_config_dir.join("config.json"),
+            r#"{"permissions": {"allow": ["Bash(git *)"], "deny": []}}"#,
+        )
+        .unwrap();
+
+        // Create project config with different allowed commands
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"permissions": {"allow": ["Bash(cargo *)"], "deny": []}}"#,
+        )
+        .unwrap();
+
+        // Load with replacement strategy (not merge)
+        let loader = ConfigLoader::new()
+            .with_user_config_path(user_config_dir.join("config.json"))
+            .with_array_merge_strategy(ArrayMergeStrategy::Replace);
+        let config = loader.load(&project_dir).unwrap();
+
+        // Project arrays should replace user arrays
+        assert!(
+            !config.permissions.allow.contains(&"Bash(git *)".to_string()),
+            "User's git permission should NOT be present with Replace strategy"
+        );
+        assert!(
+            config.permissions.allow.contains(&"Bash(cargo *)".to_string()),
+            "Project's cargo permission should be present"
+        );
+        assert_eq!(
+            config.permissions.allow.len(),
+            1,
+            "Replaced array should have only 1 element"
+        );
+    }
+
+    #[test]
+    fn test_config_inheritance_chain_logged() {
+        let temp = TempDir::new().unwrap();
+
+        // Create system config
+        let system_config_dir = temp.path().join("system_config");
+        std::fs::create_dir_all(&system_config_dir).unwrap();
+        std::fs::write(
+            system_config_dir.join("config.json"),
+            r#"{"respectGitignore": false}"#,
+        )
+        .unwrap();
+
+        // Create user config
+        let user_config_dir = temp.path().join("user_config");
+        std::fs::create_dir_all(&user_config_dir).unwrap();
+        std::fs::write(
+            user_config_dir.join("config.json"),
+            r#"{"llm": {"model": "claude"}}"#,
+        )
+        .unwrap();
+
+        // Create project config
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.30}}"#,
+        )
+        .unwrap();
+
+        // Load with verbose mode to get inheritance chain
+        let loader = ConfigLoader::new()
+            .with_system_config_path(system_config_dir.join("config.json"))
+            .with_user_config_path(user_config_dir.join("config.json"))
+            .with_verbose(true);
+        let (_, chain) = loader.load_with_chain(&project_dir).unwrap();
+
+        // Verify inheritance chain
+        assert_eq!(chain.sources.len(), 3, "Should have 3 config sources");
+
+        // Check system level
+        assert_eq!(chain.sources[0].level, ConfigLevel::System);
+        assert!(chain.sources[0].loaded, "System config should be loaded");
+
+        // Check user level
+        assert_eq!(chain.sources[1].level, ConfigLevel::User);
+        assert!(chain.sources[1].loaded, "User config should be loaded");
+
+        // Check project level
+        assert_eq!(chain.sources[2].level, ConfigLevel::Project);
+        assert!(chain.sources[2].loaded, "Project config should be loaded");
+    }
+
+    #[test]
+    fn test_config_inheritance_missing_configs_handled() {
+        let temp = TempDir::new().unwrap();
+
+        // Create only project config (no system or user)
+        let project_dir = temp.path().join("project");
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.30}}"#,
+        )
+        .unwrap();
+
+        // Load with non-existent system and user paths
+        let loader = ConfigLoader::new()
+            .with_system_config_path(temp.path().join("nonexistent/system.json"))
+            .with_user_config_path(temp.path().join("nonexistent/user.json"));
+        let config = loader.load(&project_dir).unwrap();
+
+        // Should still work with just project config
+        assert!(
+            (config.predictor_weights.commit_gap - 0.30).abs() < f64::EPSILON,
+            "Project's commit_gap should be used"
+        );
+        // Other values should be defaults
+        assert!(
+            config.respect_gitignore,
+            "Default respectGitignore should be true"
+        );
+    }
+
+    #[test]
+    fn test_config_loader_default_paths() {
+        // Test that default paths are correctly computed
+        let paths = ConfigLocations::default();
+
+        // System path should exist on the filesystem structure (not necessarily the file)
+        assert!(
+            paths.system_path().is_some(),
+            "System path should be defined"
+        );
+
+        // User path should exist
+        assert!(paths.user_path().is_some(), "User path should be defined");
+    }
+
+    #[test]
+    fn test_config_level_display() {
+        assert_eq!(format!("{}", ConfigLevel::System), "system");
+        assert_eq!(format!("{}", ConfigLevel::User), "user");
+        assert_eq!(format!("{}", ConfigLevel::Project), "project");
+    }
+
+    #[test]
+    fn test_config_level_ordering() {
+        // System < User < Project (for precedence)
+        assert!(ConfigLevel::System < ConfigLevel::User);
+        assert!(ConfigLevel::User < ConfigLevel::Project);
+        assert!(ConfigLevel::System < ConfigLevel::Project);
     }
 }
