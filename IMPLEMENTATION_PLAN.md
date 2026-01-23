@@ -4,7 +4,7 @@
 > 
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 > 
-> **Current Focus: Sprint 14 (Documentation & Examples)**
+> **Current Focus: Sprint 15 (Performance & Reliability)**
 
 ---
 
@@ -64,82 +64,6 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 ## Sprint 14: Documentation & Examples ✅ COMPLETE
 
 > **Completed 2026-01-23**: All 3 phases (14.1-14.3). Added quickstart guides for Python, TypeScript, and Go projects, example polyglot fullstack project with Next.js and FastAPI, and comprehensive gate development guide for custom quality gates.
-
-**Goal**: Create comprehensive documentation for polyglot usage.
-
-### 18. Phase 14.1: Polyglot Quick Start Guide ✅ COMPLETE
-
-Write quick start guide for Python, TypeScript, and Go projects.
-
-**Test Requirements**:
-- [x] Test Python quick start commands work on fresh project
-- [x] Test TypeScript quick start commands work on fresh project
-- [x] Test Go quick start commands work on fresh project
-- [x] Test all code examples compile/run
-- [x] Test documentation renders correctly on GitHub
-
-**Implementation**:
-- [x] Create `docs/quickstart-python.md`
-- [x] Create `docs/quickstart-typescript.md`
-- [x] Create `docs/quickstart-go.md`
-- [x] Add code examples with expected output
-- [x] Link from main README
-
-**Quality Gates**:
-```bash
-# Documentation tests (markdown lint)
-npx markdownlint docs/*.md
-# Example validation (manual review)
-```
-
-### 19. Phase 14.2: Example Polyglot Project ✅ COMPLETE
-
-Create complete example project demonstrating polyglot features.
-
-**Test Requirements**:
-- [x] Test example project has Next.js frontend
-- [x] Test example project has FastAPI backend
-- [x] Test `ralph bootstrap` works on example
-- [x] Test `ralph loop --max-iterations 3` completes successfully
-- [x] Test example includes sample IMPLEMENTATION_PLAN.md
-
-**Implementation**:
-- [x] Create `examples/polyglot-fullstack/`
-- [x] Add Next.js app with TypeScript
-- [x] Add FastAPI app with Python
-- [x] Add shared OpenAPI types
-- [x] Add README with walkthrough
-- [x] Add sample implementation plan
-
-**Quality Gates**:
-```bash
-cd examples/polyglot-fullstack && npm install && npm run lint
-cd examples/polyglot-fullstack/backend && pip install -r requirements.txt && ruff check .
-```
-
-### 20. Phase 14.3: Gate Development Guide ✅ COMPLETE
-
-Document how to create custom quality gates.
-
-**Test Requirements**:
-- [x] Test guide explains QualityGate trait
-- [x] Test guide includes complete code example
-- [x] Test guide explains testing strategies
-- [x] Test guide covers plugin vs built-in development
-- [x] Test example code compiles
-
-**Implementation**:
-- [x] Create `docs/developing-gates.md`
-- [x] Document trait requirements with examples
-- [x] Document testing patterns
-- [x] Document contribution process
-- [x] Add inline code examples
-
-**Quality Gates**:
-```bash
-npx markdownlint docs/developing-gates.md
-# Code example extraction and compilation (manual)
-```
 
 ---
 
