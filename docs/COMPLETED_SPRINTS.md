@@ -174,14 +174,54 @@ Added structured event logging for analytics consumption, session summary report
 - `TrendData::render_ascii_chart()` for terminal visualization
 - `TrendData::to_json()` for external visualization export
 
+### Sprint 17: Enterprise Features Foundation ✅
+
+**Completed 2026-01-23**
+
+Added configuration inheritance for team-wide defaults, shared gate configurations with `extends` support, and tamper-evident audit logging.
+
+**Phases completed:**
+
+#### 17.1: Configuration Inheritance
+- `ConfigLevel` enum for System, User, Project hierarchy
+- `ConfigLoader` builder pattern for loading configs with inheritance
+- `ConfigLocations` platform-aware default paths
+- `InheritanceChain` tracks which config files were loaded
+- `ArrayMergeStrategy` for merge vs replace arrays
+- Deep merge for nested JSON objects
+- 10 comprehensive tests
+
+#### 17.2: Shared Gate Configurations
+- `ExtendableConfig` with optional `extends` field
+- `SharedConfigError` for extends-related failures
+- `SharedConfigResolver` for resolving extends chains
+- Path resolution relative to project root
+- Circular extends detection with clear errors
+- URL extends returns "not yet supported" (future cloud feature)
+- 8 comprehensive tests
+
+#### 17.3: Audit Logging
+- `AuditLogger` with append-only JSONL log
+- `AuditEntry` with SHA-256 hash chaining for tamper evidence
+- `AuditEventType` for commands, gates, commits, sessions, etc.
+- `RotationConfig` for size/count-based log rotation
+- `VerificationResult` for integrity checking
+- 34 comprehensive tests
+
+**Deferred to CLI Sprint:**
+- `ralph config validate` command
+- `ralph audit show` command
+- `ralph audit verify` command
+- Shared config documentation and examples
+
 ---
 
 ## Summary Statistics
 
 | Metric | Value |
 |--------|-------|
-| Sprints Completed | 10 (7-16) |
-| Phases Completed | 27 |
+| Sprints Completed | 11 (7-17) |
+| Phases Completed | 30 |
 | Completion Date | 2026-01-23 |
 
 ## Key Artifacts Added
@@ -192,6 +232,8 @@ Added structured event logging for analytics consumption, session summary report
 - `src/llm/` - Model abstraction layer
 - `src/plugin/` - Plugin architecture
 - `src/analytics.rs` - Structured event logging, session reports, trend visualization
+- `src/config.rs` - Configuration inheritance, shared configs with extends
+- `src/audit.rs` - Tamper-evident audit logging with hash chaining
 - `benches/` - Criterion benchmark suite
 - `.github/workflows/benchmarks.yml` - CI benchmark workflow
 - `docs/` - Quickstart guides and examples

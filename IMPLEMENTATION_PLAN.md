@@ -4,7 +4,7 @@
 >
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 >
-> **Current Focus: Sprint 17 (Enterprise Features Foundation)**
+> **Current Focus: Sprint 18 (Cloud Foundation Stubs) or Sprint 19 (CLI Commands)**
 
 ---
 
@@ -15,88 +15,10 @@
 | Phase 1: Polyglot Gate Integration | 7-9 | ✅ Complete |
 | Phase 2: Reliability Hardening | 10-12 | ✅ Complete |
 | Phase 3: Ecosystem & Extensibility | 13-15 | ✅ Complete |
-| Phase 4: Commercial Foundation | 16 | ✅ Complete |
-| **Phase 4: Commercial Foundation (cont.)** | **17-18** | **In Progress** |
+| Phase 4: Commercial Foundation | 16-17 | ✅ Complete |
+| **Phase 5: Cloud & CLI** | **18-19** | **In Progress** |
 
 > See `docs/COMPLETED_SPRINTS.md` for detailed archive of completed work.
-
----
-
-## Sprint 17: Enterprise Features Foundation
-
-**Goal**: Add features required for team/enterprise usage.
-
-### 27. Phase 17.1: Configuration Inheritance ✅
-
-Support configuration inheritance for team-wide defaults.
-
-**Test Requirements**:
-- [x] Test project config inherits from user config
-- [x] Test user config inherits from system config
-- [x] Test explicit values override inherited values
-- [x] Test arrays are merged, not replaced
-- [x] Test inheritance chain is logged in verbose mode
-
-**Implementation**:
-- [x] Define config file locations: system, user, project
-- [x] Implement config loading with inheritance
-- [x] Add merge logic for nested objects
-- [x] Add array merge strategy configuration
-- [x] Document configuration precedence
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings  # ✅ 0 warnings
-cargo test --lib -- config_inheritance      # ✅ 10 tests pass
-```
-
-### 28. Phase 17.2: Shared Gate Configurations ✅
-
-Allow gate configurations to be shared across team.
-
-**Test Requirements**:
-- [x] Test gate config can reference external file
-- [x] Test external config is resolved relative to project root
-- [x] Test external config can be URL (future: cloud)
-- [x] Test missing external config produces clear error
-- [x] Test config validation includes external configs
-
-**Implementation**:
-- [x] Add `extends: <path>` support in gate config
-- [x] Implement config resolution
-- [ ] Add `ralph config validate` command (deferred to CLI sprint)
-- [ ] Document shared config patterns (deferred to docs sprint)
-- [ ] Add examples in `examples/shared-config/` (deferred to docs sprint)
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings  # ✅ 0 warnings
-cargo test --lib -- shared_config           # ✅ 8 tests pass
-```
-
-### 29. Phase 17.3: Audit Logging ✅
-
-Add audit log for compliance and debugging.
-
-**Test Requirements**:
-- [x] Test audit log records all command executions
-- [x] Test audit log records all gate results
-- [x] Test audit log records all commits
-- [x] Test audit log is tamper-evident (hashed entries)
-- [x] Test audit log rotation works
-
-**Implementation**:
-- [x] Create `AuditLogger` with append-only log
-- [x] Add entry hashing for integrity verification
-- [x] Implement log rotation by size/date
-- [ ] Add `ralph audit show` command (deferred to CLI sprint)
-- [ ] Add `ralph audit verify` command (deferred to CLI sprint)
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings  # ✅ 0 warnings
-cargo test --lib -- audit                   # ✅ 34 tests pass
-```
 
 ---
 
@@ -174,6 +96,84 @@ Create stub for provable quality improvement verification.
 ```bash
 cargo clippy --all-targets -- -D warnings
 cargo test --lib -- ccg_verifier_stub
+```
+
+---
+
+## Sprint 19: CLI Commands (Deferred from Sprint 17)
+
+**Goal**: Add CLI commands for config validation and audit management.
+
+### 33. Phase 19.1: Config Validate Command
+
+Add `ralph config validate` command.
+
+**Test Requirements**:
+- [ ] Test validates project config syntax
+- [ ] Test validates inheritance chain resolution
+- [ ] Test validates extends references exist
+- [ ] Test reports missing required fields
+- [ ] Test exits with appropriate error codes
+
+**Implementation**:
+- [ ] Add `ConfigValidator` struct
+- [ ] Implement validation for all config sections
+- [ ] Add `ralph config validate` subcommand to CLI
+- [ ] Add `--verbose` flag for detailed output
+- [ ] Document in CLI help
+
+**Quality Gates**:
+```bash
+cargo clippy --all-targets -- -D warnings
+cargo test --lib -- config_validate
+```
+
+### 34. Phase 19.2: Audit Show Command
+
+Add `ralph audit show` command.
+
+**Test Requirements**:
+- [ ] Test displays recent audit entries
+- [ ] Test supports `--limit N` flag
+- [ ] Test supports `--since <datetime>` filter
+- [ ] Test supports `--type <event_type>` filter
+- [ ] Test outputs JSON with `--json` flag
+
+**Implementation**:
+- [ ] Add `AuditReader` for querying log
+- [ ] Implement filter/limit logic
+- [ ] Add `ralph audit show` subcommand to CLI
+- [ ] Add formatted table output
+- [ ] Document in CLI help
+
+**Quality Gates**:
+```bash
+cargo clippy --all-targets -- -D warnings
+cargo test --lib -- audit_show
+```
+
+### 35. Phase 19.3: Audit Verify Command
+
+Add `ralph audit verify` command.
+
+**Test Requirements**:
+- [ ] Test verifies hash chain integrity
+- [ ] Test reports first corrupted entry
+- [ ] Test succeeds on valid log
+- [ ] Test fails on tampered log
+- [ ] Test outputs verification report
+
+**Implementation**:
+- [ ] Add verification to `AuditLogger::verify()`
+- [ ] Add `ralph audit verify` subcommand to CLI
+- [ ] Add `--repair` flag to truncate at corruption
+- [ ] Add JSON report output
+- [ ] Document in CLI help
+
+**Quality Gates**:
+```bash
+cargo clippy --all-targets -- -D warnings
+cargo test --lib -- audit_verify
 ```
 
 ---
