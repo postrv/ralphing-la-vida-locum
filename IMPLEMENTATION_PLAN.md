@@ -26,23 +26,23 @@
 
 **Goal**: Create stubs for future cloud features without implementing backend.
 
-### 30. Phase 18.1: Remote Analytics Upload Stub
+### 30. Phase 18.1: Remote Analytics Upload Stub ✅
 
 Create opt-in analytics upload stub.
 
 **Test Requirements**:
-- [ ] Test upload is disabled by default
-- [ ] Test upload can be enabled via config
-- [ ] Test upload stub logs what would be sent
-- [ ] Test upload respects data privacy settings
-- [ ] Test upload failure doesn't affect Ralph operation
+- [x] Test upload is disabled by default
+- [x] Test upload can be enabled via config
+- [x] Test upload stub logs what would be sent
+- [x] Test upload respects data privacy settings
+- [x] Test upload failure doesn't affect Ralph operation
 
 **Implementation**:
-- [ ] Add `analytics.upload_enabled: bool` to config
-- [ ] Create `AnalyticsUploader` trait
-- [ ] Implement stub that logs to file instead of uploading
-- [ ] Add data anonymization options
-- [ ] Document data that would be uploaded
+- [x] Add `analytics.upload_enabled: bool` to config
+- [x] Create `AnalyticsUploader` trait
+- [x] Implement stub that logs to file instead of uploading
+- [x] Add data anonymization options
+- [x] Document data that would be uploaded
 
 **Quality Gates**:
 ```bash

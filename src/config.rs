@@ -1,5 +1,6 @@
 //! Configuration management for Ralph automation suite.
 
+use crate::analytics::AnalyticsUploadConfig;
 use crate::llm::LlmConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -329,6 +330,13 @@ pub struct ProjectConfig {
     /// Controls which LLM model to use and its options.
     #[serde(default)]
     pub llm: LlmConfig,
+
+    /// Configuration for analytics upload (Phase 18.1).
+    ///
+    /// Controls whether analytics are uploaded to a remote endpoint
+    /// and what privacy settings to apply. Disabled by default.
+    #[serde(default)]
+    pub analytics: AnalyticsUploadConfig,
 }
 
 fn default_true() -> bool {
@@ -345,6 +353,7 @@ impl Default for ProjectConfig {
             context_priority: crate::prompt::context_priority::ContextPriorityConfig::default(),
             predictor_weights: PredictorWeightsConfig::default(),
             llm: LlmConfig::default(),
+            analytics: AnalyticsUploadConfig::default(),
         }
     }
 }

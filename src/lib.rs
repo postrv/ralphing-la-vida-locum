@@ -91,9 +91,10 @@ pub use narsil::{
 
 // Re-export analytics types
 pub use analytics::{
-    AggregateStats, Analytics, AnalyticsEvent, EventFilter, EventType, GateIssueEventData,
-    GateResultEventData, GateStats, PredictorAccuracyStats, PredictorDecisionEventData,
-    QualityMetricsSnapshot, QualityTrend, ReportFormat, SessionReport, SessionSummary,
+    AggregateStats, Analytics, AnalyticsEvent, AnalyticsUploadConfig, AnalyticsUploader,
+    EventFilter, EventType, GateIssueEventData, GateResultEventData, GateStats,
+    PredictorAccuracyStats, PredictorDecisionEventData, PrivacySettings, QualityMetricsSnapshot,
+    QualityTrend, ReportFormat, SessionReport, SessionSummary, StubAnalyticsUploader,
     StructuredEvent, TrendData, TrendDirection, TrendMetric, TrendPoint, SCHEMA_VERSION,
 };
 
