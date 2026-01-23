@@ -164,6 +164,45 @@ enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+
+    /// Manage checkpoints
+    Checkpoint {
+        #[command(subcommand)]
+        action: CheckpointAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum CheckpointAction {
+    /// Compare two checkpoints and show the diff
+    Diff {
+        /// ID of the baseline checkpoint (from)
+        from: String,
+
+        /// ID of the checkpoint to compare (to)
+        to: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// List all checkpoints
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show detailed information about a checkpoint
+    Show {
+        /// Checkpoint ID
+        id: String,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1011,6 +1050,121 @@ async fn main() -> anyhow::Result<()> {
                         "   Analysis: {}",
                         ProjectConfig::analysis_dir(&project_path).display()
                     );
+                }
+            }
+        }
+
+        Commands::Checkpoint { action } => {
+            let checkpoint_dir = project_path.join(".ralph/checkpoints");
+
+            match action {
+                CheckpointAction::Diff { from, to, json } => {
+                    let mut manager = ralph::checkpoint::CheckpointManager::new(&checkpoint_dir)?;
+                    let diff = manager.diff(&from, &to)?;
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&diff)?);
+                    } else {
+                        println!("{}", diff.detailed_report());
+                    }
+                }
+
+                CheckpointAction::List { json } => {
+                    let mut manager = ralph::checkpoint::CheckpointManager::new(&checkpoint_dir)?;
+                    let checkpoints = manager.list_checkpoints()?;
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&checkpoints)?);
+                    } else {
+                        println!(
+                            "\n{} Checkpoints ({} total)",
+                            "Checkpoints:".cyan().bold(),
+                            checkpoints.len()
+                        );
+                        println!("{}", "─".repeat(60));
+
+                        if checkpoints.is_empty() {
+                            println!("   No checkpoints found");
+                        } else {
+                            for cp in checkpoints {
+                                let verified = if cp.verified { " ✓" } else { "" };
+                                println!(
+                                    "   {} [{}] {}{}",
+                                    cp.id,
+                                    cp.created_at.format("%Y-%m-%d %H:%M"),
+                                    cp.description,
+                                    verified.green()
+                                );
+                                println!(
+                                    "      Tests: {} ({} passed, {} failed)",
+                                    cp.metrics.test_total,
+                                    cp.metrics.test_passed,
+                                    cp.metrics.test_failed
+                                );
+                                println!(
+                                    "      Warnings: {}, Security: {}",
+                                    cp.metrics.clippy_warnings, cp.metrics.security_issues
+                                );
+                            }
+                        }
+                    }
+                }
+
+                CheckpointAction::Show { id, json } => {
+                    let mut manager = ralph::checkpoint::CheckpointManager::new(&checkpoint_dir)?;
+                    let checkpoint_id = ralph::checkpoint::CheckpointId::from_string(&id);
+                    let checkpoint = manager
+                        .get_checkpoint(&checkpoint_id)?
+                        .ok_or_else(|| anyhow::anyhow!("Checkpoint not found: {}", id))?;
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&checkpoint)?);
+                    } else {
+                        println!("\n{} Checkpoint Details", "Checkpoint:".cyan().bold());
+                        println!("{}", "─".repeat(60));
+                        println!("   ID: {}", checkpoint.id);
+                        println!(
+                            "   Created: {}",
+                            checkpoint.created_at.format("%Y-%m-%d %H:%M:%S UTC")
+                        );
+                        println!("   Description: {}", checkpoint.description);
+                        println!("   Git hash: {}", checkpoint.git_hash);
+                        println!("   Git branch: {}", checkpoint.git_branch);
+                        println!("   Iteration: {}", checkpoint.iteration);
+                        println!(
+                            "   Verified: {}",
+                            if checkpoint.verified { "Yes" } else { "No" }
+                        );
+                        println!();
+                        println!("   Quality Metrics:");
+                        println!("     Tests total:     {}", checkpoint.metrics.test_total);
+                        println!("     Tests passed:    {}", checkpoint.metrics.test_passed);
+                        println!("     Tests failed:    {}", checkpoint.metrics.test_failed);
+                        println!(
+                            "     Clippy warnings: {}",
+                            checkpoint.metrics.clippy_warnings
+                        );
+                        println!(
+                            "     Security issues: {}",
+                            checkpoint.metrics.security_issues
+                        );
+
+                        if !checkpoint.files_modified.is_empty() {
+                            println!();
+                            println!(
+                                "   Modified files ({}):",
+                                checkpoint.files_modified.len()
+                            );
+                            for f in &checkpoint.files_modified {
+                                println!("     - {}", f);
+                            }
+                        }
+
+                        if !checkpoint.tags.is_empty() {
+                            println!();
+                            println!("   Tags: {}", checkpoint.tags.join(", "));
+                        }
+                    }
                 }
             }
         }

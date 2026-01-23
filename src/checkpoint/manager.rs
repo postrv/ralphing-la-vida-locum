@@ -397,6 +397,47 @@ impl CheckpointManager {
         Ok(self.checkpoints.len())
     }
 
+    /// Compute the diff between two checkpoints by their IDs.
+    ///
+    /// # Arguments
+    ///
+    /// * `from_id` - ID of the baseline checkpoint
+    /// * `to_id` - ID of the checkpoint to compare against the baseline
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either checkpoint cannot be found or the cache cannot be loaded.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::checkpoint::CheckpointManager;
+    ///
+    /// let mut manager = CheckpointManager::new(".ralph/checkpoints")?;
+    /// let diff = manager.diff("cp-1234", "cp-5678")?;
+    /// println!("Diff: {}", diff.summary());
+    /// ```
+    pub fn diff(&mut self, from_id: &str, to_id: &str) -> Result<super::CheckpointDiff> {
+        self.ensure_cache_loaded()?;
+
+        let from_checkpoint_id = super::CheckpointId::from_string(from_id);
+        let to_checkpoint_id = super::CheckpointId::from_string(to_id);
+
+        let from = self
+            .checkpoints
+            .iter()
+            .find(|cp| cp.id == from_checkpoint_id)
+            .ok_or_else(|| anyhow::anyhow!("Checkpoint not found: {}", from_id))?;
+
+        let to = self
+            .checkpoints
+            .iter()
+            .find(|cp| cp.id == to_checkpoint_id)
+            .ok_or_else(|| anyhow::anyhow!("Checkpoint not found: {}", to_id))?;
+
+        Ok(super::CheckpointDiff::compute(from, to))
+    }
+
     // ------------------------------------------------------------------------
     // Internal helpers
     // ------------------------------------------------------------------------
@@ -797,5 +838,106 @@ mod tests {
         assert_eq!(config.max_checkpoints, 50);
         assert!(!config.auto_prune);
         assert_eq!(config.min_interval_iterations, 10);
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 11.3: Checkpoint Diff Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_checkpoint_manager_diff_by_id() {
+        let (_dir, mut manager) = temp_manager();
+        manager.config.min_interval_iterations = 0;
+
+        let metrics1 = QualityMetrics::new()
+            .with_test_counts(50, 45, 5)
+            .with_clippy_warnings(10);
+        let cp1 = manager
+            .create_checkpoint("First", "abc", "main", metrics1, 1)
+            .expect("create");
+
+        let metrics2 = QualityMetrics::new()
+            .with_test_counts(55, 54, 1)
+            .with_clippy_warnings(3);
+        let cp2 = manager
+            .create_checkpoint("Second", "def", "main", metrics2, 2)
+            .expect("create");
+
+        let diff = manager
+            .diff(cp1.id.as_str(), cp2.id.as_str())
+            .expect("diff should succeed");
+
+        assert_eq!(diff.test_total_delta, 5);
+        assert_eq!(diff.test_passed_delta, 9);
+        assert_eq!(diff.test_failed_delta, -4);
+        assert_eq!(diff.clippy_warnings_delta, -7);
+    }
+
+    #[test]
+    fn test_checkpoint_manager_diff_not_found() {
+        let (_dir, mut manager) = temp_manager();
+        manager.config.min_interval_iterations = 0;
+
+        let metrics = QualityMetrics::new();
+        let cp = manager
+            .create_checkpoint("Only one", "abc", "main", metrics, 1)
+            .expect("create");
+
+        // Diff with non-existent ID should error
+        let result = manager.diff(cp.id.as_str(), "nonexistent-id");
+        assert!(result.is_err());
+
+        let result2 = manager.diff("nonexistent-id", cp.id.as_str());
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn test_checkpoint_manager_diff_same_checkpoint() {
+        let (_dir, mut manager) = temp_manager();
+        manager.config.min_interval_iterations = 0;
+
+        let metrics = QualityMetrics::new()
+            .with_test_counts(50, 50, 0)
+            .with_clippy_warnings(5);
+        let cp = manager
+            .create_checkpoint("Test", "abc", "main", metrics, 1)
+            .expect("create");
+
+        // Diff of same checkpoint should have zero deltas
+        let diff = manager
+            .diff(cp.id.as_str(), cp.id.as_str())
+            .expect("diff should succeed");
+
+        assert!(diff.is_unchanged());
+        assert_eq!(diff.test_total_delta, 0);
+        assert_eq!(diff.clippy_warnings_delta, 0);
+    }
+
+    #[test]
+    fn test_checkpoint_manager_diff_reverse_order() {
+        let (_dir, mut manager) = temp_manager();
+        manager.config.min_interval_iterations = 0;
+
+        let metrics1 = QualityMetrics::new().with_clippy_warnings(0);
+        let cp1 = manager
+            .create_checkpoint("First", "abc", "main", metrics1, 1)
+            .expect("create");
+
+        let metrics2 = QualityMetrics::new().with_clippy_warnings(10);
+        let cp2 = manager
+            .create_checkpoint("Second", "def", "main", metrics2, 2)
+            .expect("create");
+
+        // Forward: 0 -> 10 = +10
+        let diff_forward = manager
+            .diff(cp1.id.as_str(), cp2.id.as_str())
+            .expect("diff");
+        assert_eq!(diff_forward.clippy_warnings_delta, 10);
+
+        // Reverse: 10 -> 0 = -10
+        let diff_reverse = manager
+            .diff(cp2.id.as_str(), cp1.id.as_str())
+            .expect("diff");
+        assert_eq!(diff_reverse.clippy_warnings_delta, -10);
     }
 }

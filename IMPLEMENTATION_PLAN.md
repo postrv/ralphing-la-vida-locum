@@ -45,73 +45,26 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 ## Sprint 11: Enhanced Checkpoint System
 
+> **In Progress**: Phases 11.1-11.2 complete. Added `metrics_by_language` to `Checkpoint`, `LanguageRegression` struct, `LintRegressionSeverity` enum with tiered thresholds, and `WarningTrend` tracking.
+
 **Goal**: Extend checkpoint system with per-language quality metrics and smarter regression detection.
 
-### 12. Phase 11.1: Language-Aware Quality Metrics ✅ COMPLETE
-
-Track quality metrics separately for each detected language.
-
-**Test Requirements**:
-- [x] Test checkpoint stores per-language test counts
-- [x] Test checkpoint stores per-language lint warning counts
-- [x] Test checkpoint stores per-language coverage (if available)
-- [x] Test regression detection works per-language
-- [x] Test rollback considers language-specific thresholds
-
-**Implementation**:
-- [x] Add `metrics_by_language: HashMap<Language, QualityMetrics>` to `Checkpoint`
-- [x] Collect metrics from each language's gates during checkpoint creation
-- [x] Update `has_regression()` to check per-language metrics
-- [x] Add language to regression report output
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- language_aware_metrics
-cargo test --lib -- per_language_regression
-```
-
-### 13. Phase 11.2: Lint Warning Regression Detection ✅ COMPLETE
-
-Add regression detection for lint warning counts, not just test failures.
-
-**Test Requirements**:
-- [x] Test lint warning increase triggers regression warning
-- [x] Test lint warning threshold is configurable
-- [x] Test small increases (1-2 warnings) produce warning, not rollback
-- [x] Test large increases trigger automatic rollback
-- [x] Test warning trend tracking across checkpoints
-
-**Implementation**:
-- [x] Add `LintRegressionSeverity` enum (None/Warning/Rollback)
-- [x] Add `LintRegressionThresholds` struct with warning/rollback thresholds
-- [x] Add `LintRegressionResult` struct with detailed regression info
-- [x] Add `check_lint_regression()` method to `QualityMetrics`
-- [x] Add `WarningTrend` struct with `WarningTrendDirection` for trend analysis
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- lint_regression
-cargo test --lib -- warning_trend
-```
-
-### 14. Phase 11.3: Checkpoint Diff Visualization
+### 12. Phase 11.3: Checkpoint Diff Visualization ✅ COMPLETE
 
 Add ability to visualize quality changes between checkpoints.
 
 **Test Requirements**:
-- [ ] Test diff shows test count changes
-- [ ] Test diff shows lint warning changes
-- [ ] Test diff shows files modified between checkpoints
-- [ ] Test diff output is machine-readable (JSON option)
-- [ ] Test diff can compare arbitrary checkpoint IDs
+- [x] Test diff shows test count changes
+- [x] Test diff shows lint warning changes
+- [x] Test diff shows files modified between checkpoints
+- [x] Test diff output is machine-readable (JSON option)
+- [x] Test diff can compare arbitrary checkpoint IDs
 
 **Implementation**:
-- [ ] Create `CheckpointDiff` struct with delta fields
-- [ ] Implement `CheckpointManager::diff(id1: &str, id2: &str) -> CheckpointDiff`
-- [ ] Add `ralph checkpoint diff <id1> <id2>` command
-- [ ] Add `--json` flag for machine-readable output
+- [x] Create `CheckpointDiff` struct with delta fields
+- [x] Implement `CheckpointManager::diff(id1: &str, id2: &str) -> CheckpointDiff`
+- [x] Add `ralph checkpoint diff <id1> <id2>` command
+- [x] Add `--json` flag for machine-readable output
 
 **Quality Gates**:
 ```bash
@@ -126,7 +79,7 @@ cargo test --test cli_checkpoint_diff
 
 **Goal**: Abstract Claude client to support multiple LLM backends.
 
-### 15. Phase 12.1: LLM Client Trait
+### 13. Phase 12.1: LLM Client Trait
 
 Define trait for LLM client abstraction.
 
@@ -150,7 +103,7 @@ cargo test --lib -- llm_client_trait
 cargo test --lib -- claude_client
 ```
 
-### 16. Phase 12.2: Model Configuration
+### 14. Phase 12.2: Model Configuration
 
 Add configuration for selecting and configuring LLM backend.
 
@@ -174,7 +127,7 @@ cargo test --lib -- llm_config
 cargo test --lib -- model_selection
 ```
 
-### 17. Phase 12.3: OpenAI/Gemini Client Stubs
+### 15. Phase 12.3: OpenAI/Gemini Client Stubs
 
 Create stub implementations for alternative models (implementation deferred).
 
@@ -205,7 +158,7 @@ cargo test --lib -- gemini_stub
 
 **Goal**: Enable community-contributed quality gates via plugin system.
 
-### 18. Phase 13.1: Gate Plugin Trait
+### 16. Phase 13.1: Gate Plugin Trait
 
 Define plugin interface for external quality gates.
 
@@ -228,7 +181,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- gate_plugin_trait
 ```
 
-### 19. Phase 13.2: Plugin Discovery and Loading
+### 17. Phase 13.2: Plugin Discovery and Loading
 
 Implement plugin discovery from standard locations.
 
@@ -253,7 +206,7 @@ cargo test --lib -- plugin_discovery
 cargo test --lib -- plugin_loading
 ```
 
-### 20. Phase 13.3: Example Plugin: RuboCop Gate
+### 18. Phase 13.3: Example Plugin: RuboCop Gate
 
 Create example Ruby plugin to demonstrate plugin system.
 
@@ -284,7 +237,7 @@ cargo test --lib -- rubocop_plugin
 
 **Goal**: Create comprehensive documentation for polyglot usage.
 
-### 21. Phase 14.1: Polyglot Quick Start Guide
+### 19. Phase 14.1: Polyglot Quick Start Guide
 
 Write quick start guide for Python, TypeScript, and Go projects.
 
@@ -309,7 +262,7 @@ npx markdownlint docs/*.md
 # Example validation (manual review)
 ```
 
-### 22. Phase 14.2: Example Polyglot Project
+### 20. Phase 14.2: Example Polyglot Project
 
 Create complete example project demonstrating polyglot features.
 
@@ -334,7 +287,7 @@ cd examples/polyglot-fullstack && npm install && npm run lint
 cd examples/polyglot-fullstack/backend && pip install -r requirements.txt && ruff check .
 ```
 
-### 23. Phase 14.3: Gate Development Guide
+### 21. Phase 14.3: Gate Development Guide
 
 Document how to create custom quality gates.
 
@@ -364,7 +317,7 @@ npx markdownlint docs/developing-gates.md
 
 **Goal**: Ensure Ralph performs well on large polyglot projects.
 
-### 24. Phase 15.1: Gate Execution Parallelization
+### 22. Phase 15.1: Gate Execution Parallelization
 
 Run independent gates in parallel for faster feedback.
 
@@ -389,7 +342,7 @@ cargo test --lib -- parallel_gates
 cargo test --lib -- gate_timeout
 ```
 
-### 25. Phase 15.2: Incremental Gate Execution
+### 23. Phase 15.2: Incremental Gate Execution
 
 Only run gates for changed languages/files when possible.
 
@@ -414,7 +367,7 @@ cargo test --lib -- incremental_gates
 cargo test --lib -- changed_file_detection
 ```
 
-### 26. Phase 15.3: Benchmark Suite
+### 24. Phase 15.3: Benchmark Suite
 
 Create benchmark suite for performance regression detection.
 
@@ -444,7 +397,7 @@ cargo bench --no-run  # Verify benchmarks compile
 
 **Goal**: Add opt-in analytics for understanding Ralph usage patterns.
 
-### 27. Phase 16.1: Structured Event Logging
+### 25. Phase 16.1: Structured Event Logging
 
 Standardize event logging for analytics consumption.
 
@@ -469,7 +422,7 @@ cargo test --lib -- analytics_event
 cargo test --lib -- event_schema
 ```
 
-### 28. Phase 16.2: Session Summary Report
+### 26. Phase 16.2: Session Summary Report
 
 Generate detailed summary report at end of each session.
 
@@ -494,7 +447,7 @@ cargo test --lib -- session_report
 cargo test --lib -- report_export
 ```
 
-### 29. Phase 16.3: Quality Trend Visualization
+### 27. Phase 16.3: Quality Trend Visualization
 
 Add command to visualize quality trends over time.
 
@@ -525,7 +478,7 @@ cargo test --test cli_analytics_trends
 
 **Goal**: Add features required for team/enterprise usage.
 
-### 30. Phase 17.1: Configuration Inheritance
+### 28. Phase 17.1: Configuration Inheritance
 
 Support configuration inheritance for team-wide defaults.
 
@@ -550,7 +503,7 @@ cargo test --lib -- config_inheritance
 cargo test --lib -- config_merge
 ```
 
-### 31. Phase 17.2: Shared Gate Configurations
+### 29. Phase 17.2: Shared Gate Configurations
 
 Allow gate configurations to be shared across team.
 
@@ -575,7 +528,7 @@ cargo test --lib -- shared_config
 cargo test --lib -- config_validation
 ```
 
-### 32. Phase 17.3: Audit Logging
+### 30. Phase 17.3: Audit Logging
 
 Add audit log for compliance and debugging.
 
@@ -606,7 +559,7 @@ cargo test --lib -- audit_integrity
 
 **Goal**: Create stubs for future cloud features without implementing backend.
 
-### 33. Phase 18.1: Remote Analytics Upload Stub
+### 31. Phase 18.1: Remote Analytics Upload Stub
 
 Create opt-in analytics upload stub.
 
@@ -630,7 +583,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- analytics_upload_stub
 ```
 
-### 34. Phase 18.2: Remote Campaign API Stub
+### 32. Phase 18.2: Remote Campaign API Stub
 
 Create stub for cloud-based campaign orchestration.
 
@@ -654,7 +607,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- campaign_api_stub
 ```
 
-### 35. Phase 18.3: CCG-Diff Verification Stub
+### 33. Phase 18.3: CCG-Diff Verification Stub
 
 Create stub for provable quality improvement verification.
 
@@ -688,19 +641,13 @@ When all sprints are complete and all checkboxes are checked, proceed to the nex
 
 ## Notes for Claude
 
-1. **Reindex at phase boundaries**: Run `reindex` (narsil-mcp) at the START and END of each phase to ensure code intelligence is current.
-
-2. **Always run quality gates before committing**: `cargo clippy --all-targets -- -D warnings && cargo test`
-
-3. **Follow TDD strictly**: Write failing test first, then minimal implementation, then refactor.
-
-4. **One task at a time**: Complete current task before starting next. Mark checkboxes as you go.
-
-5. **If stuck**: Re-read the task requirements. Check existing implementations for patterns. Ask for clarification via IMPLEMENTATION_PLAN.md update.
-
-6. **Commit messages**: Use conventional commits format: `feat(quality): add polyglot gate result aggregation`
-
-7. **Documentation**: Update relevant docs when adding public APIs.
+- **Reindex at phase boundaries**: Run `reindex` (narsil-mcp) at the START and END of each phase to ensure code intelligence is current.
+- **Always run quality gates before committing**: `cargo clippy --all-targets -- -D warnings && cargo test`
+- **Follow TDD strictly**: Write failing test first, then minimal implementation, then refactor.
+- **One task at a time**: Complete current task before starting next. Mark checkboxes as you go.
+- **If stuck**: Re-read the task requirements. Check existing implementations for patterns. Ask for clarification via IMPLEMENTATION_PLAN.md update.
+- **Commit messages**: Use conventional commits format: `feat(quality): add polyglot gate result aggregation`
+- **Documentation**: Update relevant docs when adding public APIs.
 
 ### Phase Workflow
 
