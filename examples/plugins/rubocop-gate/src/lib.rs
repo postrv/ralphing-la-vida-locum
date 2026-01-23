@@ -415,30 +415,39 @@ impl GatePlugin for RubocopGatePlugin {
 /// Entry point for dynamic loading.
 ///
 /// This function is called by Ralph's plugin loader to create an instance
-/// of the plugin. The function signature must be:
+/// of the plugin. Returns a raw pointer to the plugin instance.
+///
+/// # Usage by Plugin Host
 ///
 /// ```rust,ignore
-/// #[no_mangle]
-/// pub extern "C" fn create_gate_plugin() -> *mut dyn GatePlugin
-/// ```
+/// // Load the shared library
+/// let lib = libloading::Library::new("librubocop_gate.dylib")?;
 ///
-/// The plugin loader will call this function and take ownership of the
-/// returned pointer using `Box::from_raw`.
+/// // Get the entry point function
+/// type CreateFn = unsafe extern "C" fn() -> *mut RubocopGatePlugin;
+/// let create: libloading::Symbol<CreateFn> = lib.get(b"create_gate_plugin")?;
+///
+/// // Call and take ownership
+/// let plugin = unsafe { Box::from_raw(create()) };
+///
+/// // Use as trait object
+/// let gate: &dyn QualityGate = plugin.as_ref();
+/// let issues = gate.run(project_dir)?;
+/// ```
 ///
 /// # Safety
 ///
-/// This uses a raw pointer to a trait object across FFI. While Rust warns about
-/// this (`improper_ctypes_definitions`), it is safe when:
-/// 1. Both plugin and host are compiled with the same Rust toolchain
-/// 2. The host correctly calls `Box::from_raw` to take ownership
+/// The caller must:
+/// 1. Use `Box::from_raw` to take ownership of the returned pointer
+/// 2. Ensure the plugin and host use the same Rust toolchain version
+/// 3. Not call this function more than once per plugin instance needed
 ///
-/// This is the standard pattern for Rust plugin systems and is explicitly
-/// documented in Ralph's plugin API.
+/// This function returns a pointer to the concrete type rather than a
+/// trait object to avoid FFI warnings. The caller can convert to
+/// `Box<dyn GatePlugin>` if needed.
 #[no_mangle]
-#[allow(improper_ctypes_definitions)] // Safe for Rust-to-Rust plugin systems
-pub extern "C" fn create_gate_plugin() -> *mut dyn GatePlugin {
-    let plugin = RubocopGatePlugin::new();
-    Box::into_raw(Box::new(plugin))
+pub extern "C" fn create_gate_plugin() -> *mut RubocopGatePlugin {
+    Box::into_raw(Box::new(RubocopGatePlugin::new()))
 }
 
 // ============================================================================
@@ -467,9 +476,15 @@ mod tests {
         let ptr = create_gate_plugin();
         assert!(!ptr.is_null());
 
-        // Clean up - convert back to Box so it's properly dropped
+        // Clean up - convert to Box so it's properly dropped
+        // This demonstrates the pattern that plugin hosts must use
         unsafe {
-            let _ = Box::from_raw(ptr);
+            let plugin = Box::from_raw(ptr);
+            // Verify the plugin works
+            assert_eq!(plugin.name(), "RuboCop");
+            // Can also use as trait object
+            let gate: &dyn GatePlugin = plugin.as_ref();
+            assert_eq!(gate.metadata().name, "rubocop-gate");
         }
     }
 

@@ -132,11 +132,13 @@ Your plugin must implement two traits:
 
 ```rust
 #[no_mangle]
-pub extern "C" fn create_gate_plugin() -> *mut dyn GatePlugin {
-    let plugin = MyGatePlugin::new();
-    Box::into_raw(Box::new(plugin))
+pub extern "C" fn create_gate_plugin() -> *mut MyGatePlugin {
+    Box::into_raw(Box::new(MyGatePlugin::new()))
 }
 ```
+
+Note: We return a pointer to the concrete type rather than `*mut dyn GatePlugin`
+to avoid FFI warnings. The plugin host can convert to a trait object as needed.
 
 ### Step 4: Create the Manifest
 
@@ -202,7 +204,7 @@ impl GatePlugin for MyGate {
 }
 
 #[no_mangle]
-pub extern "C" fn create_gate_plugin() -> *mut dyn GatePlugin {
+pub extern "C" fn create_gate_plugin() -> *mut MyGate {
     Box::into_raw(Box::new(MyGate))
 }
 ```
