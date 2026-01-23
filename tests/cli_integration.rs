@@ -1,16 +1,13 @@
 //! Integration tests for the Ralph CLI
-//!
-//! Note: We allow deprecated warnings for assert_cmd::Command::cargo_bin
-//! as the replacement requires macro usage that doesn't fit our pattern.
-#![allow(deprecated)]
 
+use assert_cmd::cargo;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
 /// Get a Command for the ralph binary
 fn ralph() -> Command {
-    Command::cargo_bin("ralph").unwrap()
+    Command::new(cargo::cargo_bin!("ralph"))
 }
 
 #[test]
