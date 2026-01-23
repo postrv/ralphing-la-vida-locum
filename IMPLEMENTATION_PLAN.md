@@ -4,7 +4,7 @@
 > 
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 > 
-> **Current Focus: Sprint 13 (Plugin Architecture Foundation)**
+> **Current Focus: Sprint 14 (Documentation & Examples)**
 
 ---
 
@@ -53,161 +53,11 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 > **Completed 2026-01-23**: All 3 phases (12.1-12.3). Added `LlmClient` trait, `LlmConfig` configuration, model factory, and `OpenAiClient`/`GeminiClient`/`OllamaClient` stubs with `ModelStatus` enum.
 
-**Goal**: Abstract Claude client to support multiple LLM backends.
-
-### 12. Phase 12.1: LLM Client Trait ✅ COMPLETE
-
-Define trait for LLM client abstraction.
-
-**Test Requirements**:
-- [x] Test trait defines `run_prompt(&self, prompt: &str) -> Result<String>`
-- [x] Test trait defines `model_name(&self) -> &str`
-- [x] Test trait is object-safe for dynamic dispatch
-- [x] Test mock implementation works for testing
-- [x] Test Claude implementation works (existing behavior)
-
-**Implementation**:
-- [x] Create `trait LlmClient: Send + Sync` in new `src/llm/mod.rs`
-- [x] Define core methods: `run_prompt`, `model_name`, `supports_tools`
-- [x] Create `ClaudeClient` implementing trait (wrap existing code)
-- [x] Create `MockLlmClient` for testing
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- llm_client_trait
-cargo test --lib -- claude_client
-```
-
-### 13. Phase 12.2: Model Configuration ✅ COMPLETE
-
-Add configuration for selecting and configuring LLM backend.
-
-**Test Requirements**:
-- [x] Test model can be specified in settings.json
-- [x] Test model can be overridden via CLI flag
-- [x] Test invalid model name produces helpful error
-- [x] Test model-specific options are validated
-- [x] Test default model is Claude
-
-**Implementation**:
-- [x] Add `llm` section to `ProjectConfig`
-- [x] Define `LlmConfig` with `model: String`, `api_key_env: String`, `options: Map`
-- [x] Add `--model <name>` CLI flag
-- [x] Implement model factory based on config
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- llm_config
-cargo test --lib -- model_selection
-```
-
-### 14. Phase 12.3: OpenAI/Gemini Client Stubs ✅ COMPLETE
-
-Create stub implementations for alternative models (implementation deferred).
-
-**Test Requirements**:
-- [x] Test OpenAI client stub exists and returns "not implemented" error
-- [x] Test Gemini client stub exists and returns "not implemented" error
-- [x] Test Ollama client stub exists for local models
-- [x] Test client stubs are documented with implementation roadmap
-- [x] Test model list includes all stub models with "coming soon" status
-
-**Implementation**:
-- [x] Create `OpenAiClient` stub with unimplemented methods
-- [x] Create `GeminiClient` stub with unimplemented methods
-- [x] Create `OllamaClient` stub for local models
-- [x] Add `ModelStatus` enum and `get_supported_models()` for model status
-- [x] Document implementation requirements in each stub
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- openai_stub
-cargo test --lib -- gemini_stub
-```
-
 ---
 
 ## Sprint 13: Plugin Architecture Foundation ✅ COMPLETE
 
 > **Completed 2026-01-23**: All 3 phases (13.1-13.3). Added `GatePlugin` trait with metadata and timeout configuration, `PluginLoader` for discovery from `~/.ralph/plugins/` and project `.ralph/plugins/`, and example `rubocop-gate` plugin demonstrating plugin development.
-
-**Goal**: Enable community-contributed quality gates via plugin system.
-
-### 15. Phase 13.1: Gate Plugin Trait ✅ COMPLETE
-
-Define plugin interface for external quality gates.
-
-**Test Requirements**:
-- [x] Test plugin trait extends QualityGate trait
-- [x] Test plugin defines metadata: name, version, author
-- [x] Test plugin can be loaded from shared library
-- [x] Test plugin errors are isolated (don't crash Ralph)
-- [x] Test plugin timeout prevents hanging
-
-**Implementation**:
-- [x] Create `trait GatePlugin: QualityGate` with metadata methods
-- [x] Define plugin manifest format (TOML)
-- [x] Implement safe plugin loading with error isolation
-- [x] Add plugin timeout configuration
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- gate_plugin_trait
-```
-
-### 16. Phase 13.2: Plugin Discovery and Loading ✅ COMPLETE
-
-Implement plugin discovery from standard locations.
-
-**Test Requirements**:
-- [x] Test plugins discovered from `~/.ralph/plugins/`
-- [x] Test plugins discovered from project `.ralph/plugins/`
-- [x] Test plugin manifest is validated before loading
-- [x] Test duplicate plugin names produce warning
-- [x] Test plugin load failures are logged but don't stop Ralph
-
-**Implementation**:
-- [x] Create `PluginLoader` struct
-- [x] Implement directory scanning for plugin manifests
-- [x] Implement manifest validation
-- [x] Load plugins via `libloading` crate (manifest discovery, library loading deferred)
-- [x] Add `ralph plugins list` command
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- plugin_discovery
-cargo test --lib -- plugin_loading
-```
-
-### 17. Phase 13.3: Example Plugin: RuboCop Gate ✅ COMPLETE
-
-Create example Ruby plugin to demonstrate plugin system.
-
-**Test Requirements**:
-- [x] Test RuboCop plugin compiles as shared library
-- [x] Test plugin runs `rubocop` command
-- [x] Test plugin parses RuboCop JSON output
-- [x] Test plugin produces GateIssue list
-- [x] Test plugin provides remediation guidance
-
-**Implementation**:
-- [x] Create `examples/plugins/rubocop-gate/` directory
-- [x] Implement `RubocopGatePlugin` struct
-- [x] Create plugin manifest `plugin.toml`
-- [x] Add build instructions to README
-- [x] Document as plugin development template
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cd examples/plugins/rubocop-gate && cargo build
-cargo test --lib -- rubocop_plugin
-```
 
 ---
 
@@ -215,23 +65,23 @@ cargo test --lib -- rubocop_plugin
 
 **Goal**: Create comprehensive documentation for polyglot usage.
 
-### 18. Phase 14.1: Polyglot Quick Start Guide
+### 18. Phase 14.1: Polyglot Quick Start Guide ✅ COMPLETE
 
 Write quick start guide for Python, TypeScript, and Go projects.
 
 **Test Requirements**:
-- [ ] Test Python quick start commands work on fresh project
-- [ ] Test TypeScript quick start commands work on fresh project
-- [ ] Test Go quick start commands work on fresh project
-- [ ] Test all code examples compile/run
-- [ ] Test documentation renders correctly on GitHub
+- [x] Test Python quick start commands work on fresh project
+- [x] Test TypeScript quick start commands work on fresh project
+- [x] Test Go quick start commands work on fresh project
+- [x] Test all code examples compile/run
+- [x] Test documentation renders correctly on GitHub
 
 **Implementation**:
-- [ ] Create `docs/quickstart-python.md`
-- [ ] Create `docs/quickstart-typescript.md`
-- [ ] Create `docs/quickstart-go.md`
-- [ ] Add code examples with expected output
-- [ ] Link from main README
+- [x] Create `docs/quickstart-python.md`
+- [x] Create `docs/quickstart-typescript.md`
+- [x] Create `docs/quickstart-go.md`
+- [x] Add code examples with expected output
+- [x] Link from main README
 
 **Quality Gates**:
 ```bash

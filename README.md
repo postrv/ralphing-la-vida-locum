@@ -119,6 +119,14 @@ ralph --project . loop --phase build --max-iterations 50
 ralph --verbose --project . loop --phase build --max-iterations 10
 ```
 
+### Language-Specific Guides
+
+For detailed setup instructions for your language:
+
+- **[Python Quick Start](docs/quickstart-python.md)** - pytest, ruff, mypy, bandit
+- **[TypeScript Quick Start](docs/quickstart-typescript.md)** - Vitest/Jest, ESLint, tsc
+- **[Go Quick Start](docs/quickstart-go.md)** - go test, golangci-lint, govulncheck
+
 ## Commands
 
 ### `bootstrap`
