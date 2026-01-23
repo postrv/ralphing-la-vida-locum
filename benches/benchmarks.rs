@@ -51,8 +51,8 @@ fn bench_gate_execution(c: &mut Criterion) {
             BenchmarkId::new("no_allow_gate", size),
             &project_path,
             |b, path| {
-                use ralph::quality::NoAllowGate;
                 use ralph::quality::gates::Gate;
+                use ralph::quality::NoAllowGate;
 
                 b.iter(|| {
                     let gate = NoAllowGate::new(black_box(path));
@@ -121,23 +121,20 @@ fn bench_parallel_gate_execution(c: &mut Criterion) {
 
         let gates_clone = gates.clone();
         let path_clone = project_path.clone();
-        group.bench_function(
-            BenchmarkId::new("parallel", gate_count),
-            |b| {
-                b.iter(|| {
-                    rt.block_on(async {
-                        black_box(
-                            run_gates_parallel(
-                                black_box(&gates_clone),
-                                black_box(&path_clone),
-                                black_box(&config_parallel),
-                            )
-                            .await,
+        group.bench_function(BenchmarkId::new("parallel", gate_count), |b| {
+            b.iter(|| {
+                rt.block_on(async {
+                    black_box(
+                        run_gates_parallel(
+                            black_box(&gates_clone),
+                            black_box(&path_clone),
+                            black_box(&config_parallel),
                         )
-                    })
-                });
-            },
-        );
+                        .await,
+                    )
+                })
+            });
+        });
 
         // Benchmark sequential execution
         let config_sequential = EnforcerConfig::new()
@@ -149,23 +146,20 @@ fn bench_parallel_gate_execution(c: &mut Criterion) {
 
         let gates_clone = gates.clone();
         let path_clone = project_path.clone();
-        group.bench_function(
-            BenchmarkId::new("sequential", gate_count),
-            |b| {
-                b.iter(|| {
-                    rt.block_on(async {
-                        black_box(
-                            run_gates_parallel(
-                                black_box(&gates_clone),
-                                black_box(&path_clone),
-                                black_box(&config_sequential),
-                            )
-                            .await,
+        group.bench_function(BenchmarkId::new("sequential", gate_count), |b| {
+            b.iter(|| {
+                rt.block_on(async {
+                    black_box(
+                        run_gates_parallel(
+                            black_box(&gates_clone),
+                            black_box(&path_clone),
+                            black_box(&config_sequential),
                         )
-                    })
-                });
-            },
-        );
+                        .await,
+                    )
+                })
+            });
+        });
     }
 
     group.finish();
@@ -298,11 +292,7 @@ fn bench_context_building(c: &mut Criterion) {
 
         // Add iteration history for anti-pattern detection
         for i in 0..10 {
-            assembler.record_iteration_with_files(
-                i,
-                vec![format!("src/file{}.rs", i)],
-                i % 3 == 0,
-            );
+            assembler.record_iteration_with_files(i, vec![format!("src/file{}.rs", i)], i % 3 == 0);
         }
 
         b.iter(|| black_box(assembler.build_context()));
@@ -479,6 +469,10 @@ criterion_group!(
     bench_polyglot_detection
 );
 
-criterion_group!(context_benches, bench_context_building, bench_prompt_building);
+criterion_group!(
+    context_benches,
+    bench_context_building,
+    bench_prompt_building
+);
 
 criterion_main!(gate_benches, language_benches, context_benches);

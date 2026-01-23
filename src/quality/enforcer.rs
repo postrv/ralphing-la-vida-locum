@@ -86,7 +86,7 @@ impl Default for EnforcerConfig {
             run_security: true,
             check_todos: false, // Disabled by default (non-blocking)
             fail_fast: false,
-            parallel_gates: true, // Parallel execution enabled by default
+            parallel_gates: true,    // Parallel execution enabled by default
             gate_timeout_ms: 60_000, // 60 seconds per gate
             incremental_gates: true, // Incremental execution enabled by default
         }
@@ -520,9 +520,9 @@ async fn run_gates_concurrent(
             let gate = Arc::clone(gate);
             let project_dir = project_dir.clone();
 
-            tokio::spawn(async move {
-                run_single_gate_with_timeout(gate, &project_dir, timeout).await
-            })
+            tokio::spawn(
+                async move { run_single_gate_with_timeout(gate, &project_dir, timeout).await },
+            )
         })
         .collect();
 
@@ -533,9 +533,7 @@ async fn run_gates_concurrent(
     join_results
         .into_iter()
         .map(|join_result| {
-            join_result.unwrap_or_else(|e| {
-                Err(anyhow::anyhow!("Gate task panicked: {}", e))
-            })
+            join_result.unwrap_or_else(|e| Err(anyhow::anyhow!("Gate task panicked: {}", e)))
         })
         .collect()
 }
@@ -571,9 +569,7 @@ async fn run_single_gate_with_timeout(
     let start = Instant::now();
 
     // Run the gate in a blocking thread since gates may do I/O
-    let gate_future = tokio::task::spawn_blocking(move || {
-        gate.run(&project_dir)
-    });
+    let gate_future = tokio::task::spawn_blocking(move || gate.run(&project_dir));
 
     // Apply timeout
     let result = tokio::time::timeout(timeout, gate_future).await;
@@ -1092,7 +1088,10 @@ fn unused_function() {}
     fn test_enforcer_config_parallel_gates_builder() {
         // Should be able to disable parallel gates via builder
         let config = EnforcerConfig::new().with_parallel_gates(false);
-        assert!(!config.parallel_gates, "should be able to disable parallel_gates");
+        assert!(
+            !config.parallel_gates,
+            "should be able to disable parallel_gates"
+        );
     }
 
     #[test]
@@ -1262,10 +1261,7 @@ fn unused_function() {}
         assert_eq!(results.len(), 3, "Should collect all gate results");
 
         // Convert to GateResults and verify
-        let gate_results: Vec<GateResult> = results
-            .into_iter()
-            .filter_map(|r| r.ok())
-            .collect();
+        let gate_results: Vec<GateResult> = results.into_iter().filter_map(|r| r.ok()).collect();
         assert_eq!(gate_results.len(), 3, "All gates should complete");
 
         // Verify we have the right mix of pass/fail
@@ -1387,10 +1383,7 @@ fn unused_function() {}
 
         SLOW_GATE_COMPLETED.store(false, Ordering::SeqCst);
 
-        let gates: Vec<Arc<dyn QualityGate>> = vec![
-            Arc::new(FailingGate),
-            Arc::new(SlowGate),
-        ];
+        let gates: Vec<Arc<dyn QualityGate>> = vec![Arc::new(FailingGate), Arc::new(SlowGate)];
 
         let temp_dir = TempDir::new().unwrap();
         let config = EnforcerConfig::new()
@@ -1543,7 +1536,10 @@ fn unused_function() {}
     #[test]
     fn test_is_manifest_file_typescript() {
         use super::is_manifest_file;
-        assert!(is_manifest_file("package.json"), "package.json is a manifest");
+        assert!(
+            is_manifest_file("package.json"),
+            "package.json is a manifest"
+        );
         assert!(
             is_manifest_file("tsconfig.json"),
             "tsconfig.json is a manifest"
@@ -1562,10 +1558,7 @@ fn unused_function() {}
         use super::is_manifest_file;
         assert!(!is_manifest_file("main.rs"), "main.rs is not a manifest");
         assert!(!is_manifest_file("app.py"), "app.py is not a manifest");
-        assert!(
-            !is_manifest_file("index.ts"),
-            "index.ts is not a manifest"
-        );
+        assert!(!is_manifest_file("index.ts"), "index.ts is not a manifest");
         assert!(!is_manifest_file("main.go"), "main.go is not a manifest");
         assert!(
             !is_manifest_file("README.md"),
