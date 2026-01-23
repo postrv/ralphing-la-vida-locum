@@ -41,24 +41,26 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 **Goal**: Wire `StagnationPredictor` preventive actions into the loop for proactive intervention.
 
-### 12. Phase 10.1: PreventiveAction Handler
+### 12. Phase 10.1: PreventiveAction Handler ✅ COMPLETE
 
 Implement handler that converts predictor actions into loop behavior.
 
+> **Completed 2026-01-23**: Added `PreventiveActionHandler` with `HandlerContext` trait for DI, `LoopManagerContext` adapter, 18 unit tests, and full integration into main loop.
+
 **Test Requirements**:
-- [ ] Test `InjectGuidance` adds text to prompt extras
-- [ ] Test `FocusTask` sets task tracker to specific task
-- [ ] Test `RunTests` triggers quality gate test-only run
-- [ ] Test `SuggestCommit` triggers commit when gates pass
-- [ ] Test `SwitchMode` changes loop mode
-- [ ] Test `RequestReview` pauses loop and returns control to user
-- [ ] Test `None` action has no effect
+- [x] Test `InjectGuidance` adds text to prompt extras
+- [x] Test `FocusTask` sets task tracker to specific task
+- [x] Test `RunTests` triggers quality gate test-only run
+- [x] Test `SuggestCommit` triggers commit when gates pass
+- [x] Test `SwitchMode` changes loop mode
+- [x] Test `RequestReview` pauses loop and returns control to user
+- [x] Test `None` action has no effect
 
 **Implementation**:
-- [ ] Create `PreventiveActionHandler` struct
-- [ ] Implement `handle(&self, action: PreventiveAction, manager: &mut LoopManager) -> Result<()>`
-- [ ] Wire handler into main loop after predictor evaluation
-- [ ] Add action execution logging
+- [x] Create `PreventiveActionHandler` struct
+- [x] Implement `handle(&self, action: PreventiveAction, context: &mut dyn HandlerContext) -> Result<HandlerResult>`
+- [x] Wire handler into main loop after predictor evaluation
+- [x] Add action execution logging
 
 **Quality Gates**:
 ```bash
