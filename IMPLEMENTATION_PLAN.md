@@ -1,151 +1,23 @@
 # Ralph v2.0 Implementation Plan
 
 > **Mission**: Transform Ralph into the definitive polyglot AI coding orchestration tool.
-> 
+>
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
-> 
+>
 > **Current Focus: Sprint 16 (Analytics & Observability)**
 
 ---
 
-## Overview
+## Progress Overview
 
-This plan implements the strategic roadmap to make Ralph genuinely best-in-class for Python, TypeScript, Go, and beyond. The architecture is already excellent—this work is about completing the integration.
+| Phase | Sprints | Status |
+|-------|---------|--------|
+| Phase 1: Polyglot Gate Integration | 7-9 | ✅ Complete |
+| Phase 2: Reliability Hardening | 10-12 | ✅ Complete |
+| Phase 3: Ecosystem & Extensibility | 13-15 | ✅ Complete |
+| **Phase 4: Commercial Foundation** | **16-18** | **In Progress** |
 
-**Phase 1**: Polyglot Gate Integration (Sprints 7-9)
-**Phase 2**: Reliability Hardening (Sprints 10-12)
-**Phase 3**: Ecosystem & Extensibility (Sprints 13-15)
-**Phase 4**: Commercial Foundation (Sprints 16-18)
-
----
-
-## Sprint 7: Polyglot Quality Gate Wiring ✅ COMPLETE
-
-> **Completed 2026-01-22**: All 5 phases (7.1-7.5). Added `LoopDependencies::real_polyglot()`, `RealQualityChecker::with_gates()`, gate availability detection, `PolyglotGateResult`, and `ralph detect` command.
-
----
-
-## Sprint 8: Language-Specific Prompt Intelligence ✅ COMPLETE
-
-> **Completed 2026-01-23**: All 3 phases (8.1-8.3). Added language-aware `PromptAssembler`, code antipattern detection for Python/TypeScript/Go, and `ClaudeMdGenerator` for dynamic CLAUDE.md generation.
-
----
-
-## Sprint 9: Polyglot Orchestration & Validation ✅ COMPLETE
-
-> **Completed 2026-01-23**: All 3 phases (9.1-9.3). Added weighted gate scoring with `GateWeightConfig`, context window language prioritization with `ContextPrioritizer`, and 22 end-to-end polyglot integration tests.
-
----
-
-## Sprint 10: Predictor Action Enforcement ✅ COMPLETE
-
-> **Completed 2026-01-23**: All 3 phases (10.1-10.3). Added `PreventiveActionHandler`, predictor accuracy tracking with `PredictionStatistics`, and dynamic risk weight tuning with `WeightPreset` enum and `--predictor-profile` CLI flag.
-
----
-
-## Sprint 11: Enhanced Checkpoint System ✅ COMPLETE
-
-> **Completed 2026-01-23**: All 3 phases (11.1-11.3). Added `metrics_by_language` to `Checkpoint`, `LanguageRegression` struct, `LintRegressionSeverity` enum with tiered thresholds, `WarningTrend` tracking, `CheckpointDiff` struct, `CheckpointManager::diff()`, and `ralph checkpoint diff` CLI command with JSON output.
-
----
-
-## Sprint 12: Model Abstraction Layer ✅ COMPLETE
-
-> **Completed 2026-01-23**: All 3 phases (12.1-12.3). Added `LlmClient` trait, `LlmConfig` configuration, model factory, and `OpenAiClient`/`GeminiClient`/`OllamaClient` stubs with `ModelStatus` enum.
-
----
-
-## Sprint 13: Plugin Architecture Foundation ✅ COMPLETE
-
-> **Completed 2026-01-23**: All 3 phases (13.1-13.3). Added `GatePlugin` trait with metadata and timeout configuration, `PluginLoader` for discovery from `~/.ralph/plugins/` and project `.ralph/plugins/`, and example `rubocop-gate` plugin demonstrating plugin development.
-
----
-
-## Sprint 14: Documentation & Examples ✅ COMPLETE
-
-> **Completed 2026-01-23**: All 3 phases (14.1-14.3). Added quickstart guides for Python, TypeScript, and Go projects, example polyglot fullstack project with Next.js and FastAPI, and comprehensive gate development guide for custom quality gates.
-
----
-
-## Sprint 15: Performance & Reliability ✅ COMPLETE
-
-**Goal**: Ensure Ralph performs well on large polyglot projects.
-
-> **Completed 2026-01-23**: All 3 phases (15.1-15.3). Added parallel gate execution with `tokio::spawn` and `futures::join_all`, incremental gate execution via `git diff --name-only`, and Criterion benchmark suite with CI integration using `github-action-benchmark`.
-
-### 21. Phase 15.1: Gate Execution Parallelization ✅ COMPLETE
-
-Run independent gates in parallel for faster feedback.
-
-**Test Requirements**:
-- [x] Test independent gates run concurrently
-- [x] Test gate results are collected correctly
-- [x] Test parallel execution respects timeout
-- [x] Test failure in one gate doesn't cancel others
-- [x] Test parallelization is configurable (can be disabled)
-
-**Implementation**:
-- [x] Add `--parallel-gates` flag (default: true)
-- [x] Use `tokio::spawn` for concurrent gate execution
-- [x] Implement result collection with `futures::join_all`
-- [x] Add per-gate timeout with cancellation
-- [x] Add total gate execution timing to analytics
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- parallel_gates
-cargo test --lib -- gate_timeout
-```
-
-### 22. Phase 15.2: Incremental Gate Execution ✅
-
-Only run gates for changed languages/files when possible.
-
-**Test Requirements**:
-- [x] Test only Python gates run when only .py files changed
-- [x] Test only TypeScript gates run when only .ts files changed
-- [x] Test all gates run on first iteration
-- [x] Test config/manifest changes trigger full gate run
-- [x] Test incremental mode is configurable
-
-**Implementation**:
-- [x] Add `--incremental-gates` flag (default: true)
-- [x] Detect changed files via `git diff --name-only`
-- [x] Map file extensions to languages
-- [x] Skip gates for unchanged languages
-- [x] Force full run on manifest file changes
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- incremental_gates
-cargo test --lib -- changed_file_detection
-```
-
-### 23. Phase 15.3: Benchmark Suite ✅
-
-Create benchmark suite for performance regression detection.
-
-**Test Requirements**:
-- [x] Test benchmark measures gate execution time
-- [x] Test benchmark measures language detection time
-- [x] Test benchmark measures context building time
-- [x] Test benchmark produces machine-readable output
-- [x] Test benchmark can compare against baseline
-
-**Implementation**:
-- [x] Add `benches/` directory with Criterion benchmarks
-- [x] Create benchmark for each major subsystem
-- [x] Add baseline recording: `cargo bench -- --save-baseline main`
-- [x] Add comparison: `cargo bench -- --baseline main`
-- [x] Add CI job for performance regression detection
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo bench --no-run  # Verify benchmarks compile
-```
+> See `docs/COMPLETED_SPRINTS.md` for detailed archive of completed work.
 
 ---
 
@@ -389,12 +261,6 @@ cargo test --lib -- ccg_verifier_stub
 
 ---
 
-## Completion Criteria
-
-When all sprints are complete and all checkboxes are checked, proceed to the next phase or request further direction.
-
----
-
 ## Notes for Claude
 
 - **Reindex at phase boundaries**: Run `reindex` (narsil-mcp) at the START and END of each phase to ensure code intelligence is current.
@@ -424,6 +290,7 @@ END OF PHASE:
 ## References
 
 - Strategy Document: `RALPH_STRATEGY.md`
+- Completed Work: `docs/COMPLETED_SPRINTS.md`
 - Architecture: `src/lib.rs` module documentation
 - Quality Gate Trait: `src/quality/gates/mod.rs`
 - Language Detector: `src/bootstrap/language_detector.rs`
