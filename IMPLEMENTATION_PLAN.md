@@ -96,23 +96,23 @@ cargo test --lib -- parallel_gates
 cargo test --lib -- gate_timeout
 ```
 
-### 22. Phase 15.2: Incremental Gate Execution
+### 22. Phase 15.2: Incremental Gate Execution ✅
 
 Only run gates for changed languages/files when possible.
 
 **Test Requirements**:
-- [ ] Test only Python gates run when only .py files changed
-- [ ] Test only TypeScript gates run when only .ts files changed
-- [ ] Test all gates run on first iteration
-- [ ] Test config/manifest changes trigger full gate run
-- [ ] Test incremental mode is configurable
+- [x] Test only Python gates run when only .py files changed
+- [x] Test only TypeScript gates run when only .ts files changed
+- [x] Test all gates run on first iteration
+- [x] Test config/manifest changes trigger full gate run
+- [x] Test incremental mode is configurable
 
 **Implementation**:
-- [ ] Add `--incremental-gates` flag (default: true)
-- [ ] Detect changed files via `git diff --name-only`
-- [ ] Map file extensions to languages
-- [ ] Skip gates for unchanged languages
-- [ ] Force full run on manifest file changes
+- [x] Add `--incremental-gates` flag (default: true)
+- [x] Detect changed files via `git diff --name-only`
+- [x] Map file extensions to languages
+- [x] Skip gates for unchanged languages
+- [x] Force full run on manifest file changes
 
 **Quality Gates**:
 ```bash

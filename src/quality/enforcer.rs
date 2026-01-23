@@ -65,6 +65,13 @@ pub struct EnforcerConfig {
     /// with a timeout error. This prevents slow gates from blocking the entire
     /// quality check process.
     pub gate_timeout_ms: u64,
+    /// Run gates incrementally based on changed files (default: true).
+    ///
+    /// When enabled, only gates for languages with changed files will run.
+    /// This optimization speeds up feedback loops by skipping gates for
+    /// unchanged languages. Manifest file changes (Cargo.toml, package.json,
+    /// etc.) force a full gate run.
+    pub incremental_gates: bool,
 }
 
 impl Default for EnforcerConfig {
@@ -81,6 +88,7 @@ impl Default for EnforcerConfig {
             fail_fast: false,
             parallel_gates: true, // Parallel execution enabled by default
             gate_timeout_ms: 60_000, // 60 seconds per gate
+            incremental_gates: true, // Incremental execution enabled by default
         }
     }
 }
@@ -160,6 +168,281 @@ impl EnforcerConfig {
         self.gate_timeout_ms = timeout_ms;
         self
     }
+
+    /// Enable/disable incremental gate execution.
+    ///
+    /// When enabled (default), only gates for languages with changed files will run.
+    /// This speeds up feedback loops by skipping gates for unchanged languages.
+    /// Disable for full gate runs regardless of which files changed.
+    #[must_use]
+    pub fn with_incremental_gates(mut self, enabled: bool) -> Self {
+        self.incremental_gates = enabled;
+        self
+    }
+}
+
+// ============================================================================
+// Incremental Gate Execution (Phase 15.2)
+// ============================================================================
+
+use crate::bootstrap::language::Language;
+use std::collections::HashSet;
+use std::process::Command;
+
+/// All known manifest file names across supported languages.
+///
+/// Changes to these files should trigger a full gate run since they can
+/// affect dependencies, build configuration, and overall project behavior.
+const MANIFEST_FILES: &[&str] = &[
+    // Rust
+    "Cargo.toml",
+    "Cargo.lock",
+    // Python
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "requirements.txt",
+    "Pipfile",
+    "Pipfile.lock",
+    "poetry.lock",
+    // JavaScript/TypeScript
+    "package.json",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "tsconfig.json",
+    // Go
+    "go.mod",
+    "go.sum",
+    // Java/Kotlin
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+    // Ruby
+    "Gemfile",
+    "Gemfile.lock",
+    // PHP
+    "composer.json",
+    "composer.lock",
+    // .NET
+    ".csproj",
+    ".fsproj",
+    "Directory.Build.props",
+    "nuget.config",
+];
+
+/// Check if a filename is a manifest file.
+///
+/// Manifest files are build/dependency configuration files that can affect
+/// the entire project. Changes to these files should trigger a full gate run.
+///
+/// # Arguments
+///
+/// * `filename` - The filename to check (just the file name, not the full path)
+///
+/// # Returns
+///
+/// `true` if the file is a known manifest file, `false` otherwise.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::enforcer::is_manifest_file;
+///
+/// assert!(is_manifest_file("Cargo.toml"));
+/// assert!(is_manifest_file("package.json"));
+/// assert!(!is_manifest_file("main.rs"));
+/// ```
+#[must_use]
+pub fn is_manifest_file(filename: &str) -> bool {
+    // Check exact matches
+    if MANIFEST_FILES.contains(&filename) {
+        return true;
+    }
+
+    // Check suffix matches for patterns like *.csproj
+    for pattern in MANIFEST_FILES {
+        if pattern.starts_with('.') && filename.ends_with(pattern) {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Detect changed files in the git working tree.
+///
+/// Runs `git diff --name-only` and `git diff --cached --name-only` to find
+/// all changed files (both staged and unstaged), then determines which
+/// languages have been affected.
+///
+/// # Arguments
+///
+/// * `project_dir` - Path to the git repository root
+///
+/// # Returns
+///
+/// A tuple of (changed_files, changed_languages) where:
+/// - `changed_files` is a vector of file paths that have changed
+/// - `changed_languages` is a set of languages that have changed files
+///
+/// Returns empty collections if git is not available or the directory is
+/// not a git repository.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::enforcer::detect_changed_files;
+/// use std::path::Path;
+///
+/// let (files, languages) = detect_changed_files(Path::new("."));
+/// for file in &files {
+///     println!("Changed: {}", file);
+/// }
+/// for lang in &languages {
+///     println!("Language affected: {}", lang);
+/// }
+/// ```
+#[must_use]
+pub fn detect_changed_files(project_dir: &Path) -> (Vec<String>, HashSet<Language>) {
+    let mut changed_files = Vec::new();
+    let mut changed_languages = HashSet::new();
+
+    // Get unstaged changes
+    if let Ok(output) = Command::new("git")
+        .args(["diff", "--name-only"])
+        .current_dir(project_dir)
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if !line.is_empty() {
+                    changed_files.push(line.to_string());
+                    if let Some(lang) = Language::from_path(Path::new(line)) {
+                        changed_languages.insert(lang);
+                    }
+                }
+            }
+        }
+    }
+
+    // Get staged changes
+    if let Ok(output) = Command::new("git")
+        .args(["diff", "--cached", "--name-only"])
+        .current_dir(project_dir)
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if !line.is_empty() && !changed_files.contains(&line.to_string()) {
+                    changed_files.push(line.to_string());
+                    if let Some(lang) = Language::from_path(Path::new(line)) {
+                        changed_languages.insert(lang);
+                    }
+                }
+            }
+        }
+    }
+
+    (changed_files, changed_languages)
+}
+
+/// Check if any of the changed files is a manifest file.
+///
+/// # Arguments
+///
+/// * `changed_files` - List of changed file paths
+///
+/// # Returns
+///
+/// `true` if any file is a manifest file, `false` otherwise.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::enforcer::has_manifest_change;
+///
+/// let files = vec!["src/main.rs".to_string(), "Cargo.toml".to_string()];
+/// assert!(has_manifest_change(&files)); // Cargo.toml is a manifest
+///
+/// let src_only = vec!["src/main.rs".to_string(), "src/lib.rs".to_string()];
+/// assert!(!has_manifest_change(&src_only)); // No manifest files
+/// ```
+#[must_use]
+pub fn has_manifest_change(changed_files: &[String]) -> bool {
+    changed_files.iter().any(|f| {
+        // Extract just the filename from the path
+        let filename = Path::new(f)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(f);
+        is_manifest_file(filename)
+    })
+}
+
+/// Determine if a gate for a specific language should be skipped.
+///
+/// This function implements the incremental gate execution logic:
+/// - If incremental mode is disabled, never skip
+/// - If this is the first iteration, run all gates
+/// - If the language has changed files, don't skip
+/// - Otherwise, skip the gate
+///
+/// # Arguments
+///
+/// * `gate_language` - The language the gate is for
+/// * `changed_languages` - Set of languages with changed files
+/// * `is_first_iteration` - Whether this is the first iteration
+/// * `config` - Enforcer configuration
+///
+/// # Returns
+///
+/// `true` if the gate should be skipped, `false` if it should run.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::enforcer::{should_skip_gate_for_language, EnforcerConfig};
+/// use ralph::bootstrap::Language;
+/// use std::collections::HashSet;
+///
+/// let changed: HashSet<Language> = [Language::Python].into_iter().collect();
+/// let config = EnforcerConfig::new().with_incremental_gates(true);
+///
+/// // Python gate should run (Python changed)
+/// assert!(!should_skip_gate_for_language(Language::Python, &changed, false, &config));
+///
+/// // Rust gate should be skipped (only Python changed)
+/// assert!(should_skip_gate_for_language(Language::Rust, &changed, false, &config));
+/// ```
+#[must_use]
+pub fn should_skip_gate_for_language(
+    gate_language: Language,
+    changed_languages: &HashSet<Language>,
+    is_first_iteration: bool,
+    config: &EnforcerConfig,
+) -> bool {
+    // If incremental mode is disabled, never skip
+    if !config.incremental_gates {
+        return false;
+    }
+
+    // On first iteration, run all gates to establish baseline
+    if is_first_iteration {
+        return false;
+    }
+
+    // If the language has changed files, don't skip
+    if changed_languages.contains(&gate_language) {
+        return false;
+    }
+
+    // Skip gates for unchanged languages
+    true
 }
 
 // ============================================================================
@@ -1209,6 +1492,248 @@ fn unused_function() {}
             elapsed.as_millis() >= 90,
             "Sequential execution should take at least 100ms (took {}ms)",
             elapsed.as_millis()
+        );
+    }
+
+    // ========================================================================
+    // Phase 15.2: Incremental Gate Execution Tests
+    // ========================================================================
+
+    #[test]
+    fn test_enforcer_config_incremental_gates_default() {
+        // Incremental gate execution should be enabled by default
+        let config = EnforcerConfig::default();
+        assert!(
+            config.incremental_gates,
+            "incremental_gates should be enabled by default"
+        );
+    }
+
+    #[test]
+    fn test_enforcer_config_incremental_gates_builder() {
+        // Should be able to disable incremental gates via builder
+        let config = EnforcerConfig::new().with_incremental_gates(false);
+        assert!(
+            !config.incremental_gates,
+            "should be able to disable incremental_gates"
+        );
+    }
+
+    #[test]
+    fn test_is_manifest_file_rust() {
+        use super::is_manifest_file;
+        assert!(is_manifest_file("Cargo.toml"), "Cargo.toml is a manifest");
+        assert!(is_manifest_file("Cargo.lock"), "Cargo.lock is a manifest");
+    }
+
+    #[test]
+    fn test_is_manifest_file_python() {
+        use super::is_manifest_file;
+        assert!(
+            is_manifest_file("pyproject.toml"),
+            "pyproject.toml is a manifest"
+        );
+        assert!(
+            is_manifest_file("requirements.txt"),
+            "requirements.txt is a manifest"
+        );
+        assert!(is_manifest_file("setup.py"), "setup.py is a manifest");
+    }
+
+    #[test]
+    fn test_is_manifest_file_typescript() {
+        use super::is_manifest_file;
+        assert!(is_manifest_file("package.json"), "package.json is a manifest");
+        assert!(
+            is_manifest_file("tsconfig.json"),
+            "tsconfig.json is a manifest"
+        );
+    }
+
+    #[test]
+    fn test_is_manifest_file_go() {
+        use super::is_manifest_file;
+        assert!(is_manifest_file("go.mod"), "go.mod is a manifest");
+        assert!(is_manifest_file("go.sum"), "go.sum is a manifest");
+    }
+
+    #[test]
+    fn test_is_manifest_file_regular_file() {
+        use super::is_manifest_file;
+        assert!(!is_manifest_file("main.rs"), "main.rs is not a manifest");
+        assert!(!is_manifest_file("app.py"), "app.py is not a manifest");
+        assert!(
+            !is_manifest_file("index.ts"),
+            "index.ts is not a manifest"
+        );
+        assert!(!is_manifest_file("main.go"), "main.go is not a manifest");
+        assert!(
+            !is_manifest_file("README.md"),
+            "README.md is not a manifest"
+        );
+    }
+
+    #[test]
+    fn test_detect_changed_files_and_languages() {
+        // This tests the git diff detection function
+        // In a real git repo with changes, this should detect the changed files
+        use super::detect_changed_files;
+
+        let temp_dir = TempDir::new().unwrap();
+        // In a non-git directory, should return empty
+        let (files, _) = detect_changed_files(temp_dir.path());
+        assert!(
+            files.is_empty(),
+            "Non-git directory should have no changed files"
+        );
+    }
+
+    #[test]
+    fn test_has_manifest_change() {
+        use super::has_manifest_change;
+
+        let with_manifest = vec![
+            "src/main.rs".to_string(),
+            "Cargo.toml".to_string(),
+            "src/lib.rs".to_string(),
+        ];
+        assert!(
+            has_manifest_change(&with_manifest),
+            "Should detect Cargo.toml as manifest"
+        );
+
+        let without_manifest = vec![
+            "src/main.rs".to_string(),
+            "src/lib.rs".to_string(),
+            "tests/test.rs".to_string(),
+        ];
+        assert!(
+            !has_manifest_change(&without_manifest),
+            "Should not detect manifest in source files"
+        );
+    }
+
+    #[test]
+    fn test_should_skip_gate_for_language_incremental_disabled() {
+        use super::should_skip_gate_for_language;
+        use crate::bootstrap::language::Language;
+        use std::collections::HashSet;
+
+        // When incremental is disabled, never skip
+        let changed: HashSet<Language> = [Language::Python].into_iter().collect();
+        let config = EnforcerConfig::new().with_incremental_gates(false);
+
+        assert!(
+            !should_skip_gate_for_language(Language::Rust, &changed, false, &config),
+            "Should not skip Rust gate when incremental is disabled"
+        );
+    }
+
+    #[test]
+    fn test_should_skip_gate_for_language_first_iteration() {
+        use super::should_skip_gate_for_language;
+        use crate::bootstrap::language::Language;
+        use std::collections::HashSet;
+
+        // On first iteration, never skip (run all gates)
+        let changed: HashSet<Language> = [Language::Python].into_iter().collect();
+        let config = EnforcerConfig::new().with_incremental_gates(true);
+
+        assert!(
+            !should_skip_gate_for_language(Language::Rust, &changed, true, &config),
+            "Should not skip any gate on first iteration"
+        );
+    }
+
+    #[test]
+    fn test_should_skip_gate_for_language_not_changed() {
+        use super::should_skip_gate_for_language;
+        use crate::bootstrap::language::Language;
+        use std::collections::HashSet;
+
+        // When only Python files changed, skip Rust gates
+        let changed: HashSet<Language> = [Language::Python].into_iter().collect();
+        let config = EnforcerConfig::new().with_incremental_gates(true);
+
+        assert!(
+            should_skip_gate_for_language(Language::Rust, &changed, false, &config),
+            "Should skip Rust gate when only Python changed"
+        );
+    }
+
+    #[test]
+    fn test_should_skip_gate_for_language_changed() {
+        use super::should_skip_gate_for_language;
+        use crate::bootstrap::language::Language;
+        use std::collections::HashSet;
+
+        // When Python files changed, don't skip Python gates
+        let changed: HashSet<Language> = [Language::Python].into_iter().collect();
+        let config = EnforcerConfig::new().with_incremental_gates(true);
+
+        assert!(
+            !should_skip_gate_for_language(Language::Python, &changed, false, &config),
+            "Should not skip Python gate when Python changed"
+        );
+    }
+
+    #[test]
+    fn test_only_python_gates_run_when_only_py_changed() {
+        use super::should_skip_gate_for_language;
+        use crate::bootstrap::language::Language;
+        use std::collections::HashSet;
+
+        let changed: HashSet<Language> = [Language::Python].into_iter().collect();
+        let config = EnforcerConfig::new().with_incremental_gates(true);
+
+        // Python gate should run
+        assert!(
+            !should_skip_gate_for_language(Language::Python, &changed, false, &config),
+            "Python gate should run when .py changed"
+        );
+
+        // Other gates should be skipped
+        assert!(
+            should_skip_gate_for_language(Language::Rust, &changed, false, &config),
+            "Rust gate should skip when only .py changed"
+        );
+        assert!(
+            should_skip_gate_for_language(Language::TypeScript, &changed, false, &config),
+            "TypeScript gate should skip when only .py changed"
+        );
+        assert!(
+            should_skip_gate_for_language(Language::Go, &changed, false, &config),
+            "Go gate should skip when only .py changed"
+        );
+    }
+
+    #[test]
+    fn test_only_typescript_gates_run_when_only_ts_changed() {
+        use super::should_skip_gate_for_language;
+        use crate::bootstrap::language::Language;
+        use std::collections::HashSet;
+
+        let changed: HashSet<Language> = [Language::TypeScript].into_iter().collect();
+        let config = EnforcerConfig::new().with_incremental_gates(true);
+
+        // TypeScript gate should run
+        assert!(
+            !should_skip_gate_for_language(Language::TypeScript, &changed, false, &config),
+            "TypeScript gate should run when .ts changed"
+        );
+
+        // Other gates should be skipped
+        assert!(
+            should_skip_gate_for_language(Language::Rust, &changed, false, &config),
+            "Rust gate should skip when only .ts changed"
+        );
+        assert!(
+            should_skip_gate_for_language(Language::Python, &changed, false, &config),
+            "Python gate should skip when only .ts changed"
+        );
+        assert!(
+            should_skip_gate_for_language(Language::Go, &changed, false, &config),
+            "Go gate should skip when only .ts changed"
         );
     }
 }

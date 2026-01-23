@@ -88,6 +88,12 @@ enum Commands {
         /// Timeout for individual gate execution in milliseconds (default: 60000)
         #[arg(long, default_value = "60000", value_name = "MS")]
         gate_timeout: u64,
+
+        /// Run gates incrementally based on changed files (default: true).
+        /// Only gates for languages with changed files will run.
+        /// Use --no-incremental-gates to disable.
+        #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+        incremental_gates: bool,
     },
 
     /// Build context for LLM analysis
@@ -406,6 +412,7 @@ async fn main() -> anyhow::Result<()> {
             model,
             parallel_gates,
             gate_timeout,
+            incremental_gates,
         } => {
             // Load project configuration
             let mut config = ProjectConfig::load(&project_path).unwrap_or_default();
@@ -446,14 +453,15 @@ async fn main() -> anyhow::Result<()> {
                 .with_verbose(cli.verbose);
 
             // Configure quality gates
-            // Always create config to apply parallel gates settings
+            // Always create config to apply parallel gates and incremental settings
             let quality_config = EnforcerConfig::new()
                 .with_clippy(true)
                 .with_tests(!skip_tests)
                 .with_security(!skip_security)
                 .with_no_allow(true)
                 .with_parallel_gates(parallel_gates)
-                .with_gate_timeout_ms(gate_timeout);
+                .with_gate_timeout_ms(gate_timeout)
+                .with_incremental_gates(incremental_gates);
             loop_config = loop_config.with_quality_config(quality_config);
 
             let mut manager = LoopManager::new(loop_config)?;
