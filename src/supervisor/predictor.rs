@@ -453,6 +453,46 @@ impl RiskBreakdown {
     }
 }
 
+/// Statistics about prediction accuracy for analytics integration.
+///
+/// This struct provides a serializable summary of prediction performance
+/// that can be stored in analytics events for trend analysis.
+///
+/// # Example
+///
+/// ```rust
+/// use ralph::supervisor::predictor::{StagnationPredictor, PredictorConfig};
+///
+/// let mut predictor = StagnationPredictor::with_defaults();
+/// predictor.record_prediction(50.0, true);
+/// predictor.record_prediction(20.0, false);
+///
+/// let stats = predictor.prediction_statistics();
+/// assert_eq!(stats.total_predictions, 2);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PredictionStatistics {
+    /// Total number of predictions recorded.
+    pub total_predictions: usize,
+    /// Number of predictions at each risk level.
+    pub predictions_by_level: HashMap<RiskLevel, usize>,
+    /// Accuracy at each risk level (None if no predictions at that level).
+    pub accuracy_by_level: HashMap<RiskLevel, Option<f64>>,
+    /// Overall prediction accuracy (None if no predictions).
+    pub overall_accuracy: Option<f64>,
+    /// Number of correct predictions.
+    pub correct_predictions: usize,
+    /// Number of predictions where high risk led to stagnation.
+    pub true_positives: usize,
+    /// Number of predictions where low risk led to no stagnation.
+    pub true_negatives: usize,
+    /// Number of predictions where high risk led to no stagnation.
+    pub false_positives: usize,
+    /// Number of predictions where low risk led to stagnation.
+    pub false_negatives: usize,
+}
+
+
 /// Preventive actions that can be taken to avoid stagnation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PreventiveAction {
@@ -850,6 +890,157 @@ impl StagnationPredictor {
             self.prediction_history.len(),
             accuracy
         )
+    }
+
+    // =========================================================================
+    // Phase 10.2: Prediction Accuracy Tracking
+    // =========================================================================
+
+    /// Calculate prediction accuracy broken down by risk level.
+    ///
+    /// For each risk level, calculates the accuracy of predictions where:
+    /// - Low/Medium risk: correct if no stagnation occurred
+    /// - High/Critical risk: correct if stagnation occurred
+    ///
+    /// # Returns
+    ///
+    /// A `HashMap` with accuracy for each risk level. `None` value indicates
+    /// no predictions were made at that level.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::{StagnationPredictor, RiskLevel};
+    ///
+    /// let mut predictor = StagnationPredictor::with_defaults();
+    /// predictor.record_prediction(70.0, true);  // High risk, stagnated (correct)
+    /// predictor.record_prediction(20.0, false); // Low risk, no stagnation (correct)
+    ///
+    /// let breakdown = predictor.prediction_accuracy_by_level();
+    /// assert_eq!(breakdown.get(&RiskLevel::High).unwrap(), &Some(1.0));
+    /// assert_eq!(breakdown.get(&RiskLevel::Low).unwrap(), &Some(1.0));
+    /// ```
+    #[must_use]
+    pub fn prediction_accuracy_by_level(&self) -> HashMap<RiskLevel, Option<f64>> {
+        let mut result = HashMap::new();
+        result.insert(RiskLevel::Low, None);
+        result.insert(RiskLevel::Medium, None);
+        result.insert(RiskLevel::High, None);
+        result.insert(RiskLevel::Critical, None);
+
+        if self.prediction_history.is_empty() {
+            return result;
+        }
+
+        // Group predictions by risk level
+        let mut by_level: HashMap<RiskLevel, Vec<(RiskScore, bool)>> = HashMap::new();
+        for &(score, stagnated) in &self.prediction_history {
+            let level = self.config.thresholds.classify(score);
+            by_level.entry(level).or_default().push((score, stagnated));
+        }
+
+        // Calculate accuracy for each level
+        for (level, predictions) in by_level {
+            if predictions.is_empty() {
+                continue;
+            }
+
+            let correct = predictions
+                .iter()
+                .filter(|(score, stagnated)| {
+                    let predicted_high_risk = *score >= self.config.thresholds.medium_max;
+                    predicted_high_risk == *stagnated
+                })
+                .count();
+
+            result.insert(level, Some(correct as f64 / predictions.len() as f64));
+        }
+
+        result
+    }
+
+    /// Get comprehensive prediction statistics for analytics.
+    ///
+    /// Returns a serializable `PredictionStatistics` struct containing:
+    /// - Total predictions and breakdown by level
+    /// - Accuracy metrics (overall and by level)
+    /// - Confusion matrix values (true/false positives/negatives)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::StagnationPredictor;
+    ///
+    /// let mut predictor = StagnationPredictor::with_defaults();
+    /// predictor.record_prediction(50.0, false);
+    /// predictor.record_prediction(70.0, true);
+    ///
+    /// let stats = predictor.prediction_statistics();
+    /// assert_eq!(stats.total_predictions, 2);
+    /// ```
+    #[must_use]
+    pub fn prediction_statistics(&self) -> PredictionStatistics {
+        if self.prediction_history.is_empty() {
+            return PredictionStatistics::default();
+        }
+
+        let mut stats = PredictionStatistics {
+            total_predictions: self.prediction_history.len(),
+            predictions_by_level: HashMap::new(),
+            accuracy_by_level: self.prediction_accuracy_by_level(),
+            overall_accuracy: self.prediction_accuracy(),
+            correct_predictions: 0,
+            true_positives: 0,
+            true_negatives: 0,
+            false_positives: 0,
+            false_negatives: 0,
+        };
+
+        let high_threshold = self.config.thresholds.medium_max;
+
+        for &(score, stagnated) in &self.prediction_history {
+            // Count by level
+            let level = self.config.thresholds.classify(score);
+            *stats.predictions_by_level.entry(level).or_insert(0) += 1;
+
+            // Calculate confusion matrix
+            let predicted_high_risk = score >= high_threshold;
+            match (predicted_high_risk, stagnated) {
+                (true, true) => {
+                    stats.true_positives += 1;
+                    stats.correct_predictions += 1;
+                }
+                (false, false) => {
+                    stats.true_negatives += 1;
+                    stats.correct_predictions += 1;
+                }
+                (true, false) => stats.false_positives += 1,
+                (false, true) => stats.false_negatives += 1,
+            }
+        }
+
+        stats
+    }
+
+    /// Returns a reference to the prediction history.
+    ///
+    /// Each entry is a tuple of (risk_score, actually_stagnated).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::StagnationPredictor;
+    ///
+    /// let mut predictor = StagnationPredictor::with_defaults();
+    /// predictor.record_prediction(50.0, true);
+    ///
+    /// let history = predictor.prediction_history();
+    /// assert_eq!(history.len(), 1);
+    /// assert_eq!(history[0], (50.0, true));
+    /// ```
+    #[must_use]
+    pub fn prediction_history(&self) -> &[(RiskScore, bool)] {
+        &self.prediction_history
     }
 
     // =========================================================================
@@ -1407,5 +1598,111 @@ mod tests {
 
         let score = predictor.risk_score(&signals);
         assert!(score <= 100.0, "Score {} should be capped at 100", score);
+    }
+
+    // =========================================================================
+    // Phase 10.2: Predictor Accuracy Tracking Tests
+    // =========================================================================
+
+    #[test]
+    fn test_prediction_accuracy_by_risk_level_empty() {
+        let predictor = StagnationPredictor::with_defaults();
+
+        let breakdown = predictor.prediction_accuracy_by_level();
+
+        assert!(breakdown.get(&RiskLevel::Low).unwrap().is_none());
+        assert!(breakdown.get(&RiskLevel::Medium).unwrap().is_none());
+        assert!(breakdown.get(&RiskLevel::High).unwrap().is_none());
+        assert!(breakdown.get(&RiskLevel::Critical).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_prediction_accuracy_by_risk_level_with_data() {
+        let mut predictor = StagnationPredictor::with_defaults();
+
+        // Low risk predictions (score < 30): 2 correct, 1 wrong
+        predictor.record_prediction(10.0, false); // Correct: low risk, no stagnation
+        predictor.record_prediction(20.0, false); // Correct: low risk, no stagnation
+        predictor.record_prediction(25.0, true); // Wrong: low risk, but stagnated
+
+        // Medium risk predictions (30-60): 1 correct, 1 wrong
+        predictor.record_prediction(40.0, false); // Correct: medium risk, no stagnation
+        predictor.record_prediction(50.0, true); // Wrong: medium risk, stagnated
+
+        // High risk predictions (60-80): 2 correct
+        predictor.record_prediction(65.0, true); // Correct: high risk, stagnated
+        predictor.record_prediction(75.0, true); // Correct: high risk, stagnated
+
+        // Critical risk predictions (80+): 1 correct, 1 wrong
+        predictor.record_prediction(85.0, true); // Correct: critical, stagnated
+        predictor.record_prediction(90.0, false); // Wrong: critical, no stagnation
+
+        let breakdown = predictor.prediction_accuracy_by_level();
+
+        // Low: 2/3 correct = 66.67%
+        let low_acc = breakdown.get(&RiskLevel::Low).unwrap().unwrap();
+        assert!((low_acc - 0.6667).abs() < 0.01, "Low accuracy was {}", low_acc);
+
+        // Medium: 1/2 correct = 50%
+        let medium_acc = breakdown.get(&RiskLevel::Medium).unwrap().unwrap();
+        assert!((medium_acc - 0.5).abs() < 0.01, "Medium accuracy was {}", medium_acc);
+
+        // High: 2/2 correct = 100%
+        let high_acc = breakdown.get(&RiskLevel::High).unwrap().unwrap();
+        assert!((high_acc - 1.0).abs() < 0.01, "High accuracy was {}", high_acc);
+
+        // Critical: 1/2 correct = 50%
+        let critical_acc = breakdown.get(&RiskLevel::Critical).unwrap().unwrap();
+        assert!((critical_acc - 0.5).abs() < 0.01, "Critical accuracy was {}", critical_acc);
+    }
+
+    #[test]
+    fn test_prediction_statistics() {
+        let mut predictor = StagnationPredictor::with_defaults();
+
+        predictor.record_prediction(20.0, false);
+        predictor.record_prediction(45.0, true);
+        predictor.record_prediction(70.0, true);
+        predictor.record_prediction(85.0, true);
+
+        let stats = predictor.prediction_statistics();
+
+        assert_eq!(stats.total_predictions, 4);
+        assert_eq!(stats.predictions_by_level.get(&RiskLevel::Low).copied().unwrap_or(0), 1);
+        assert_eq!(stats.predictions_by_level.get(&RiskLevel::Medium).copied().unwrap_or(0), 1);
+        assert_eq!(stats.predictions_by_level.get(&RiskLevel::High).copied().unwrap_or(0), 1);
+        assert_eq!(stats.predictions_by_level.get(&RiskLevel::Critical).copied().unwrap_or(0), 1);
+        assert!(stats.overall_accuracy.is_some());
+    }
+
+    #[test]
+    fn test_prediction_statistics_serialization() {
+        let mut predictor = StagnationPredictor::with_defaults();
+
+        predictor.record_prediction(50.0, true);
+        predictor.record_prediction(70.0, false);
+
+        let stats = predictor.prediction_statistics();
+
+        // Should be serializable for analytics
+        let json = serde_json::to_string(&stats).expect("Stats should be serializable");
+        assert!(json.contains("total_predictions"));
+        assert!(json.contains("overall_accuracy"));
+    }
+
+    #[test]
+    fn test_prediction_history_retrieval() {
+        let mut predictor = StagnationPredictor::with_defaults();
+
+        predictor.record_prediction(30.0, false);
+        predictor.record_prediction(60.0, true);
+        predictor.record_prediction(80.0, true);
+
+        let history = predictor.prediction_history();
+
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0], (30.0, false));
+        assert_eq!(history[1], (60.0, true));
+        assert_eq!(history[2], (80.0, true));
     }
 }

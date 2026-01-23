@@ -1834,9 +1834,16 @@ impl LoopManager {
         // Log predictor accuracy summary
         let predictor_summary = predictor.summary();
         let prediction_accuracy = predictor.prediction_accuracy();
+        let prediction_stats = predictor.prediction_statistics();
+        let accuracy_breakdown = predictor.prediction_accuracy_by_level();
+        let prediction_history = predictor.prediction_history();
         debug!("{}", predictor_summary);
+        debug!(
+            "Prediction history: {} entries",
+            prediction_history.len()
+        );
 
-        // Log session end
+        // Log session end with predictor accuracy
         self.analytics.log_event(
             &self.state.session_id,
             "session_end",
@@ -1844,6 +1851,14 @@ impl LoopManager {
                 "iterations": self.state.iteration,
                 "final_mode": self.state.mode.to_string(),
                 "predictor_accuracy": prediction_accuracy,
+                "predictor_stats": {
+                    "total_predictions": prediction_stats.total_predictions,
+                    "correct_predictions": prediction_stats.correct_predictions,
+                    "true_positives": prediction_stats.true_positives,
+                    "true_negatives": prediction_stats.true_negatives,
+                    "false_positives": prediction_stats.false_positives,
+                    "false_negatives": prediction_stats.false_negatives,
+                },
             }),
         )?;
 
@@ -1852,14 +1867,25 @@ impl LoopManager {
             "Done:".green().bold()
         );
 
-        // Print predictor accuracy if verbose
+        // Print predictor accuracy breakdown if verbose
         if self.verbose {
             if let Some(accuracy) = prediction_accuracy {
                 println!(
-                    "   {} Prediction accuracy: {:.0}%",
+                    "   {} Overall accuracy: {:.0}%",
                     "Predictor:".bright_magenta().bold(),
                     accuracy * 100.0
                 );
+                // Print breakdown by risk level
+                for (level, acc) in &accuracy_breakdown {
+                    if let Some(a) = acc {
+                        println!(
+                            "      {} {}: {:.0}%",
+                            "→".bright_black(),
+                            level,
+                            a * 100.0
+                        );
+                    }
+                }
             }
         }
 

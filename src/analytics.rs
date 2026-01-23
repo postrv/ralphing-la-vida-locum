@@ -34,6 +34,8 @@ pub struct SessionSummary {
     pub errors: usize,
     pub docs_drift_events: usize,
     pub duration_minutes: Option<i64>,
+    /// Predictor accuracy for this session (0.0-1.0).
+    pub predictor_accuracy: Option<f64>,
 }
 
 /// Analytics manager
@@ -160,6 +162,7 @@ impl Analytics {
             errors: 0,
             docs_drift_events: 0,
             duration_minutes: None,
+            predictor_accuracy: None,
         };
 
         for event in events {
@@ -172,6 +175,12 @@ impl Analytics {
                 }
                 "session_end" => {
                     summary.ended_at = Some(event.timestamp);
+                    // Parse predictor accuracy from session_end event
+                    if let Some(accuracy) =
+                        event.data.get("predictor_accuracy").and_then(|v| v.as_f64())
+                    {
+                        summary.predictor_accuracy = Some(accuracy);
+                    }
                 }
                 "iteration" => {
                     summary.iterations += 1;
@@ -258,6 +267,7 @@ impl Analytics {
         let mut stats = AggregateStats::default();
 
         let mut sessions = std::collections::HashSet::new();
+        let mut predictor_accuracies: Vec<f64> = Vec::new();
 
         for event in &events {
             sessions.insert(event.session.clone());
@@ -267,11 +277,25 @@ impl Analytics {
                 "iteration_error" => stats.total_errors += 1,
                 "docs_drift_detected" => stats.total_drift_events += 1,
                 "stagnation" => stats.total_stagnations += 1,
+                "session_end" => {
+                    // Collect predictor accuracy from session_end events
+                    if let Some(accuracy) =
+                        event.data.get("predictor_accuracy").and_then(|v| v.as_f64())
+                    {
+                        predictor_accuracies.push(accuracy);
+                    }
+                }
                 _ => {}
             }
         }
 
         stats.total_sessions = sessions.len();
+
+        // Calculate average predictor accuracy
+        if !predictor_accuracies.is_empty() {
+            let sum: f64 = predictor_accuracies.iter().sum();
+            stats.avg_predictor_accuracy = Some(sum / predictor_accuracies.len() as f64);
+        }
 
         Ok(stats)
     }
@@ -432,6 +456,66 @@ impl Analytics {
             TrendDirection::Stable
         }
     }
+
+    // ========================================================================
+    // Predictor Accuracy Logging
+    // ========================================================================
+
+    /// Log predictor accuracy statistics for a session.
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - The session identifier
+    /// * `stats` - The predictor accuracy statistics
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if writing to the analytics file fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::analytics::{Analytics, PredictorAccuracyStats};
+    ///
+    /// let analytics = Analytics::new(project_dir);
+    /// let stats = PredictorAccuracyStats {
+    ///     total_predictions: 10,
+    ///     correct_predictions: 8,
+    ///     overall_accuracy: Some(0.8),
+    ///     ..Default::default()
+    /// };
+    /// analytics.log_predictor_stats("session-1", &stats)?;
+    /// ```
+    pub fn log_predictor_stats(&self, session_id: &str, stats: &PredictorAccuracyStats) -> Result<()> {
+        let data = serde_json::to_value(stats)?;
+        self.log_event(session_id, "predictor_stats", data)
+    }
+
+    /// Get predictor statistics history across sessions.
+    ///
+    /// # Arguments
+    ///
+    /// * `limit` - Maximum number of records to return (most recent first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the analytics file fails.
+    pub fn get_predictor_stats_history(&self, limit: usize) -> Result<Vec<PredictorAccuracyStats>> {
+        let events = self.read_events()?;
+
+        let mut stats: Vec<PredictorAccuracyStats> = events
+            .into_iter()
+            .filter(|e| e.event == "predictor_stats")
+            .filter_map(|e| serde_json::from_value(e.data).ok())
+            .collect();
+
+        // Sort by total predictions descending (approximation of recency)
+        // The events are already in file order, so we just need to reverse for newest first
+        stats.reverse();
+        stats.truncate(limit);
+
+        Ok(stats)
+    }
 }
 
 /// Aggregate statistics across all sessions
@@ -442,6 +526,59 @@ pub struct AggregateStats {
     pub total_errors: usize,
     pub total_stagnations: usize,
     pub total_drift_events: usize,
+    /// Average predictor accuracy across sessions that have accuracy data.
+    pub avg_predictor_accuracy: Option<f64>,
+}
+
+// ============================================================================
+// Predictor Accuracy Statistics
+// ============================================================================
+
+/// Statistics about predictor accuracy for a session.
+///
+/// This struct captures predictor performance metrics for analytics and
+/// historical tracking.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::PredictorAccuracyStats;
+///
+/// let stats = PredictorAccuracyStats {
+///     total_predictions: 10,
+///     correct_predictions: 8,
+///     overall_accuracy: Some(0.8),
+///     accuracy_low: Some(0.9),
+///     accuracy_medium: Some(0.75),
+///     accuracy_high: Some(0.7),
+///     accuracy_critical: None,
+/// };
+/// assert_eq!(stats.total_predictions, 10);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PredictorAccuracyStats {
+    /// Total number of predictions made.
+    pub total_predictions: usize,
+    /// Number of correct predictions.
+    pub correct_predictions: usize,
+    /// Overall prediction accuracy (0.0-1.0).
+    pub overall_accuracy: Option<f64>,
+    /// Accuracy for low risk predictions.
+    pub accuracy_low: Option<f64>,
+    /// Accuracy for medium risk predictions.
+    pub accuracy_medium: Option<f64>,
+    /// Accuracy for high risk predictions.
+    pub accuracy_high: Option<f64>,
+    /// Accuracy for critical risk predictions.
+    pub accuracy_critical: Option<f64>,
+}
+
+impl PredictorAccuracyStats {
+    /// Returns true if any predictions were made.
+    #[must_use]
+    pub fn has_predictions(&self) -> bool {
+        self.total_predictions > 0
+    }
 }
 
 // ============================================================================
@@ -1077,5 +1214,164 @@ mod tests {
         assert_eq!(restored.test_failed, 3);
         assert_eq!(restored.security_issues, 1);
         assert_eq!(restored.task_name, Some("Implement feature".to_string()));
+    }
+
+    // ========================================================================
+    // Phase 10.2: Predictor Accuracy in Analytics Tests
+    // ========================================================================
+
+    #[test]
+    fn test_session_summary_includes_predictor_accuracy() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log session with predictor accuracy
+        analytics
+            .log_event(
+                "session1",
+                "session_start",
+                serde_json::json!({"mode": "build"}),
+            )
+            .unwrap();
+
+        analytics
+            .log_event(
+                "session1",
+                "session_end",
+                serde_json::json!({
+                    "iterations": 10,
+                    "predictor_accuracy": 0.85
+                }),
+            )
+            .unwrap();
+
+        let sessions = analytics.get_recent_sessions(5).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].predictor_accuracy, Some(0.85));
+    }
+
+    #[test]
+    fn test_session_summary_no_predictor_accuracy() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log session without predictor accuracy
+        analytics
+            .log_event(
+                "session1",
+                "session_start",
+                serde_json::json!({"mode": "debug"}),
+            )
+            .unwrap();
+
+        analytics
+            .log_event("session1", "session_end", serde_json::json!({}))
+            .unwrap();
+
+        let sessions = analytics.get_recent_sessions(5).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert!(sessions[0].predictor_accuracy.is_none());
+    }
+
+    #[test]
+    fn test_aggregate_stats_includes_avg_predictor_accuracy() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log multiple sessions with predictor accuracy
+        for (i, accuracy) in [(1, 0.8), (2, 0.9), (3, 0.7)] {
+            let session_id = format!("session{}", i);
+            analytics
+                .log_event(
+                    &session_id,
+                    "session_start",
+                    serde_json::json!({"mode": "build"}),
+                )
+                .unwrap();
+            analytics
+                .log_event(
+                    &session_id,
+                    "session_end",
+                    serde_json::json!({"predictor_accuracy": accuracy}),
+                )
+                .unwrap();
+        }
+
+        let stats = analytics.get_aggregate_stats().unwrap();
+        assert_eq!(stats.total_sessions, 3);
+
+        // Average: (0.8 + 0.9 + 0.7) / 3 = 0.8
+        let avg = stats.avg_predictor_accuracy.expect("Should have average");
+        assert!((avg - 0.8).abs() < 0.001, "Expected ~0.8, got {}", avg);
+    }
+
+    #[test]
+    fn test_aggregate_stats_no_predictor_data() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log sessions without predictor accuracy
+        analytics
+            .log_event(
+                "session1",
+                "session_start",
+                serde_json::json!({"mode": "build"}),
+            )
+            .unwrap();
+
+        let stats = analytics.get_aggregate_stats().unwrap();
+        assert!(stats.avg_predictor_accuracy.is_none());
+    }
+
+    #[test]
+    fn test_log_predictor_stats_event() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        let stats = PredictorAccuracyStats {
+            total_predictions: 10,
+            correct_predictions: 8,
+            overall_accuracy: Some(0.8),
+            accuracy_low: Some(0.9),
+            accuracy_medium: Some(0.75),
+            accuracy_high: Some(0.7),
+            accuracy_critical: None,
+        };
+
+        analytics
+            .log_predictor_stats("session1", &stats)
+            .unwrap();
+
+        let events = analytics.read_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event, "predictor_stats");
+        assert_eq!(events[0].session, "session1");
+    }
+
+    #[test]
+    fn test_get_predictor_stats_history() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log stats for multiple sessions
+        for i in 1..=3 {
+            let stats = PredictorAccuracyStats {
+                total_predictions: i * 5,
+                correct_predictions: i * 4,
+                overall_accuracy: Some(0.7 + (i as f64 * 0.05)),
+                accuracy_low: None,
+                accuracy_medium: None,
+                accuracy_high: None,
+                accuracy_critical: None,
+            };
+            analytics
+                .log_predictor_stats(&format!("session{}", i), &stats)
+                .unwrap();
+        }
+
+        let history = analytics.get_predictor_stats_history(3).unwrap();
+        assert_eq!(history.len(), 3);
+        // Should be newest first
+        assert!((history[0].overall_accuracy.unwrap() - 0.85).abs() < 0.001);
     }
 }
