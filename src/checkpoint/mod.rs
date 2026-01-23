@@ -47,8 +47,10 @@ pub use manager::{CheckpointManager, CheckpointManagerConfig};
 // Re-export rollback types
 pub use rollback::{RollbackManager, RollbackResult};
 
+use crate::Language;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 
 // ============================================================================
@@ -479,6 +481,63 @@ impl RegressionThresholds {
 }
 
 // ============================================================================
+// Language Regression
+// ============================================================================
+
+/// Result of per-language regression analysis.
+///
+/// Contains information about whether a specific language has regressed
+/// and details about the regression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LanguageRegression {
+    /// The language being analyzed.
+    pub language: Language,
+
+    /// Whether this language has a regression.
+    pub has_regression: bool,
+
+    /// The regression score (0 = no regression, higher = worse).
+    pub regression_score: f32,
+
+    /// Specific metrics that regressed.
+    pub regressed_metrics: Vec<String>,
+
+    /// Summary of the regression.
+    pub summary: String,
+}
+
+impl LanguageRegression {
+    /// Create a new language regression result indicating no regression.
+    #[must_use]
+    pub fn no_regression(language: Language) -> Self {
+        Self {
+            language,
+            has_regression: false,
+            regression_score: 0.0,
+            regressed_metrics: Vec::new(),
+            summary: String::new(),
+        }
+    }
+
+    /// Create a new language regression result with detected regression.
+    #[must_use]
+    pub fn with_regression(
+        language: Language,
+        score: f32,
+        regressed_metrics: Vec<String>,
+        summary: String,
+    ) -> Self {
+        Self {
+            language,
+            has_regression: true,
+            regression_score: score,
+            regressed_metrics,
+            summary,
+        }
+    }
+}
+
+// ============================================================================
 // Checkpoint
 // ============================================================================
 
@@ -502,8 +561,15 @@ pub struct Checkpoint {
     /// Git branch name.
     pub git_branch: String,
 
-    /// Quality metrics at time of checkpoint.
+    /// Quality metrics at time of checkpoint (aggregated).
     pub metrics: QualityMetrics,
+
+    /// Per-language quality metrics for polyglot projects.
+    ///
+    /// Maps each detected language to its specific quality metrics,
+    /// enabling language-specific regression detection and reporting.
+    #[serde(default)]
+    pub metrics_by_language: HashMap<Language, QualityMetrics>,
 
     /// Serialized task tracker state (if available).
     pub task_tracker_state: Option<String>,
@@ -562,6 +628,7 @@ impl Checkpoint {
             git_hash: git_hash.into(),
             git_branch: git_branch.into(),
             metrics,
+            metrics_by_language: HashMap::new(),
             task_tracker_state: None,
             iteration,
             verified: false,
@@ -654,6 +721,249 @@ impl Checkpoint {
             "{}:{:.8} - {} (iter {}){}{}",
             self.id, self.git_hash, self.description, self.iteration, verified_marker, tags_str
         )
+    }
+
+    // ------------------------------------------------------------------------
+    // Language-Aware Quality Metrics (Phase 11.1)
+    // ------------------------------------------------------------------------
+
+    /// Set per-language quality metrics for polyglot projects.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::checkpoint::{Checkpoint, QualityMetrics};
+    /// use ralph::Language;
+    /// use std::collections::HashMap;
+    ///
+    /// let mut metrics_by_lang = HashMap::new();
+    /// metrics_by_lang.insert(
+    ///     Language::Rust,
+    ///     QualityMetrics::new().with_test_counts(50, 50, 0),
+    /// );
+    ///
+    /// let checkpoint = Checkpoint::new("Multi-lang", "abc", "main", QualityMetrics::new(), 1)
+    ///     .with_language_metrics(metrics_by_lang);
+    ///
+    /// assert_eq!(checkpoint.metrics_by_language.len(), 1);
+    /// ```
+    #[must_use]
+    pub fn with_language_metrics(
+        mut self,
+        metrics: HashMap<Language, QualityMetrics>,
+    ) -> Self {
+        self.metrics_by_language = metrics;
+        self
+    }
+
+    /// Add quality metrics for a single language.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::checkpoint::{Checkpoint, QualityMetrics};
+    /// use ralph::Language;
+    ///
+    /// let checkpoint = Checkpoint::new("Single lang", "abc", "main", QualityMetrics::new(), 1)
+    ///     .with_metrics_for_language(
+    ///         Language::Python,
+    ///         QualityMetrics::new().with_test_counts(30, 30, 0),
+    ///     );
+    ///
+    /// assert!(checkpoint.metrics_by_language.contains_key(&Language::Python));
+    /// ```
+    #[must_use]
+    pub fn with_metrics_for_language(mut self, language: Language, metrics: QualityMetrics) -> Self {
+        self.metrics_by_language.insert(language, metrics);
+        self
+    }
+
+    /// Analyze per-language regressions compared to a baseline checkpoint.
+    ///
+    /// Returns a map of languages to their regression status. Only languages
+    /// present in both checkpoints are compared.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::checkpoint::{Checkpoint, QualityMetrics, RegressionThresholds};
+    /// use ralph::Language;
+    /// use std::collections::HashMap;
+    ///
+    /// let mut baseline_metrics = HashMap::new();
+    /// baseline_metrics.insert(Language::Rust, QualityMetrics::new().with_clippy_warnings(0));
+    ///
+    /// let mut current_metrics = HashMap::new();
+    /// current_metrics.insert(Language::Rust, QualityMetrics::new().with_clippy_warnings(5));
+    ///
+    /// let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
+    ///     .with_language_metrics(baseline_metrics);
+    /// let current = Checkpoint::new("Current", "def", "main", QualityMetrics::new(), 2)
+    ///     .with_language_metrics(current_metrics);
+    ///
+    /// let regressions = current.language_regressions(&baseline, &RegressionThresholds::default());
+    /// assert!(regressions.get(&Language::Rust).unwrap().has_regression);
+    /// ```
+    #[must_use]
+    pub fn language_regressions(
+        &self,
+        baseline: &Checkpoint,
+        thresholds: &RegressionThresholds,
+    ) -> HashMap<Language, LanguageRegression> {
+        let mut results = HashMap::new();
+
+        // Check each language in the current checkpoint
+        for (language, current_metrics) in &self.metrics_by_language {
+            // Only compare if the language exists in baseline
+            if let Some(baseline_metrics) = baseline.metrics_by_language.get(language) {
+                let regression = Self::analyze_language_regression(
+                    *language,
+                    current_metrics,
+                    baseline_metrics,
+                    thresholds,
+                );
+                results.insert(*language, regression);
+            }
+            // Languages not in baseline are new additions, not regressions
+        }
+
+        results
+    }
+
+    /// Check if any language has a regression compared to baseline.
+    #[must_use]
+    pub fn has_any_language_regression(
+        &self,
+        baseline: &Checkpoint,
+        thresholds: &RegressionThresholds,
+    ) -> bool {
+        self.language_regressions(baseline, thresholds)
+            .values()
+            .any(|r| r.has_regression)
+    }
+
+    /// Generate a human-readable report of per-language regressions.
+    ///
+    /// Returns a formatted string listing all languages and their regression status.
+    #[must_use]
+    pub fn language_regression_report(
+        &self,
+        baseline: &Checkpoint,
+        thresholds: &RegressionThresholds,
+    ) -> String {
+        let regressions = self.language_regressions(baseline, thresholds);
+
+        if regressions.is_empty() {
+            return "No per-language metrics to compare.".to_string();
+        }
+
+        let mut lines = Vec::new();
+        lines.push("Per-Language Regression Report:".to_string());
+        lines.push("─".repeat(40));
+
+        // Sort languages for consistent output
+        let mut sorted_langs: Vec<_> = regressions.keys().collect();
+        sorted_langs.sort_by_key(|l| format!("{}", l));
+
+        for language in sorted_langs {
+            let regression = &regressions[language];
+            let status = if regression.has_regression {
+                format!("⚠ REGRESSION (score: {:.1})", regression.regression_score)
+            } else {
+                "✓ OK".to_string()
+            };
+
+            lines.push(format!("{}: {}", language, status));
+
+            if regression.has_regression && !regression.regressed_metrics.is_empty() {
+                for metric in &regression.regressed_metrics {
+                    lines.push(format!("  - {}", metric));
+                }
+            }
+        }
+
+        lines.push("─".repeat(40));
+        lines.join("\n")
+    }
+
+    /// Analyze regression for a single language.
+    fn analyze_language_regression(
+        language: Language,
+        current: &QualityMetrics,
+        baseline: &QualityMetrics,
+        thresholds: &RegressionThresholds,
+    ) -> LanguageRegression {
+        let mut regressed_metrics = Vec::new();
+
+        // Check clippy/lint warnings
+        if current.clippy_warnings > baseline.clippy_warnings + thresholds.max_clippy_increase {
+            regressed_metrics.push(format!(
+                "lint warnings: {} → {} (+{})",
+                baseline.clippy_warnings,
+                current.clippy_warnings,
+                current.clippy_warnings - baseline.clippy_warnings
+            ));
+        }
+
+        // Check test failures
+        if current.test_failed > baseline.test_failed + thresholds.max_test_failures_increase {
+            regressed_metrics.push(format!(
+                "test failures: {} → {} (+{})",
+                baseline.test_failed,
+                current.test_failed,
+                current.test_failed - baseline.test_failed
+            ));
+        }
+
+        // Check security issues
+        if current.security_issues > baseline.security_issues + thresholds.max_security_increase {
+            regressed_metrics.push(format!(
+                "security issues: {} → {} (+{})",
+                baseline.security_issues,
+                current.security_issues,
+                current.security_issues - baseline.security_issues
+            ));
+        }
+
+        // Check test pass rate
+        if let (Some(baseline_rate), Some(current_rate)) =
+            (baseline.test_pass_rate(), current.test_pass_rate())
+        {
+            let drop_pct = (baseline_rate - current_rate) * 100.0;
+            if drop_pct > thresholds.max_test_pass_rate_drop_pct {
+                regressed_metrics.push(format!(
+                    "test pass rate: {:.1}% → {:.1}% (-{:.1}%)",
+                    baseline_rate * 100.0,
+                    current_rate * 100.0,
+                    drop_pct
+                ));
+            }
+        }
+
+        // Check coverage
+        if let (Some(baseline_cov), Some(current_cov)) =
+            (baseline.test_coverage, current.test_coverage)
+        {
+            let drop = baseline_cov - current_cov;
+            if drop > thresholds.max_coverage_drop_pct {
+                regressed_metrics.push(format!(
+                    "coverage: {:.1}% → {:.1}% (-{:.1}%)",
+                    baseline_cov, current_cov, drop
+                ));
+            }
+        }
+
+        if regressed_metrics.is_empty() {
+            LanguageRegression::no_regression(language)
+        } else {
+            let score = current.regression_score(baseline);
+            let summary = format!(
+                "{} has {} regressed metric(s)",
+                language,
+                regressed_metrics.len()
+            );
+            LanguageRegression::with_regression(language, score, regressed_metrics, summary)
+        }
     }
 }
 
@@ -1022,5 +1332,338 @@ mod tests {
         assert_eq!(restored.git_hash, checkpoint.git_hash);
         assert_eq!(restored.metrics.clippy_warnings, 2);
         assert_eq!(restored.tags, vec!["test"]);
+    }
+
+    // ------------------------------------------------------------------------
+    // Phase 11.1: Language-Aware Quality Metrics Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_checkpoint_stores_per_language_test_counts() {
+        use crate::Language;
+
+        let mut metrics_by_lang = std::collections::HashMap::new();
+        metrics_by_lang.insert(
+            Language::Rust,
+            QualityMetrics::new().with_test_counts(50, 50, 0),
+        );
+        metrics_by_lang.insert(
+            Language::Python,
+            QualityMetrics::new().with_test_counts(30, 28, 2),
+        );
+
+        let checkpoint = Checkpoint::new("Multi-lang tests", "abc123", "main", QualityMetrics::new(), 1)
+            .with_language_metrics(metrics_by_lang);
+
+        assert_eq!(checkpoint.metrics_by_language.len(), 2);
+
+        let rust_metrics = checkpoint.metrics_by_language.get(&Language::Rust).unwrap();
+        assert_eq!(rust_metrics.test_total, 50);
+        assert_eq!(rust_metrics.test_passed, 50);
+        assert_eq!(rust_metrics.test_failed, 0);
+
+        let python_metrics = checkpoint.metrics_by_language.get(&Language::Python).unwrap();
+        assert_eq!(python_metrics.test_total, 30);
+        assert_eq!(python_metrics.test_passed, 28);
+        assert_eq!(python_metrics.test_failed, 2);
+    }
+
+    #[test]
+    fn test_checkpoint_stores_per_language_lint_warning_counts() {
+        use crate::Language;
+
+        let mut metrics_by_lang = std::collections::HashMap::new();
+        metrics_by_lang.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(0),
+        );
+        metrics_by_lang.insert(
+            Language::TypeScript,
+            QualityMetrics::new().with_clippy_warnings(5), // ESLint warnings
+        );
+        metrics_by_lang.insert(
+            Language::Python,
+            QualityMetrics::new().with_clippy_warnings(3), // Ruff/flake8 warnings
+        );
+
+        let checkpoint = Checkpoint::new("Multi-lang lint", "def456", "main", QualityMetrics::new(), 2)
+            .with_language_metrics(metrics_by_lang);
+
+        assert_eq!(checkpoint.metrics_by_language.len(), 3);
+
+        let rust_metrics = checkpoint.metrics_by_language.get(&Language::Rust).unwrap();
+        assert_eq!(rust_metrics.clippy_warnings, 0);
+
+        let ts_metrics = checkpoint.metrics_by_language.get(&Language::TypeScript).unwrap();
+        assert_eq!(ts_metrics.clippy_warnings, 5);
+
+        let py_metrics = checkpoint.metrics_by_language.get(&Language::Python).unwrap();
+        assert_eq!(py_metrics.clippy_warnings, 3);
+    }
+
+    #[test]
+    fn test_checkpoint_stores_per_language_coverage() {
+        use crate::Language;
+
+        let mut metrics_by_lang = std::collections::HashMap::new();
+        metrics_by_lang.insert(
+            Language::Rust,
+            QualityMetrics::new().with_test_coverage(85.5),
+        );
+        metrics_by_lang.insert(
+            Language::Python,
+            QualityMetrics::new().with_test_coverage(92.0),
+        );
+
+        let checkpoint = Checkpoint::new("Coverage checkpoint", "ghi789", "main", QualityMetrics::new(), 3)
+            .with_language_metrics(metrics_by_lang);
+
+        let rust_metrics = checkpoint.metrics_by_language.get(&Language::Rust).unwrap();
+        assert_eq!(rust_metrics.test_coverage, Some(85.5));
+
+        let python_metrics = checkpoint.metrics_by_language.get(&Language::Python).unwrap();
+        assert_eq!(python_metrics.test_coverage, Some(92.0));
+    }
+
+    #[test]
+    fn test_checkpoint_per_language_metrics_empty_by_default() {
+        let checkpoint = Checkpoint::new("Default", "abc", "main", QualityMetrics::new(), 1);
+        assert!(checkpoint.metrics_by_language.is_empty());
+    }
+
+    #[test]
+    fn test_checkpoint_add_single_language_metrics() {
+        use crate::Language;
+
+        let checkpoint = Checkpoint::new("Single lang", "abc", "main", QualityMetrics::new(), 1)
+            .with_metrics_for_language(
+                Language::Go,
+                QualityMetrics::new()
+                    .with_test_counts(20, 19, 1)
+                    .with_clippy_warnings(2),
+            );
+
+        assert_eq!(checkpoint.metrics_by_language.len(), 1);
+        let go_metrics = checkpoint.metrics_by_language.get(&Language::Go).unwrap();
+        assert_eq!(go_metrics.test_total, 20);
+        assert_eq!(go_metrics.clippy_warnings, 2);
+    }
+
+    #[test]
+    fn test_per_language_regression_detection_single_language() {
+        use crate::Language;
+
+        let mut baseline_metrics = std::collections::HashMap::new();
+        baseline_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(0).with_test_counts(50, 50, 0),
+        );
+
+        let mut current_metrics = std::collections::HashMap::new();
+        current_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(5).with_test_counts(50, 48, 2),
+        );
+
+        let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
+            .with_language_metrics(baseline_metrics);
+        let current = Checkpoint::new("Current", "def", "main", QualityMetrics::new(), 2)
+            .with_language_metrics(current_metrics);
+
+        let thresholds = RegressionThresholds::default();
+        let regressions = current.language_regressions(&baseline, &thresholds);
+
+        assert!(regressions.contains_key(&Language::Rust));
+        assert!(regressions.get(&Language::Rust).unwrap().has_regression);
+    }
+
+    #[test]
+    fn test_per_language_regression_detection_multiple_languages() {
+        use crate::Language;
+
+        let mut baseline_metrics = std::collections::HashMap::new();
+        baseline_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(0),
+        );
+        baseline_metrics.insert(
+            Language::Python,
+            QualityMetrics::new().with_clippy_warnings(0),
+        );
+
+        let mut current_metrics = std::collections::HashMap::new();
+        current_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(0), // No regression
+        );
+        current_metrics.insert(
+            Language::Python,
+            QualityMetrics::new().with_clippy_warnings(10), // Regression
+        );
+
+        let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
+            .with_language_metrics(baseline_metrics);
+        let current = Checkpoint::new("Current", "def", "main", QualityMetrics::new(), 2)
+            .with_language_metrics(current_metrics);
+
+        let thresholds = RegressionThresholds::default();
+        let regressions = current.language_regressions(&baseline, &thresholds);
+
+        // Rust should have no regression
+        assert!(!regressions.get(&Language::Rust).unwrap().has_regression);
+        // Python should have regression
+        assert!(regressions.get(&Language::Python).unwrap().has_regression);
+    }
+
+    #[test]
+    fn test_per_language_regression_detection_new_language() {
+        use crate::Language;
+
+        let mut baseline_metrics = std::collections::HashMap::new();
+        baseline_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_test_counts(50, 50, 0),
+        );
+
+        let mut current_metrics = std::collections::HashMap::new();
+        current_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_test_counts(50, 50, 0),
+        );
+        // New language added
+        current_metrics.insert(
+            Language::Python,
+            QualityMetrics::new().with_test_counts(10, 10, 0),
+        );
+
+        let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
+            .with_language_metrics(baseline_metrics);
+        let current = Checkpoint::new("Current", "def", "main", QualityMetrics::new(), 2)
+            .with_language_metrics(current_metrics);
+
+        let thresholds = RegressionThresholds::default();
+        let regressions = current.language_regressions(&baseline, &thresholds);
+
+        // New language without baseline should not count as regression
+        // Python was added in current but not in baseline, so it shouldn't be in regressions
+        assert!(
+            !regressions.contains_key(&Language::Python)
+                || !regressions[&Language::Python].has_regression
+        );
+    }
+
+    #[test]
+    fn test_has_any_language_regression() {
+        use crate::Language;
+
+        let mut baseline_metrics = std::collections::HashMap::new();
+        baseline_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_test_counts(50, 50, 0),
+        );
+
+        let mut current_metrics = std::collections::HashMap::new();
+        current_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_test_counts(50, 45, 5), // Regression
+        );
+
+        let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
+            .with_language_metrics(baseline_metrics);
+        let current = Checkpoint::new("Current", "def", "main", QualityMetrics::new(), 2)
+            .with_language_metrics(current_metrics);
+
+        let thresholds = RegressionThresholds::default();
+        assert!(current.has_any_language_regression(&baseline, &thresholds));
+    }
+
+    #[test]
+    fn test_no_language_regression_when_all_improved() {
+        use crate::Language;
+
+        let mut baseline_metrics = std::collections::HashMap::new();
+        baseline_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(5).with_test_counts(50, 48, 2),
+        );
+
+        let mut current_metrics = std::collections::HashMap::new();
+        current_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(2).with_test_counts(50, 50, 0), // Improved
+        );
+
+        let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
+            .with_language_metrics(baseline_metrics);
+        let current = Checkpoint::new("Current", "def", "main", QualityMetrics::new(), 2)
+            .with_language_metrics(current_metrics);
+
+        let thresholds = RegressionThresholds::default();
+        assert!(!current.has_any_language_regression(&baseline, &thresholds));
+    }
+
+    #[test]
+    fn test_language_regression_report_format() {
+        use crate::Language;
+
+        let mut baseline_metrics = std::collections::HashMap::new();
+        baseline_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(0).with_test_counts(50, 50, 0),
+        );
+        baseline_metrics.insert(
+            Language::Python,
+            QualityMetrics::new().with_clippy_warnings(0),
+        );
+
+        let mut current_metrics = std::collections::HashMap::new();
+        current_metrics.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(3).with_test_counts(50, 48, 2),
+        );
+        current_metrics.insert(
+            Language::Python,
+            QualityMetrics::new().with_clippy_warnings(5),
+        );
+
+        let baseline = Checkpoint::new("Baseline", "abc", "main", QualityMetrics::new(), 1)
+            .with_language_metrics(baseline_metrics);
+        let current = Checkpoint::new("Current", "def", "main", QualityMetrics::new(), 2)
+            .with_language_metrics(current_metrics);
+
+        let thresholds = RegressionThresholds::default();
+        let report = current.language_regression_report(&baseline, &thresholds);
+
+        // Report should include language names
+        assert!(report.contains("Rust"));
+        assert!(report.contains("Python"));
+    }
+
+    #[test]
+    fn test_checkpoint_serialization_with_language_metrics() {
+        use crate::Language;
+
+        let mut metrics_by_lang = std::collections::HashMap::new();
+        metrics_by_lang.insert(
+            Language::Rust,
+            QualityMetrics::new().with_clippy_warnings(0).with_test_counts(50, 50, 0),
+        );
+        metrics_by_lang.insert(
+            Language::Python,
+            QualityMetrics::new().with_test_coverage(85.0),
+        );
+
+        let checkpoint = Checkpoint::new("Serialization test", "abc123", "main", QualityMetrics::new(), 5)
+            .with_language_metrics(metrics_by_lang);
+
+        let json = serde_json::to_string(&checkpoint).expect("serialize");
+        let restored: Checkpoint = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.metrics_by_language.len(), 2);
+        assert!(restored.metrics_by_language.contains_key(&Language::Rust));
+        assert!(restored.metrics_by_language.contains_key(&Language::Python));
+
+        let rust_metrics = restored.metrics_by_language.get(&Language::Rust).unwrap();
+        assert_eq!(rust_metrics.test_total, 50);
     }
 }

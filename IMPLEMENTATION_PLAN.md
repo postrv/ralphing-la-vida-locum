@@ -41,112 +41,28 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 > **Completed 2026-01-23**: All 3 phases (10.1-10.3). Added `PreventiveActionHandler`, predictor accuracy tracking with `PredictionStatistics`, and dynamic risk weight tuning with `WeightPreset` enum and `--predictor-profile` CLI flag.
 
-**Goal**: Wire `StagnationPredictor` preventive actions into the loop for proactive intervention.
-
-### 12. Phase 10.1: PreventiveAction Handler ✅ COMPLETE
-
-Implement handler that converts predictor actions into loop behavior.
-
-> **Completed 2026-01-23**: Added `PreventiveActionHandler` with `HandlerContext` trait for DI, `LoopManagerContext` adapter, 18 unit tests, and full integration into main loop.
-
-**Test Requirements**:
-- [x] Test `InjectGuidance` adds text to prompt extras
-- [x] Test `FocusTask` sets task tracker to specific task
-- [x] Test `RunTests` triggers quality gate test-only run
-- [x] Test `SuggestCommit` triggers commit when gates pass
-- [x] Test `SwitchMode` changes loop mode
-- [x] Test `RequestReview` pauses loop and returns control to user
-- [x] Test `None` action has no effect
-
-**Implementation**:
-- [x] Create `PreventiveActionHandler` struct
-- [x] Implement `handle(&self, action: PreventiveAction, context: &mut dyn HandlerContext) -> Result<HandlerResult>`
-- [x] Wire handler into main loop after predictor evaluation
-- [x] Add action execution logging
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- preventive_action_handler
-cargo test --lib -- action_inject_guidance
-cargo test --lib -- action_switch_mode
-```
-
-### 13. Phase 10.2: Predictor Accuracy Tracking ✅ COMPLETE
-
-Track and report predictor accuracy over time for self-improvement.
-
-> **Completed 2026-01-23**: Added `PredictionStatistics` struct, `prediction_accuracy_by_level()` for breakdown by risk level, integrated predictor accuracy into `SessionSummary` and `AggregateStats`, added detailed verbose output with accuracy breakdown.
-
-**Test Requirements**:
-- [x] Test prediction recording stores score and outcome
-- [x] Test accuracy calculation: correct / total predictions
-- [x] Test accuracy reported in session summary
-- [x] Test accuracy persists across sessions (analytics)
-- [x] Test accuracy breakdown by risk level
-
-**Implementation**:
-- [x] Add `prediction_history: Vec<(RiskScore, bool)>` to predictor
-- [x] Implement `record_prediction(score: f64, actually_stagnated: bool)`
-- [x] Implement `prediction_accuracy() -> Option<f64>`
-- [x] Add accuracy to `AnalyticsEvent::SessionComplete`
-- [x] Add accuracy trend to aggregate stats
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- predictor_accuracy
-cargo test --lib -- prediction_history
-```
-
-### 14. Phase 10.3: Dynamic Risk Weight Tuning ✅ COMPLETE
-
-Allow risk weights to be tuned based on project characteristics.
-
-> **Completed 2026-01-23**: Added `WeightPreset` enum (Balanced, Conservative, Aggressive), `RiskWeights::validate()` for validation, `PredictorWeightsConfig` for settings.json, `--predictor-profile` CLI flag, 27 new tests covering all weight scenarios.
-
-**Test Requirements**:
-- [x] Test custom weights can be specified in settings.json
-- [x] Test weights are normalized to sum to 1.0
-- [x] Test weight changes affect risk score calculation
-- [x] Test preset weight profiles: "conservative", "aggressive", "balanced"
-- [x] Test weight validation rejects invalid configurations
-
-**Implementation**:
-- [x] Add `predictor_weights` section to `ProjectConfig`
-- [x] Load custom weights in `StagnationPredictor::new()`
-- [x] Add weight presets as static configurations
-- [x] Add CLI flag: `--predictor-profile <preset>`
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- predictor_weights
-cargo test --lib -- weight_presets
-```
-
 ---
 
 ## Sprint 11: Enhanced Checkpoint System
 
 **Goal**: Extend checkpoint system with per-language quality metrics and smarter regression detection.
 
-### 15. Phase 11.1: Language-Aware Quality Metrics
+### 12. Phase 11.1: Language-Aware Quality Metrics ✅ COMPLETE
 
 Track quality metrics separately for each detected language.
 
 **Test Requirements**:
-- [ ] Test checkpoint stores per-language test counts
-- [ ] Test checkpoint stores per-language lint warning counts
-- [ ] Test checkpoint stores per-language coverage (if available)
-- [ ] Test regression detection works per-language
-- [ ] Test rollback considers language-specific thresholds
+- [x] Test checkpoint stores per-language test counts
+- [x] Test checkpoint stores per-language lint warning counts
+- [x] Test checkpoint stores per-language coverage (if available)
+- [x] Test regression detection works per-language
+- [x] Test rollback considers language-specific thresholds
 
 **Implementation**:
-- [ ] Add `metrics_by_language: HashMap<Language, QualityMetrics>` to `Checkpoint`
-- [ ] Collect metrics from each language's gates during checkpoint creation
-- [ ] Update `has_regression()` to check per-language metrics
-- [ ] Add language to regression report output
+- [x] Add `metrics_by_language: HashMap<Language, QualityMetrics>` to `Checkpoint`
+- [x] Collect metrics from each language's gates during checkpoint creation
+- [x] Update `has_regression()` to check per-language metrics
+- [x] Add language to regression report output
 
 **Quality Gates**:
 ```bash
@@ -155,7 +71,7 @@ cargo test --lib -- language_aware_metrics
 cargo test --lib -- per_language_regression
 ```
 
-### 16. Phase 11.2: Lint Warning Regression Detection
+### 13. Phase 11.2: Lint Warning Regression Detection
 
 Add regression detection for lint warning counts, not just test failures.
 
@@ -179,7 +95,7 @@ cargo test --lib -- lint_regression
 cargo test --lib -- warning_threshold
 ```
 
-### 17. Phase 11.3: Checkpoint Diff Visualization
+### 14. Phase 11.3: Checkpoint Diff Visualization
 
 Add ability to visualize quality changes between checkpoints.
 
@@ -209,7 +125,7 @@ cargo test --test cli_checkpoint_diff
 
 **Goal**: Abstract Claude client to support multiple LLM backends.
 
-### 18. Phase 12.1: LLM Client Trait
+### 15. Phase 12.1: LLM Client Trait
 
 Define trait for LLM client abstraction.
 
@@ -233,7 +149,7 @@ cargo test --lib -- llm_client_trait
 cargo test --lib -- claude_client
 ```
 
-### 19. Phase 12.2: Model Configuration
+### 16. Phase 12.2: Model Configuration
 
 Add configuration for selecting and configuring LLM backend.
 
@@ -257,7 +173,7 @@ cargo test --lib -- llm_config
 cargo test --lib -- model_selection
 ```
 
-### 20. Phase 12.3: OpenAI/Gemini Client Stubs
+### 17. Phase 12.3: OpenAI/Gemini Client Stubs
 
 Create stub implementations for alternative models (implementation deferred).
 
@@ -288,7 +204,7 @@ cargo test --lib -- gemini_stub
 
 **Goal**: Enable community-contributed quality gates via plugin system.
 
-### 21. Phase 13.1: Gate Plugin Trait
+### 18. Phase 13.1: Gate Plugin Trait
 
 Define plugin interface for external quality gates.
 
@@ -311,7 +227,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- gate_plugin_trait
 ```
 
-### 22. Phase 13.2: Plugin Discovery and Loading
+### 19. Phase 13.2: Plugin Discovery and Loading
 
 Implement plugin discovery from standard locations.
 
@@ -336,7 +252,7 @@ cargo test --lib -- plugin_discovery
 cargo test --lib -- plugin_loading
 ```
 
-### 23. Phase 13.3: Example Plugin: RuboCop Gate
+### 20. Phase 13.3: Example Plugin: RuboCop Gate
 
 Create example Ruby plugin to demonstrate plugin system.
 
@@ -367,7 +283,7 @@ cargo test --lib -- rubocop_plugin
 
 **Goal**: Create comprehensive documentation for polyglot usage.
 
-### 24. Phase 14.1: Polyglot Quick Start Guide
+### 21. Phase 14.1: Polyglot Quick Start Guide
 
 Write quick start guide for Python, TypeScript, and Go projects.
 
@@ -392,7 +308,7 @@ npx markdownlint docs/*.md
 # Example validation (manual review)
 ```
 
-### 25. Phase 14.2: Example Polyglot Project
+### 22. Phase 14.2: Example Polyglot Project
 
 Create complete example project demonstrating polyglot features.
 
@@ -417,7 +333,7 @@ cd examples/polyglot-fullstack && npm install && npm run lint
 cd examples/polyglot-fullstack/backend && pip install -r requirements.txt && ruff check .
 ```
 
-### 26. Phase 14.3: Gate Development Guide
+### 23. Phase 14.3: Gate Development Guide
 
 Document how to create custom quality gates.
 
@@ -447,7 +363,7 @@ npx markdownlint docs/developing-gates.md
 
 **Goal**: Ensure Ralph performs well on large polyglot projects.
 
-### 27. Phase 15.1: Gate Execution Parallelization
+### 24. Phase 15.1: Gate Execution Parallelization
 
 Run independent gates in parallel for faster feedback.
 
@@ -472,7 +388,7 @@ cargo test --lib -- parallel_gates
 cargo test --lib -- gate_timeout
 ```
 
-### 28. Phase 15.2: Incremental Gate Execution
+### 25. Phase 15.2: Incremental Gate Execution
 
 Only run gates for changed languages/files when possible.
 
@@ -497,7 +413,7 @@ cargo test --lib -- incremental_gates
 cargo test --lib -- changed_file_detection
 ```
 
-### 29. Phase 15.3: Benchmark Suite
+### 26. Phase 15.3: Benchmark Suite
 
 Create benchmark suite for performance regression detection.
 
@@ -527,7 +443,7 @@ cargo bench --no-run  # Verify benchmarks compile
 
 **Goal**: Add opt-in analytics for understanding Ralph usage patterns.
 
-### 30. Phase 16.1: Structured Event Logging
+### 27. Phase 16.1: Structured Event Logging
 
 Standardize event logging for analytics consumption.
 
@@ -552,7 +468,7 @@ cargo test --lib -- analytics_event
 cargo test --lib -- event_schema
 ```
 
-### 31. Phase 16.2: Session Summary Report
+### 28. Phase 16.2: Session Summary Report
 
 Generate detailed summary report at end of each session.
 
@@ -577,7 +493,7 @@ cargo test --lib -- session_report
 cargo test --lib -- report_export
 ```
 
-### 32. Phase 16.3: Quality Trend Visualization
+### 29. Phase 16.3: Quality Trend Visualization
 
 Add command to visualize quality trends over time.
 
@@ -608,7 +524,7 @@ cargo test --test cli_analytics_trends
 
 **Goal**: Add features required for team/enterprise usage.
 
-### 33. Phase 17.1: Configuration Inheritance
+### 30. Phase 17.1: Configuration Inheritance
 
 Support configuration inheritance for team-wide defaults.
 
@@ -633,7 +549,7 @@ cargo test --lib -- config_inheritance
 cargo test --lib -- config_merge
 ```
 
-### 34. Phase 17.2: Shared Gate Configurations
+### 31. Phase 17.2: Shared Gate Configurations
 
 Allow gate configurations to be shared across team.
 
@@ -658,7 +574,7 @@ cargo test --lib -- shared_config
 cargo test --lib -- config_validation
 ```
 
-### 35. Phase 17.3: Audit Logging
+### 32. Phase 17.3: Audit Logging
 
 Add audit log for compliance and debugging.
 
@@ -689,7 +605,7 @@ cargo test --lib -- audit_integrity
 
 **Goal**: Create stubs for future cloud features without implementing backend.
 
-### 36. Phase 18.1: Remote Analytics Upload Stub
+### 33. Phase 18.1: Remote Analytics Upload Stub
 
 Create opt-in analytics upload stub.
 
@@ -713,7 +629,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- analytics_upload_stub
 ```
 
-### 37. Phase 18.2: Remote Campaign API Stub
+### 34. Phase 18.2: Remote Campaign API Stub
 
 Create stub for cloud-based campaign orchestration.
 
@@ -737,7 +653,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- campaign_api_stub
 ```
 
-### 38. Phase 18.3: CCG-Diff Verification Stub
+### 35. Phase 18.3: CCG-Diff Verification Stub
 
 Create stub for provable quality improvement verification.
 
