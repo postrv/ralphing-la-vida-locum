@@ -57,6 +57,7 @@
 pub mod antipatterns;
 pub mod assembler;
 pub mod builder;
+pub mod code_antipatterns;
 pub mod context;
 pub mod templates;
 
@@ -64,6 +65,10 @@ pub mod templates;
 pub use antipatterns::{AntiPatternDetector, DetectorConfig, IterationSummary};
 pub use assembler::{AssemblerConfig, PromptAssembler};
 pub use builder::{DynamicPromptBuilder, SectionBuilder};
+pub use code_antipatterns::{
+    antipatterns_for_language, format_findings_for_prompt, language_from_extension,
+    CodeAntipatternDetector, CodeAntipatternFinding, CodeAntipatternRule, CodeAntipatternSeverity,
+};
 pub use context::{
     AntiPattern, AntiPatternSeverity, AntiPatternType, AttemptOutcome, AttemptSummary,
     CurrentTaskContext, ErrorAggregator, ErrorContext, ErrorSeverity, GateResult, PromptContext,

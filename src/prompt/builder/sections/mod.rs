@@ -16,8 +16,9 @@ pub mod task;
 
 // Re-export all section builder functions for convenient access
 pub use context::{
-    build_antipattern_section, build_attempt_section, build_error_section, build_history_section,
-    build_language_rules_section, build_quality_section, build_session_section,
+    build_antipattern_section, build_attempt_section, build_code_antipattern_section,
+    build_error_section, build_history_section, build_language_rules_section,
+    build_quality_section, build_session_section,
 };
 pub use intelligence::{
     build_call_graph_section, build_ccg_section, build_combined_intelligence_section,

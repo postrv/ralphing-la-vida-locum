@@ -427,4 +427,22 @@ impl SectionBuilder {
     pub fn build_language_rules_section(rules: &Option<String>) -> String {
         sections::build_language_rules_section(rules)
     }
+
+    /// Build the code antipattern warnings section.
+    ///
+    /// Returns the pre-formatted code antipattern warnings if provided, otherwise returns empty.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::builder::SectionBuilder;
+    ///
+    /// let warnings = Some("## Code Antipatterns Detected\n...".to_string());
+    /// let section = SectionBuilder::build_code_antipattern_section(&warnings);
+    /// assert!(section.contains("Antipatterns"));
+    /// ```
+    #[must_use]
+    pub fn build_code_antipattern_section(warnings: &Option<String>) -> String {
+        sections::build_code_antipattern_section(warnings)
+    }
 }

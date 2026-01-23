@@ -31,6 +31,7 @@ use crate::prompt::antipatterns::{
     IterationSummary,
 };
 use crate::prompt::builder::DynamicPromptBuilder;
+use crate::prompt::code_antipatterns::{format_findings_for_prompt, CodeAntipatternDetector};
 use crate::prompt::context::{
     AntiPattern, AttemptOutcome, AttemptSummary, CurrentTaskContext, ErrorAggregator, ErrorContext,
     ErrorSeverity, GateResult, PromptContext, QualityGateStatus, SessionStats, TaskPhase,
@@ -1277,7 +1278,30 @@ impl PromptAssembler {
             context = context.with_language_rules(rules);
         }
 
+        // Scan modified files for code antipatterns
+        if !self.session_files_modified.is_empty() && !self.config.languages.is_empty() {
+            let warnings = self.scan_files_for_code_antipatterns();
+            if !warnings.is_empty() {
+                context = context.with_code_antipattern_warnings(warnings);
+            }
+        }
+
         context
+    }
+
+    /// Scan modified files for language-specific code antipatterns.
+    ///
+    /// Returns a formatted string of warnings suitable for prompt inclusion.
+    fn scan_files_for_code_antipatterns(&self) -> String {
+        let detector = CodeAntipatternDetector::new();
+        let files: Vec<&Path> = self
+            .session_files_modified
+            .iter()
+            .map(Path::new)
+            .collect();
+
+        let findings = detector.scan_files_for_languages(&files, &self.config.languages);
+        format_findings_for_prompt(&findings)
     }
 
     /// Detect anti-patterns from current state (snapshot, doesn't modify detector).

@@ -50,6 +50,8 @@ pub struct PromptContext {
     pub code_intelligence: CodeIntelligenceContext,
     /// Language-specific quality rules for the project.
     pub language_rules: Option<String>,
+    /// Code antipattern warnings (formatted for prompt inclusion).
+    pub code_antipattern_warnings: Option<String>,
 }
 
 impl PromptContext {
@@ -203,6 +205,23 @@ impl PromptContext {
     #[must_use]
     pub fn with_language_rules(mut self, rules: impl Into<String>) -> Self {
         self.language_rules = Some(rules.into());
+        self
+    }
+
+    /// Set code antipattern warnings.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::context::PromptContext;
+    ///
+    /// let context = PromptContext::new()
+    ///     .with_code_antipattern_warnings("## Code Antipatterns Detected\n...");
+    /// assert!(context.code_antipattern_warnings.is_some());
+    /// ```
+    #[must_use]
+    pub fn with_code_antipattern_warnings(mut self, warnings: impl Into<String>) -> Self {
+        self.code_antipattern_warnings = Some(warnings.into());
         self
     }
 

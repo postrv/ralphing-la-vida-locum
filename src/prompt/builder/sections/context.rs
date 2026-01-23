@@ -524,6 +524,27 @@ pub fn build_language_rules_section(rules: &Option<String>) -> String {
     }
 }
 
+/// Build a section showing code antipattern warnings.
+///
+/// Returns the formatted warnings if present, or an empty string.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::builder::sections::build_code_antipattern_section;
+///
+/// let warnings = Some("## Code Antipatterns Detected\n...".to_string());
+/// let section = build_code_antipattern_section(&warnings);
+/// assert!(section.contains("Code Antipatterns"));
+/// ```
+#[must_use]
+pub fn build_code_antipattern_section(warnings: &Option<String>) -> String {
+    match warnings {
+        Some(content) if !content.is_empty() => content.clone(),
+        _ => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

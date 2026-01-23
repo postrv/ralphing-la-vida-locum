@@ -32,7 +32,7 @@ use std::str::FromStr;
 ///
 /// Each language has associated file extensions and manifest files used for
 /// automatic language detection during project bootstrap.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Language {
     /// Rust programming language
     Rust,

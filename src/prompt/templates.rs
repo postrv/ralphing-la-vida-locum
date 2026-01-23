@@ -48,6 +48,8 @@ pub enum TemplateMarker {
     CodeIntelligence,
     /// Language-specific quality rules injection point.
     LanguageRules,
+    /// Code antipattern warnings injection point.
+    CodeAntipatternWarnings,
     /// Custom section injection point.
     CustomSection,
 }
@@ -74,6 +76,7 @@ impl TemplateMarker {
             TemplateMarker::HistoricalGuidance => "{{HISTORICAL_GUIDANCE}}",
             TemplateMarker::CodeIntelligence => "{{CODE_INTELLIGENCE}}",
             TemplateMarker::LanguageRules => "{{LANGUAGE_RULES}}",
+            TemplateMarker::CodeAntipatternWarnings => "{{CODE_ANTIPATTERN_WARNINGS}}",
             TemplateMarker::CustomSection => "{{CUSTOM_SECTION}}",
         }
     }
@@ -91,6 +94,7 @@ impl TemplateMarker {
             TemplateMarker::HistoricalGuidance,
             TemplateMarker::CodeIntelligence,
             TemplateMarker::LanguageRules,
+            TemplateMarker::CodeAntipatternWarnings,
             TemplateMarker::CustomSection,
         ]
     }
@@ -120,6 +124,7 @@ impl TemplateMarker {
             "{{HISTORICAL_GUIDANCE}}" => Some(TemplateMarker::HistoricalGuidance),
             "{{CODE_INTELLIGENCE}}" => Some(TemplateMarker::CodeIntelligence),
             "{{LANGUAGE_RULES}}" => Some(TemplateMarker::LanguageRules),
+            "{{CODE_ANTIPATTERN_WARNINGS}}" => Some(TemplateMarker::CodeAntipatternWarnings),
             "{{CUSTOM_SECTION}}" => Some(TemplateMarker::CustomSection),
             _ => None,
         }
@@ -726,8 +731,9 @@ mod tests {
         assert!(all.contains(&TemplateMarker::SessionStats));
         assert!(all.contains(&TemplateMarker::CodeIntelligence));
         assert!(all.contains(&TemplateMarker::LanguageRules));
+        assert!(all.contains(&TemplateMarker::CodeAntipatternWarnings));
         assert!(all.contains(&TemplateMarker::CustomSection));
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 11);
     }
 
     #[test]
