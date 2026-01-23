@@ -42,6 +42,7 @@ mod iteration;
 mod prompt_handling;
 
 use super::operations::{RealClaudeProcess, RealFileSystem, RealGitOperations, RealQualityChecker};
+use super::preventive_action_handler::{HandlerContext, PreventiveActionHandler};
 use super::progress::ProgressTracker;
 use super::retry::{IntelligentRetry, RetryConfig, RetryHistory};
 use super::state::{LoopMode, LoopState};
@@ -88,6 +89,113 @@ pub(crate) const FILE_SIZE_CRITICAL_TOKENS: usize = 25_000;
 /// Maximum number of files to track in the touch history.
 /// This bounds memory usage in long-running sessions.
 pub(crate) const MAX_FILE_TOUCH_HISTORY: usize = 100;
+
+// ============================================================================
+// LoopManagerContext - Adapter for PreventiveActionHandler
+// ============================================================================
+
+/// Context adapter that allows `PreventiveActionHandler` to interact with `LoopManager` parts.
+///
+/// This adapter implements `HandlerContext` and provides the handler access to:
+/// - Prompt assembler (for guidance injection)
+/// - Task tracker (for task focusing)
+/// - Loop state (for mode switching)
+/// - Quality checker (for test/commit actions)
+pub(crate) struct LoopManagerContext<'a> {
+    prompt_assembler: &'a mut PromptAssembler,
+    task_tracker: &'a mut TaskTracker,
+    state: &'a mut LoopState,
+    quality: Option<&'a (dyn QualityChecker + Send + Sync)>,
+}
+
+impl<'a> LoopManagerContext<'a> {
+    /// Create a new context adapter from LoopManager parts.
+    pub fn new(
+        prompt_assembler: &'a mut PromptAssembler,
+        task_tracker: &'a mut TaskTracker,
+        state: &'a mut LoopState,
+        quality: Option<&'a (dyn QualityChecker + Send + Sync)>,
+    ) -> Self {
+        Self {
+            prompt_assembler,
+            task_tracker,
+            state,
+            quality,
+        }
+    }
+}
+
+impl HandlerContext for LoopManagerContext<'_> {
+    fn add_guidance(&mut self, guidance: String) {
+        self.prompt_assembler.add_guidance(guidance);
+    }
+
+    fn focus_task(&mut self, task_description: &str) -> Result<()> {
+        // Try to find a task matching the description
+        // First, collect matching task ID (to avoid borrow issues)
+        let matching_task_id = self
+            .task_tracker
+            .tasks
+            .values()
+            .find(|task| {
+                task.id.to_string().contains(task_description)
+                    || task.id.title().contains(task_description)
+            })
+            .map(|task| task.id.clone());
+
+        if let Some(task_id) = matching_task_id {
+            self.task_tracker.set_current(&task_id)?;
+            return Ok(());
+        }
+
+        // If no match, log but don't fail
+        debug!(
+            "No task found matching '{}', current task unchanged",
+            task_description
+        );
+        Ok(())
+    }
+
+    fn run_tests_only(&self) -> Result<bool> {
+        if let Some(quality) = self.quality {
+            let result = quality.run_tests()?;
+            Ok(result.passed)
+        } else {
+            // No quality checker available, assume tests pass
+            debug!("No quality checker available for test run");
+            Ok(true)
+        }
+    }
+
+    fn suggest_commit(&self) -> Result<bool> {
+        if let Some(quality) = self.quality {
+            // Check quality gates first
+            let clippy_result = quality.run_clippy()?;
+            let test_result = quality.run_tests()?;
+
+            if clippy_result.passed && test_result.passed {
+                // All gates pass - commit can proceed
+                info!("Quality gates pass - commit suggested");
+                Ok(true)
+            } else {
+                debug!("Quality gates failed - commit deferred");
+                Ok(false)
+            }
+        } else {
+            // No quality checker - defer commit
+            debug!("No quality checker available for commit suggestion");
+            Ok(false)
+        }
+    }
+
+    fn switch_mode(&mut self, target: LoopMode) {
+        self.state.switch_mode(target);
+    }
+
+    fn current_mode(&self) -> LoopMode {
+        self.state.mode
+    }
+}
 
 // ============================================================================
 // BoundedFileTouchHistory
@@ -477,6 +585,8 @@ pub struct LoopManager {
     pub(crate) intelligent_retry: IntelligentRetry,
     /// Retry history for tracking and learning from retry attempts.
     pub(crate) retry_history: RetryHistory,
+    /// Handler for converting predictor actions into loop behavior.
+    pub(crate) action_handler: PreventiveActionHandler,
 }
 
 impl LoopManager {
@@ -627,6 +737,9 @@ impl LoopManager {
             task_tracker.tasks.len()
         );
 
+        // Initialize preventive action handler
+        let action_handler = PreventiveActionHandler::new();
+
         Ok(Self {
             project_dir: cfg.project_dir.clone(),
             max_iterations: cfg.max_iterations,
@@ -642,6 +755,7 @@ impl LoopManager {
             progress_tracker,
             intelligent_retry,
             retry_history,
+            action_handler,
         })
     }
 
@@ -696,6 +810,9 @@ impl LoopManager {
             // Use defaults for standard operation
             StagnationPredictor::with_defaults()
         };
+
+        // Reset action handler statistics for this session
+        self.action_handler.reset();
 
         // Create checkpoint manager for quality regression prevention
         let checkpoint_dir = self.project_dir.join(".ralph/checkpoints");
@@ -1455,17 +1572,11 @@ impl LoopManager {
             if risk_level.requires_intervention() {
                 let action = predictor.preventive_action(&risk_signals, risk_score);
 
-                match action {
-                    PreventiveAction::None => {}
-                    PreventiveAction::InjectGuidance { ref guidance } => {
-                        debug!("Predictor guidance: {}", guidance);
-                        // Log guidance for prompt context awareness
-                        info!(
-                            "Risk guidance (score={:.0}): {}",
-                            risk_score,
-                            guidance.chars().take(80).collect::<String>()
-                        );
-                        if self.verbose {
+                // Display action info before executing
+                if self.verbose {
+                    match &action {
+                        PreventiveAction::None => {}
+                        PreventiveAction::InjectGuidance { guidance } => {
                             println!(
                                 "   {} Risk score={:.0}: {}",
                                 "Predictor:".bright_magenta().bold(),
@@ -1473,46 +1584,91 @@ impl LoopManager {
                                 guidance.chars().take(60).collect::<String>()
                             );
                         }
-                    }
-                    PreventiveAction::FocusTask { ref task } => {
-                        info!("Predictor suggests focusing: {}", task);
-                        println!(
-                            "   {} Focus on: {}",
-                            "Predictor:".bright_magenta().bold(),
-                            task
-                        );
-                    }
-                    PreventiveAction::RunTests => {
-                        debug!("Predictor suggests running tests");
-                        if self.verbose {
+                        PreventiveAction::FocusTask { task } => {
+                            println!(
+                                "   {} Focus on: {}",
+                                "Predictor:".bright_magenta().bold(),
+                                task
+                            );
+                        }
+                        PreventiveAction::RunTests => {
                             println!(
                                 "   {} Suggestion: Run tests to verify progress",
                                 "Predictor:".bright_magenta().bold()
                             );
                         }
+                        PreventiveAction::SuggestCommit => {
+                            println!(
+                                "   {} Suggestion: Commit your current progress",
+                                "Predictor:".bright_magenta().bold()
+                            );
+                        }
+                        PreventiveAction::SwitchMode { target } => {
+                            println!(
+                                "   {} Suggestion: Consider switching to {} mode",
+                                "Predictor:".bright_magenta().bold(),
+                                target
+                            );
+                        }
+                        PreventiveAction::RequestReview { reason } => {
+                            println!(
+                                "   {} Critical risk - review needed: {}",
+                                "Predictor:".bright_magenta().bold(),
+                                reason.chars().take(60).collect::<String>()
+                            );
+                        }
                     }
-                    PreventiveAction::SuggestCommit => {
-                        info!("Predictor suggests committing current work");
+                }
+
+                // Execute the action through the handler
+                // Get quality checker reference from deps (if available)
+                let quality_ref: Option<&(dyn QualityChecker + Send + Sync)> =
+                    self.deps.as_ref().map(|d| d.quality.as_ref());
+
+                // Create context adapter with split borrows
+                let mut context = LoopManagerContext::new(
+                    &mut self.prompt_assembler,
+                    &mut self.task_tracker,
+                    &mut self.state,
+                    quality_ref,
+                );
+
+                // Handle the action
+                let handler_result = self.action_handler.handle(action.clone(), &mut context);
+
+                // Log detailed handler statistics
+                debug!(
+                    "Handler stats: actions={}, guidance={}, switches={}, reviews={}",
+                    self.action_handler.actions_handled(),
+                    self.action_handler.guidance_count(),
+                    self.action_handler.mode_switches(),
+                    self.action_handler.review_requests()
+                );
+
+                match handler_result {
+                    Ok(result) if result.should_pause() => {
+                        // Action requests user review - break the loop
                         println!(
-                            "   {} Suggestion: Commit your current progress",
-                            "Predictor:".bright_magenta().bold()
+                            "   {} Pausing for user review (handler request)",
+                            "Warning:".yellow().bold()
                         );
+                        self.analytics.log_event(
+                            &self.state.session_id,
+                            "handler_pause",
+                            serde_json::json!({
+                                "iteration": self.state.iteration,
+                                "action": action.to_string(),
+                                "review_requests": self.action_handler.review_requests(),
+                            }),
+                        )?;
+                        break;
                     }
-                    PreventiveAction::SwitchMode { ref target } => {
-                        info!("Predictor suggests switching to {} mode", target);
-                        println!(
-                            "   {} Suggestion: Consider switching to {} mode",
-                            "Predictor:".bright_magenta().bold(),
-                            target
-                        );
+                    Ok(_) => {
+                        // Action executed successfully, continue loop
                     }
-                    PreventiveAction::RequestReview { ref reason } => {
-                        warn!("Predictor requests review: {}", reason);
-                        println!(
-                            "   {} Critical risk - review needed: {}",
-                            "Predictor:".bright_magenta().bold(),
-                            reason.chars().take(60).collect::<String>()
-                        );
+                    Err(e) => {
+                        // Handler error - log but continue
+                        warn!("Preventive action handler error: {}", e);
                     }
                 }
 
@@ -1525,6 +1681,7 @@ impl LoopManager {
                         "risk_level": risk_level.to_string(),
                         "dominant_factor": risk_breakdown.dominant_factor(),
                         "action": action.to_string(),
+                        "handler_stats": self.action_handler.summary(),
                     }),
                 )?;
             }

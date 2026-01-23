@@ -8,6 +8,7 @@
 //! - [`task_tracker`] - Task-level progress tracking and state machine
 //! - [`progress`] - Semantic progress detection
 //! - [`retry`] - Intelligent retry logic with failure classification
+//! - [`preventive_action_handler`] - Convert predictor actions to loop behavior
 //!
 //! # Architecture
 //!
@@ -30,6 +31,7 @@
 
 pub mod manager;
 pub mod operations;
+pub mod preventive_action_handler;
 pub mod progress;
 pub mod retry;
 pub mod state;
