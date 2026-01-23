@@ -4,7 +4,7 @@
 > 
 > **Methodology**: TDD, quality-gated, production-ready. Every task follows RED → GREEN → REFACTOR → COMMIT.
 > 
-> **Current Focus: Sprint 11 (Enhanced Checkpoint System)**
+> **Current Focus: Sprint 12 (Model Abstraction Layer)**
 
 ---
 
@@ -43,35 +43,9 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 ---
 
-## Sprint 11: Enhanced Checkpoint System
+## Sprint 11: Enhanced Checkpoint System ✅ COMPLETE
 
-> **In Progress**: Phases 11.1-11.2 complete. Added `metrics_by_language` to `Checkpoint`, `LanguageRegression` struct, `LintRegressionSeverity` enum with tiered thresholds, and `WarningTrend` tracking.
-
-**Goal**: Extend checkpoint system with per-language quality metrics and smarter regression detection.
-
-### 12. Phase 11.3: Checkpoint Diff Visualization ✅ COMPLETE
-
-Add ability to visualize quality changes between checkpoints.
-
-**Test Requirements**:
-- [x] Test diff shows test count changes
-- [x] Test diff shows lint warning changes
-- [x] Test diff shows files modified between checkpoints
-- [x] Test diff output is machine-readable (JSON option)
-- [x] Test diff can compare arbitrary checkpoint IDs
-
-**Implementation**:
-- [x] Create `CheckpointDiff` struct with delta fields
-- [x] Implement `CheckpointManager::diff(id1: &str, id2: &str) -> CheckpointDiff`
-- [x] Add `ralph checkpoint diff <id1> <id2>` command
-- [x] Add `--json` flag for machine-readable output
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- checkpoint_diff
-cargo test --test cli_checkpoint_diff
-```
+> **Completed 2026-01-23**: All 3 phases (11.1-11.3). Added `metrics_by_language` to `Checkpoint`, `LanguageRegression` struct, `LintRegressionSeverity` enum with tiered thresholds, `WarningTrend` tracking, `CheckpointDiff` struct, `CheckpointManager::diff()`, and `ralph checkpoint diff` CLI command with JSON output.
 
 ---
 
@@ -79,22 +53,22 @@ cargo test --test cli_checkpoint_diff
 
 **Goal**: Abstract Claude client to support multiple LLM backends.
 
-### 13. Phase 12.1: LLM Client Trait
+### 12. Phase 12.1: LLM Client Trait ✅ COMPLETE
 
 Define trait for LLM client abstraction.
 
 **Test Requirements**:
-- [ ] Test trait defines `run_prompt(&self, prompt: &str) -> Result<String>`
-- [ ] Test trait defines `model_name(&self) -> &str`
-- [ ] Test trait is object-safe for dynamic dispatch
-- [ ] Test mock implementation works for testing
-- [ ] Test Claude implementation works (existing behavior)
+- [x] Test trait defines `run_prompt(&self, prompt: &str) -> Result<String>`
+- [x] Test trait defines `model_name(&self) -> &str`
+- [x] Test trait is object-safe for dynamic dispatch
+- [x] Test mock implementation works for testing
+- [x] Test Claude implementation works (existing behavior)
 
 **Implementation**:
-- [ ] Create `trait LlmClient: Send + Sync` in new `src/llm/mod.rs`
-- [ ] Define core methods: `run_prompt`, `model_name`, `supports_tools`
-- [ ] Create `ClaudeClient` implementing trait (wrap existing code)
-- [ ] Create `MockLlmClient` for testing
+- [x] Create `trait LlmClient: Send + Sync` in new `src/llm/mod.rs`
+- [x] Define core methods: `run_prompt`, `model_name`, `supports_tools`
+- [x] Create `ClaudeClient` implementing trait (wrap existing code)
+- [x] Create `MockLlmClient` for testing
 
 **Quality Gates**:
 ```bash
@@ -103,7 +77,7 @@ cargo test --lib -- llm_client_trait
 cargo test --lib -- claude_client
 ```
 
-### 14. Phase 12.2: Model Configuration
+### 13. Phase 12.2: Model Configuration
 
 Add configuration for selecting and configuring LLM backend.
 
@@ -127,7 +101,7 @@ cargo test --lib -- llm_config
 cargo test --lib -- model_selection
 ```
 
-### 15. Phase 12.3: OpenAI/Gemini Client Stubs
+### 14. Phase 12.3: OpenAI/Gemini Client Stubs
 
 Create stub implementations for alternative models (implementation deferred).
 
@@ -158,7 +132,7 @@ cargo test --lib -- gemini_stub
 
 **Goal**: Enable community-contributed quality gates via plugin system.
 
-### 16. Phase 13.1: Gate Plugin Trait
+### 15. Phase 13.1: Gate Plugin Trait
 
 Define plugin interface for external quality gates.
 
@@ -181,7 +155,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- gate_plugin_trait
 ```
 
-### 17. Phase 13.2: Plugin Discovery and Loading
+### 16. Phase 13.2: Plugin Discovery and Loading
 
 Implement plugin discovery from standard locations.
 
@@ -206,7 +180,7 @@ cargo test --lib -- plugin_discovery
 cargo test --lib -- plugin_loading
 ```
 
-### 18. Phase 13.3: Example Plugin: RuboCop Gate
+### 17. Phase 13.3: Example Plugin: RuboCop Gate
 
 Create example Ruby plugin to demonstrate plugin system.
 
@@ -237,7 +211,7 @@ cargo test --lib -- rubocop_plugin
 
 **Goal**: Create comprehensive documentation for polyglot usage.
 
-### 19. Phase 14.1: Polyglot Quick Start Guide
+### 18. Phase 14.1: Polyglot Quick Start Guide
 
 Write quick start guide for Python, TypeScript, and Go projects.
 
@@ -262,7 +236,7 @@ npx markdownlint docs/*.md
 # Example validation (manual review)
 ```
 
-### 20. Phase 14.2: Example Polyglot Project
+### 19. Phase 14.2: Example Polyglot Project
 
 Create complete example project demonstrating polyglot features.
 
@@ -287,7 +261,7 @@ cd examples/polyglot-fullstack && npm install && npm run lint
 cd examples/polyglot-fullstack/backend && pip install -r requirements.txt && ruff check .
 ```
 
-### 21. Phase 14.3: Gate Development Guide
+### 20. Phase 14.3: Gate Development Guide
 
 Document how to create custom quality gates.
 
@@ -317,7 +291,7 @@ npx markdownlint docs/developing-gates.md
 
 **Goal**: Ensure Ralph performs well on large polyglot projects.
 
-### 22. Phase 15.1: Gate Execution Parallelization
+### 21. Phase 15.1: Gate Execution Parallelization
 
 Run independent gates in parallel for faster feedback.
 
@@ -342,7 +316,7 @@ cargo test --lib -- parallel_gates
 cargo test --lib -- gate_timeout
 ```
 
-### 23. Phase 15.2: Incremental Gate Execution
+### 22. Phase 15.2: Incremental Gate Execution
 
 Only run gates for changed languages/files when possible.
 
@@ -367,7 +341,7 @@ cargo test --lib -- incremental_gates
 cargo test --lib -- changed_file_detection
 ```
 
-### 24. Phase 15.3: Benchmark Suite
+### 23. Phase 15.3: Benchmark Suite
 
 Create benchmark suite for performance regression detection.
 
@@ -397,7 +371,7 @@ cargo bench --no-run  # Verify benchmarks compile
 
 **Goal**: Add opt-in analytics for understanding Ralph usage patterns.
 
-### 25. Phase 16.1: Structured Event Logging
+### 24. Phase 16.1: Structured Event Logging
 
 Standardize event logging for analytics consumption.
 
@@ -422,7 +396,7 @@ cargo test --lib -- analytics_event
 cargo test --lib -- event_schema
 ```
 
-### 26. Phase 16.2: Session Summary Report
+### 25. Phase 16.2: Session Summary Report
 
 Generate detailed summary report at end of each session.
 
@@ -447,7 +421,7 @@ cargo test --lib -- session_report
 cargo test --lib -- report_export
 ```
 
-### 27. Phase 16.3: Quality Trend Visualization
+### 26. Phase 16.3: Quality Trend Visualization
 
 Add command to visualize quality trends over time.
 
@@ -478,7 +452,7 @@ cargo test --test cli_analytics_trends
 
 **Goal**: Add features required for team/enterprise usage.
 
-### 28. Phase 17.1: Configuration Inheritance
+### 27. Phase 17.1: Configuration Inheritance
 
 Support configuration inheritance for team-wide defaults.
 
@@ -503,7 +477,7 @@ cargo test --lib -- config_inheritance
 cargo test --lib -- config_merge
 ```
 
-### 29. Phase 17.2: Shared Gate Configurations
+### 28. Phase 17.2: Shared Gate Configurations
 
 Allow gate configurations to be shared across team.
 
@@ -528,7 +502,7 @@ cargo test --lib -- shared_config
 cargo test --lib -- config_validation
 ```
 
-### 30. Phase 17.3: Audit Logging
+### 29. Phase 17.3: Audit Logging
 
 Add audit log for compliance and debugging.
 
@@ -559,7 +533,7 @@ cargo test --lib -- audit_integrity
 
 **Goal**: Create stubs for future cloud features without implementing backend.
 
-### 31. Phase 18.1: Remote Analytics Upload Stub
+### 30. Phase 18.1: Remote Analytics Upload Stub
 
 Create opt-in analytics upload stub.
 
@@ -583,7 +557,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- analytics_upload_stub
 ```
 
-### 32. Phase 18.2: Remote Campaign API Stub
+### 31. Phase 18.2: Remote Campaign API Stub
 
 Create stub for cloud-based campaign orchestration.
 
@@ -607,7 +581,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- campaign_api_stub
 ```
 
-### 33. Phase 18.3: CCG-Diff Verification Stub
+### 32. Phase 18.3: CCG-Diff Verification Stub
 
 Create stub for provable quality improvement verification.
 

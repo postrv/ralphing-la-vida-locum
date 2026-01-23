@@ -41,6 +41,7 @@ pub mod bootstrap;
 pub mod checkpoint;
 pub mod config;
 pub mod error;
+pub mod llm;
 pub mod narsil;
 pub mod prompt;
 pub mod quality;
@@ -90,6 +91,9 @@ pub use analytics::{
     AggregateStats, Analytics, AnalyticsEvent, PredictorAccuracyStats, QualityMetricsSnapshot,
     QualityTrend, SessionSummary, TrendDirection,
 };
+
+// Re-export LLM types
+pub use llm::{ClaudeClient, LlmClient, MockLlmClient};
 
 // Re-export bootstrap types
 pub use bootstrap::language::{Language, ParseLanguageError};
