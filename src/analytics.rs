@@ -176,8 +176,10 @@ impl Analytics {
                 "session_end" => {
                     summary.ended_at = Some(event.timestamp);
                     // Parse predictor accuracy from session_end event
-                    if let Some(accuracy) =
-                        event.data.get("predictor_accuracy").and_then(|v| v.as_f64())
+                    if let Some(accuracy) = event
+                        .data
+                        .get("predictor_accuracy")
+                        .and_then(|v| v.as_f64())
                     {
                         summary.predictor_accuracy = Some(accuracy);
                     }
@@ -279,8 +281,10 @@ impl Analytics {
                 "stagnation" => stats.total_stagnations += 1,
                 "session_end" => {
                     // Collect predictor accuracy from session_end events
-                    if let Some(accuracy) =
-                        event.data.get("predictor_accuracy").and_then(|v| v.as_f64())
+                    if let Some(accuracy) = event
+                        .data
+                        .get("predictor_accuracy")
+                        .and_then(|v| v.as_f64())
                     {
                         predictor_accuracies.push(accuracy);
                     }
@@ -486,7 +490,11 @@ impl Analytics {
     /// };
     /// analytics.log_predictor_stats("session-1", &stats)?;
     /// ```
-    pub fn log_predictor_stats(&self, session_id: &str, stats: &PredictorAccuracyStats) -> Result<()> {
+    pub fn log_predictor_stats(
+        &self,
+        session_id: &str,
+        stats: &PredictorAccuracyStats,
+    ) -> Result<()> {
         let data = serde_json::to_value(stats)?;
         self.log_event(session_id, "predictor_stats", data)
     }
@@ -1338,9 +1346,7 @@ mod tests {
             accuracy_critical: None,
         };
 
-        analytics
-            .log_predictor_stats("session1", &stats)
-            .unwrap();
+        analytics.log_predictor_stats("session1", &stats).unwrap();
 
         let events = analytics.read_events().unwrap();
         assert_eq!(events.len(), 1);
