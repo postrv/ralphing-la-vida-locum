@@ -83,8 +83,9 @@ pub mod remediation;
 
 // Re-export commonly used types from gates
 pub use gates::{
-    ClippyConfig, ClippyGate, Gate, GateIssue, GateResult, IssueSeverity, NoAllowGate, NoTodoGate,
-    PolyglotGateResult, SecurityGate, TestConfig, TestGate,
+    detect_changed_languages, ClippyConfig, ClippyGate, Gate, GateIssue, GateResult,
+    GateWeightConfig, IssueSeverity, NoAllowGate, NoTodoGate, PolyglotGateResult, SecurityGate,
+    TestConfig, TestGate,
 };
 
 // Re-export enforcer types

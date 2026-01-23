@@ -279,6 +279,51 @@ impl Language {
             Language::Sql => &["*.sql", "flyway.conf", "liquibase.properties"],
         }
     }
+
+    /// Returns the language associated with a file extension.
+    ///
+    /// The extension should include the leading dot (e.g., ".rs", ".py").
+    /// Returns `None` if the extension is not recognized.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::Language;
+    ///
+    /// assert_eq!(Language::from_extension(".rs"), Some(Language::Rust));
+    /// assert_eq!(Language::from_extension(".py"), Some(Language::Python));
+    /// assert_eq!(Language::from_extension(".unknown"), None);
+    /// ```
+    #[must_use]
+    pub fn from_extension(ext: &str) -> Option<Language> {
+        for lang in ALL_LANGUAGES {
+            if lang.extensions().contains(&ext) {
+                return Some(*lang);
+            }
+        }
+        None
+    }
+
+    /// Returns the language associated with a file path based on its extension.
+    ///
+    /// Returns `None` if the file has no extension or the extension is not recognized.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::Language;
+    /// use std::path::Path;
+    ///
+    /// assert_eq!(Language::from_path(Path::new("src/main.rs")), Some(Language::Rust));
+    /// assert_eq!(Language::from_path(Path::new("script.py")), Some(Language::Python));
+    /// assert_eq!(Language::from_path(Path::new("README.md")), None);
+    /// ```
+    #[must_use]
+    pub fn from_path(path: &std::path::Path) -> Option<Language> {
+        let ext = path.extension()?.to_str()?;
+        let ext_with_dot = format!(".{}", ext);
+        Self::from_extension(&ext_with_dot)
+    }
 }
 
 impl fmt::Display for Language {
@@ -879,5 +924,122 @@ mod tests {
             input: "foobar".to_string(),
         };
         assert_eq!(err.to_string(), "unknown language: 'foobar'");
+    }
+
+    // ============================================================
+    // from_extension() tests (Sprint 9, Phase 9.1)
+    // ============================================================
+
+    #[test]
+    fn test_from_extension_rust() {
+        assert_eq!(Language::from_extension(".rs"), Some(Language::Rust));
+    }
+
+    #[test]
+    fn test_from_extension_python() {
+        assert_eq!(Language::from_extension(".py"), Some(Language::Python));
+        assert_eq!(Language::from_extension(".pyi"), Some(Language::Python));
+    }
+
+    #[test]
+    fn test_from_extension_typescript() {
+        assert_eq!(Language::from_extension(".ts"), Some(Language::TypeScript));
+        assert_eq!(Language::from_extension(".tsx"), Some(Language::TypeScript));
+    }
+
+    #[test]
+    fn test_from_extension_javascript() {
+        assert_eq!(Language::from_extension(".js"), Some(Language::JavaScript));
+        assert_eq!(Language::from_extension(".jsx"), Some(Language::JavaScript));
+        assert_eq!(Language::from_extension(".mjs"), Some(Language::JavaScript));
+    }
+
+    #[test]
+    fn test_from_extension_go() {
+        assert_eq!(Language::from_extension(".go"), Some(Language::Go));
+    }
+
+    #[test]
+    fn test_from_extension_unknown() {
+        assert_eq!(Language::from_extension(".unknown"), None);
+        assert_eq!(Language::from_extension(".xyz"), None);
+        assert_eq!(Language::from_extension(""), None);
+    }
+
+    #[test]
+    fn test_from_extension_no_dot() {
+        // Extensions should include the dot
+        assert_eq!(Language::from_extension("rs"), None);
+        assert_eq!(Language::from_extension("py"), None);
+    }
+
+    // ============================================================
+    // from_path() tests (Sprint 9, Phase 9.1)
+    // ============================================================
+
+    #[test]
+    fn test_from_path_rust_file() {
+        use std::path::Path;
+        assert_eq!(
+            Language::from_path(Path::new("src/main.rs")),
+            Some(Language::Rust)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("lib.rs")),
+            Some(Language::Rust)
+        );
+    }
+
+    #[test]
+    fn test_from_path_python_file() {
+        use std::path::Path;
+        assert_eq!(
+            Language::from_path(Path::new("script.py")),
+            Some(Language::Python)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("types.pyi")),
+            Some(Language::Python)
+        );
+    }
+
+    #[test]
+    fn test_from_path_typescript_file() {
+        use std::path::Path;
+        assert_eq!(
+            Language::from_path(Path::new("src/index.ts")),
+            Some(Language::TypeScript)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("component.tsx")),
+            Some(Language::TypeScript)
+        );
+    }
+
+    #[test]
+    fn test_from_path_no_extension() {
+        use std::path::Path;
+        assert_eq!(Language::from_path(Path::new("README")), None);
+        assert_eq!(Language::from_path(Path::new("Makefile")), None);
+    }
+
+    #[test]
+    fn test_from_path_unknown_extension() {
+        use std::path::Path;
+        assert_eq!(Language::from_path(Path::new("file.xyz")), None);
+        assert_eq!(Language::from_path(Path::new("data.unknown")), None);
+    }
+
+    #[test]
+    fn test_from_path_nested_directory() {
+        use std::path::Path;
+        assert_eq!(
+            Language::from_path(Path::new("deep/nested/path/file.rs")),
+            Some(Language::Rust)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("src/components/Button.tsx")),
+            Some(Language::TypeScript)
+        );
     }
 }

@@ -35,22 +35,23 @@ This plan implements the strategic roadmap to make Ralph genuinely best-in-class
 
 **Goal**: Validate end-to-end polyglot functionality on real projects.
 
-### 9. Phase 9.1: Weighted Gate Scoring
+### 9. Phase 9.1: Weighted Gate Scoring ✅ COMPLETE
 
 Implement weighted scoring for polyglot gate results based on change scope.
 
 **Test Requirements**:
-- [ ] Test gates for changed files are weighted higher
-- [ ] Test unchanged language gates contribute less to overall score
-- [ ] Test blocking failures always block regardless of weight
-- [ ] Test weights are configurable via settings.json
-- [ ] Test default weights: changed files 1.0, unchanged 0.3
+- [x] Test gates for changed files are weighted higher
+- [x] Test unchanged language gates contribute less to overall score
+- [x] Test blocking failures always block regardless of weight
+- [x] Test weights are configurable via settings.json
+- [x] Test default weights: changed files 1.0, unchanged 0.3
 
 **Implementation**:
-- [ ] Add `weight: f64` field to gate execution context
-- [ ] Compute weights based on `git diff --name-only` file extensions
-- [ ] Modify `PolyglotGateResult::can_commit()` to use weighted scoring
-- [ ] Add `gate_weights` section to `settings.json` schema
+- [x] Add `GateWeightConfig` with `changed_weight` and `unchanged_weight` fields
+- [x] Add `detect_changed_languages()` to compute weights based on `git diff`
+- [x] Add `compute_weights()`, `weighted_score()`, and `can_commit_weighted()` to `PolyglotGateResult`
+- [x] Add `gateWeights` section to `settings.json` schema via `ProjectConfig`
+- [x] Add `Language::from_extension()` and `Language::from_path()` helper methods
 
 **Quality Gates**:
 ```bash

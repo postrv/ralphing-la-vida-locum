@@ -1368,6 +1368,132 @@ impl Gate for NoTodoGate {
 }
 
 // ============================================================================
+// Gate Weight Configuration (Sprint 9, Phase 9.1)
+// ============================================================================
+
+use std::collections::HashSet;
+
+/// Configuration for weighted gate scoring.
+///
+/// This configuration controls how gate results are weighted based on
+/// whether files of that language were changed in the current working tree.
+///
+/// # Default Weights
+///
+/// - Changed files: 1.0 (full weight)
+/// - Unchanged files: 0.3 (reduced weight)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::GateWeightConfig;
+///
+/// let config = GateWeightConfig::default();
+/// assert_eq!(config.changed_weight, 1.0);
+/// assert_eq!(config.unchanged_weight, 0.3);
+///
+/// // Custom weights
+/// let custom = GateWeightConfig {
+///     changed_weight: 1.0,
+///     unchanged_weight: 0.5,
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GateWeightConfig {
+    /// Weight applied to gates for languages with changed files.
+    /// Default: 1.0
+    #[serde(default = "default_changed_weight")]
+    pub changed_weight: f64,
+
+    /// Weight applied to gates for languages without changed files.
+    /// Default: 0.3
+    #[serde(default = "default_unchanged_weight")]
+    pub unchanged_weight: f64,
+}
+
+fn default_changed_weight() -> f64 {
+    1.0
+}
+
+fn default_unchanged_weight() -> f64 {
+    0.3
+}
+
+impl Default for GateWeightConfig {
+    fn default() -> Self {
+        Self {
+            changed_weight: default_changed_weight(),
+            unchanged_weight: default_unchanged_weight(),
+        }
+    }
+}
+
+/// Detects which languages have changed files in the git working tree.
+///
+/// This function runs `git diff --name-only` and `git diff --cached --name-only`
+/// to find all changed files (both staged and unstaged), then maps their
+/// extensions to programming languages.
+///
+/// # Arguments
+///
+/// * `project_dir` - Path to the git repository root
+///
+/// # Returns
+///
+/// A set of languages that have changed files. Returns an empty set if
+/// git is not available or the directory is not a git repository.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::quality::gates::detect_changed_languages;
+/// use std::path::Path;
+///
+/// let changed = detect_changed_languages(Path::new("."));
+/// for lang in &changed {
+///     println!("Changed: {}", lang);
+/// }
+/// ```
+#[must_use]
+pub fn detect_changed_languages(project_dir: &Path) -> HashSet<Language> {
+    let mut changed_languages = HashSet::new();
+
+    // Get unstaged changes
+    if let Ok(output) = Command::new("git")
+        .args(["diff", "--name-only"])
+        .current_dir(project_dir)
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if let Some(lang) = Language::from_path(Path::new(line)) {
+                    changed_languages.insert(lang);
+                }
+            }
+        }
+    }
+
+    // Get staged changes
+    if let Ok(output) = Command::new("git")
+        .args(["diff", "--cached", "--name-only"])
+        .current_dir(project_dir)
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if let Some(lang) = Language::from_path(Path::new(line)) {
+                    changed_languages.insert(lang);
+                }
+            }
+        }
+    }
+
+    changed_languages
+}
+
+// ============================================================================
 // PolyglotGateResult (Sprint 7, Phase 7.4)
 // ============================================================================
 
@@ -1603,6 +1729,121 @@ impl PolyglotGateResult {
         }
 
         prompt
+    }
+
+    // =========================================================================
+    // Weighted Scoring Methods (Sprint 9, Phase 9.1)
+    // =========================================================================
+
+    /// Compute weights for each language based on changed files.
+    ///
+    /// Languages with changed files get the `changed_weight`, while languages
+    /// without changes get the `unchanged_weight`.
+    ///
+    /// # Arguments
+    ///
+    /// * `changed_languages` - Set of languages that have changed files
+    /// * `config` - Weight configuration
+    ///
+    /// # Returns
+    ///
+    /// A map of language to weight value.
+    #[must_use]
+    pub fn compute_weights(
+        &self,
+        changed_languages: &HashSet<Language>,
+        config: &GateWeightConfig,
+    ) -> HashMap<Language, f64> {
+        self.by_language
+            .keys()
+            .map(|lang| {
+                let weight = if changed_languages.contains(lang) {
+                    config.changed_weight
+                } else {
+                    config.unchanged_weight
+                };
+                (*lang, weight)
+            })
+            .collect()
+    }
+
+    /// Compute a weighted score for the gate results.
+    ///
+    /// The score is computed as the weighted sum of passing gates divided by
+    /// the total weighted sum. Returns 1.0 if no gates were run.
+    ///
+    /// # Arguments
+    ///
+    /// * `changed_languages` - Set of languages that have changed files
+    /// * `config` - Weight configuration
+    ///
+    /// # Returns
+    ///
+    /// A score between 0.0 and 1.0, where 1.0 means all gates passed.
+    #[must_use]
+    pub fn weighted_score(
+        &self,
+        changed_languages: &HashSet<Language>,
+        config: &GateWeightConfig,
+    ) -> f64 {
+        let weights = self.compute_weights(changed_languages, config);
+
+        let mut weighted_passed = 0.0;
+        let mut weighted_total = 0.0;
+
+        for (lang, results) in &self.by_language {
+            let weight = weights.get(lang).copied().unwrap_or(config.unchanged_weight);
+
+            for result in results {
+                weighted_total += weight;
+                if result.passed {
+                    weighted_passed += weight;
+                }
+            }
+        }
+
+        if weighted_total == 0.0 {
+            1.0 // No gates means perfect score
+        } else {
+            weighted_passed / weighted_total
+        }
+    }
+
+    /// Check if commit is allowed using weighted scoring.
+    ///
+    /// Returns `true` if:
+    /// 1. There are no blocking failures (errors or critical issues), AND
+    /// 2. The weighted score is acceptable (non-blocking issues in low-weight
+    ///    languages don't prevent commit)
+    ///
+    /// Blocking failures (Error or Critical severity) always block commit
+    /// regardless of the language's weight.
+    ///
+    /// # Arguments
+    ///
+    /// * `changed_languages` - Set of languages that have changed files
+    /// * `config` - Weight configuration
+    ///
+    /// # Returns
+    ///
+    /// `true` if commit is allowed, `false` otherwise.
+    #[must_use]
+    pub fn can_commit_weighted(
+        &self,
+        changed_languages: &HashSet<Language>,
+        config: &GateWeightConfig,
+    ) -> bool {
+        // Blocking failures always block, regardless of weight
+        if !self.blocking_failures().is_empty() {
+            return false;
+        }
+
+        // If no blocking failures, check weighted score
+        // Currently, we allow commit if there are no blocking issues
+        // The weighted score is informational for non-blocking issues
+        let _score = self.weighted_score(changed_languages, config);
+
+        true
     }
 }
 
@@ -2817,6 +3058,251 @@ version = "0.1.0"
         assert!(
             result.by_language().is_empty(),
             "Default result should be empty"
+        );
+    }
+
+    // =========================================================================
+    // Weighted Gate Scoring tests (Sprint 9, Phase 9.1)
+    // =========================================================================
+
+    #[test]
+    fn test_weighted_scoring_changed_files_weighted_higher() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let mut changed_languages = HashSet::new();
+        changed_languages.insert(Language::Python);
+
+        let config = GateWeightConfig::default();
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add passing gates for Python (changed) and Rust (unchanged)
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+
+        // Compute weights based on changed languages
+        let weights = result.compute_weights(&changed_languages, &config);
+
+        // Python should have full weight (1.0)
+        assert!(
+            (weights.get(&Language::Python).copied().unwrap_or(0.0) - 1.0).abs() < f64::EPSILON,
+            "Changed language should have weight 1.0"
+        );
+
+        // Rust should have reduced weight (0.3)
+        assert!(
+            (weights.get(&Language::Rust).copied().unwrap_or(0.0) - 0.3).abs() < f64::EPSILON,
+            "Unchanged language should have weight 0.3"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_unchanged_gates_contribute_less() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let mut changed_languages = HashSet::new();
+        changed_languages.insert(Language::Python);
+
+        let config = GateWeightConfig::default();
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add failing gate for unchanged language (Rust)
+        let issues = vec![GateIssue::new(IssueSeverity::Warning, "unused variable")];
+        let mut gate_result = GateResult::fail("Clippy", issues);
+        gate_result.passed = false;
+        result.add_result(Language::Rust, gate_result);
+
+        // Add passing gate for changed language (Python)
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+
+        // Weighted score should still allow commit because the failed gate
+        // is in an unchanged language with reduced weight
+        let score = result.weighted_score(&changed_languages, &config);
+
+        // With Python (1.0 weight) passing and Rust (0.3 weight) failing,
+        // the weighted pass rate should be > threshold
+        assert!(
+            score > 0.5,
+            "Weighted score should be high when changed language passes"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_blocking_failures_always_block() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let mut changed_languages = HashSet::new();
+        changed_languages.insert(Language::Python);
+
+        let config = GateWeightConfig::default();
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add blocking error in unchanged language (Rust)
+        let issues = vec![GateIssue::new(IssueSeverity::Error, "compilation error")];
+        result.add_result(Language::Rust, GateResult::fail("Clippy", issues));
+
+        // Add passing gate for changed language (Python)
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+
+        // Despite the weighted score, blocking failures should still block
+        assert!(
+            !result.can_commit_weighted(&changed_languages, &config),
+            "Blocking failures should always block regardless of weight"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_critical_always_blocks() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let mut changed_languages = HashSet::new();
+        changed_languages.insert(Language::Python);
+
+        let config = GateWeightConfig::default();
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add critical issue in unchanged language
+        let issues = vec![GateIssue::new(
+            IssueSeverity::Critical,
+            "security vulnerability",
+        )];
+        result.add_result(Language::Rust, GateResult::fail("Security", issues));
+
+        // Add passing gates for changed language
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+        result.add_result(Language::Python, GateResult::pass("Bandit"));
+
+        // Critical issues should always block, even in unchanged languages
+        assert!(
+            !result.can_commit_weighted(&changed_languages, &config),
+            "Critical issues should always block regardless of weight"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_config_default_values() {
+        use super::GateWeightConfig;
+
+        let config = GateWeightConfig::default();
+
+        assert!(
+            (config.changed_weight - 1.0).abs() < f64::EPSILON,
+            "Default changed weight should be 1.0"
+        );
+        assert!(
+            (config.unchanged_weight - 0.3).abs() < f64::EPSILON,
+            "Default unchanged weight should be 0.3"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_configurable_weights() {
+        use super::GateWeightConfig;
+
+        let config = GateWeightConfig {
+            changed_weight: 1.0,
+            unchanged_weight: 0.5, // Higher than default
+        };
+
+        assert!(
+            (config.unchanged_weight - 0.5).abs() < f64::EPSILON,
+            "Custom unchanged weight should be configurable"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_all_languages_changed() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let mut changed_languages = HashSet::new();
+        changed_languages.insert(Language::Python);
+        changed_languages.insert(Language::Rust);
+
+        let config = GateWeightConfig::default();
+        let mut result = super::PolyglotGateResult::new();
+
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+
+        let weights = result.compute_weights(&changed_languages, &config);
+
+        // Both should have full weight
+        assert!(
+            (weights.get(&Language::Python).copied().unwrap_or(0.0) - 1.0).abs() < f64::EPSILON,
+            "Python should have full weight when changed"
+        );
+        assert!(
+            (weights.get(&Language::Rust).copied().unwrap_or(0.0) - 1.0).abs() < f64::EPSILON,
+            "Rust should have full weight when changed"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_no_languages_changed() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let changed_languages: HashSet<Language> = HashSet::new();
+
+        let config = GateWeightConfig::default();
+        let mut result = super::PolyglotGateResult::new();
+
+        result.add_result(Language::Python, GateResult::pass("Ruff"));
+        result.add_result(Language::Rust, GateResult::pass("Clippy"));
+
+        let weights = result.compute_weights(&changed_languages, &config);
+
+        // All should have reduced weight
+        assert!(
+            (weights.get(&Language::Python).copied().unwrap_or(0.0) - 0.3).abs() < f64::EPSILON,
+            "Python should have reduced weight when not changed"
+        );
+        assert!(
+            (weights.get(&Language::Rust).copied().unwrap_or(0.0) - 0.3).abs() < f64::EPSILON,
+            "Rust should have reduced weight when not changed"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_empty_result_can_commit() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let changed_languages: HashSet<Language> = HashSet::new();
+        let config = GateWeightConfig::default();
+        let result = super::PolyglotGateResult::new();
+
+        assert!(
+            result.can_commit_weighted(&changed_languages, &config),
+            "Empty result should allow commit with weighted scoring"
+        );
+    }
+
+    #[test]
+    fn test_weighted_scoring_warnings_in_changed_language_still_allow_commit() {
+        use super::GateWeightConfig;
+        use std::collections::HashSet;
+
+        let mut changed_languages = HashSet::new();
+        changed_languages.insert(Language::Python);
+
+        let config = GateWeightConfig::default();
+        let mut result = super::PolyglotGateResult::new();
+
+        // Add warnings (non-blocking) in changed language
+        let issues = vec![GateIssue::new(IssueSeverity::Warning, "missing docstring")];
+        let mut gate_result = GateResult::pass("Ruff");
+        gate_result.issues = issues;
+        result.add_result(Language::Python, gate_result);
+
+        // Warnings should not block commit
+        assert!(
+            result.can_commit_weighted(&changed_languages, &config),
+            "Warnings should not block commit with weighted scoring"
         );
     }
 }

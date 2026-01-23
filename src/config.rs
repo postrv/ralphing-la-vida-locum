@@ -119,6 +119,13 @@ pub struct ProjectConfig {
 
     #[serde(default = "default_true", rename = "respectGitignore")]
     pub respect_gitignore: bool,
+
+    /// Configuration for weighted gate scoring (Sprint 9.1).
+    ///
+    /// Controls how gate results are weighted based on whether files of that
+    /// language were changed in the current working tree.
+    #[serde(default, rename = "gateWeights")]
+    pub gate_weights: crate::quality::gates::GateWeightConfig,
 }
 
 fn default_true() -> bool {
@@ -131,6 +138,7 @@ impl Default for ProjectConfig {
             permissions: PermissionsConfig::default(),
             hooks: HooksConfig::default(),
             respect_gitignore: true, // Match the serde default
+            gate_weights: crate::quality::gates::GateWeightConfig::default(),
         }
     }
 }
@@ -839,5 +847,60 @@ mod tests {
             warnings: Vec::new(),
         };
         assert!(!check.is_ready());
+    }
+
+    // =========================================================================
+    // Gate Weight Configuration Tests (Sprint 9, Phase 9.1)
+    // =========================================================================
+
+    #[test]
+    fn test_project_config_gate_weights_default() {
+        let config = ProjectConfig::default();
+        assert!(
+            (config.gate_weights.changed_weight - 1.0).abs() < f64::EPSILON,
+            "Default changed_weight should be 1.0"
+        );
+        assert!(
+            (config.gate_weights.unchanged_weight - 0.3).abs() < f64::EPSILON,
+            "Default unchanged_weight should be 0.3"
+        );
+    }
+
+    #[test]
+    fn test_project_config_load_with_gate_weights() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"gateWeights": {"changed_weight": 1.0, "unchanged_weight": 0.5}}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert!(
+            (config.gate_weights.unchanged_weight - 0.5).abs() < f64::EPSILON,
+            "Custom unchanged_weight should be loaded"
+        );
+    }
+
+    #[test]
+    fn test_project_config_gate_weights_missing_uses_default() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert!(
+            (config.gate_weights.changed_weight - 1.0).abs() < f64::EPSILON,
+            "Missing gate_weights should use default changed_weight"
+        );
+        assert!(
+            (config.gate_weights.unchanged_weight - 0.3).abs() < f64::EPSILON,
+            "Missing gate_weights should use default unchanged_weight"
+        );
     }
 }
