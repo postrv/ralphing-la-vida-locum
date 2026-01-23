@@ -177,22 +177,22 @@ cargo test --lib -- prompt_assembler
 cargo test --lib -- language_rules
 ```
 
-### 7. Phase 8.2: Language-Specific Antipattern Detection
+### 7. Phase 8.2: Language-Specific Antipattern Detection ✅
 
 Add antipattern detection rules for Python, TypeScript, and Go.
 
 **Test Requirements**:
-- [ ] Test Python antipatterns: bare except, mutable default args, global state
-- [ ] Test TypeScript antipatterns: any type, non-null assertion, console.log
-- [ ] Test Go antipatterns: ignored errors, empty interface abuse, panic in library
-- [ ] Test antipattern detector accepts language parameter
-- [ ] Test polyglot projects check antipatterns for changed file types only
+- [x] Test Python antipatterns: bare except, mutable default args, global state
+- [x] Test TypeScript antipatterns: any type, non-null assertion, console.log
+- [x] Test Go antipatterns: ignored errors, empty interface abuse, panic in library
+- [x] Test antipattern detector accepts language parameter
+- [x] Test polyglot projects check antipatterns for changed file types only
 
 **Implementation**:
-- [ ] Add `antipatterns_for_language(lang: Language) -> Vec<AntipatternRule>`
-- [ ] Create antipattern rules for Python, TypeScript, Go
-- [ ] Modify antipattern detector to filter by file extension
-- [ ] Add antipattern results to remediation prompt
+- [x] Add `antipatterns_for_language(lang: Language) -> Vec<AntipatternRule>`
+- [x] Create antipattern rules for Python, TypeScript, Go
+- [x] Modify antipattern detector to filter by file extension
+- [x] Add antipattern results to remediation prompt
 
 **Quality Gates**:
 ```bash
