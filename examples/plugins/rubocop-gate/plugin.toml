@@ -1,0 +1,34 @@
+# RuboCop Quality Gate Plugin for Ralph
+#
+# This manifest describes the plugin and its configuration.
+# Copy this file along with the compiled library to your plugins directory:
+#   ~/.ralph/plugins/rubocop-gate/
+#   or
+#   <project>/.ralph/plugins/rubocop-gate/
+
+[plugin]
+name = "rubocop-gate"
+version = "1.0.0"
+author = "Ralph Community"
+description = "Ruby linting via RuboCop - checks Ruby code against community style guide"
+homepage = "https://github.com/example/ralph-rubocop-gate"
+license = "MIT"
+
+[library]
+# Path to the shared library, relative to this manifest file.
+# The filename varies by platform:
+#   - macOS: librubocop_gate.dylib
+#   - Linux: librubocop_gate.so
+#   - Windows: rubocop_gate.dll
+path = "target/release/librubocop_gate.dylib"
+
+# Entry point function name (default: create_gate_plugin)
+entry_point = "create_gate_plugin"
+
+[config]
+# Maximum execution time before the plugin is terminated.
+# RuboCop can be slow on large codebases, so we use a generous timeout.
+timeout = "2m"
+
+# Whether this plugin is enabled by default.
+enabled = true

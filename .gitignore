@@ -1,4 +1,6 @@
 /target
+**/target
+examples/plugins/*/Cargo.lock
 /.archive
 /.ralph
 .idea

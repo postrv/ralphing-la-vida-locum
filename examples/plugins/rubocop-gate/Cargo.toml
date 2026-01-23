@@ -1,0 +1,24 @@
+[package]
+name = "rubocop-gate"
+version = "1.0.0"
+edition = "2021"
+authors = ["Ralph Community"]
+description = "RuboCop quality gate plugin for Ralph - demonstrates plugin development"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/example/ralph-rubocop-gate"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Use path dependency for development, publish would use version
+ralph = { path = "../../.." }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+which = "8.0"
+
+[dev-dependencies]
+tempfile = "3.14"
