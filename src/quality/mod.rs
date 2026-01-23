@@ -79,6 +79,7 @@
 
 pub mod enforcer;
 pub mod gates;
+pub mod plugin;
 pub mod remediation;
 
 // Re-export commonly used types from gates
@@ -95,4 +96,10 @@ pub use enforcer::{EnforcerConfig, EnforcerSummary, QualityGateEnforcer};
 pub use remediation::{
     generate_minimal_remediation, generate_remediation_prompt, RemediationConfig,
     RemediationGenerator,
+};
+
+// Re-export plugin types
+pub use plugin::{
+    GatePlugin, LibraryConfig, PluginConfig, PluginError, PluginExecutor, PluginManifest,
+    PluginMetadata,
 };

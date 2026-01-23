@@ -66,9 +66,10 @@ pub use testing::{
 // Re-export quality gate types
 pub use quality::{
     generate_minimal_remediation, generate_remediation_prompt, ClippyConfig, ClippyGate,
-    EnforcerConfig, EnforcerSummary, Gate, GateIssue, GateResult, IssueSeverity, NoAllowGate,
-    NoTodoGate, QualityGateEnforcer, RemediationConfig, RemediationGenerator, SecurityGate,
-    TestConfig, TestGate,
+    EnforcerConfig, EnforcerSummary, Gate, GateIssue, GateResult, GatePlugin, IssueSeverity,
+    LibraryConfig, NoAllowGate, NoTodoGate, PluginConfig, PluginError, PluginExecutor,
+    PluginManifest, PluginMetadata, QualityGateEnforcer, RemediationConfig, RemediationGenerator,
+    SecurityGate, TestConfig, TestGate,
 };
 
 // Re-export checkpoint types
