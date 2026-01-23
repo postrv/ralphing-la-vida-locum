@@ -531,6 +531,369 @@ impl LlmConfig {
     }
 }
 
+// =============================================================================
+// Model Status and Info (Phase 12.3)
+// =============================================================================
+
+/// Status of a model implementation.
+///
+/// Indicates whether a model backend is fully implemented or coming soon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelStatus {
+    /// Model is fully implemented and available for use.
+    Available,
+    /// Model is planned but not yet implemented.
+    ComingSoon,
+}
+
+impl ModelStatus {
+    /// Check if the model is available for use.
+    #[must_use]
+    pub fn is_available(&self) -> bool {
+        matches!(self, Self::Available)
+    }
+}
+
+/// Information about a supported model.
+///
+/// Provides metadata about each model backend including its current
+/// implementation status, description, and available variants.
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    /// Model identifier (e.g., "claude", "openai").
+    pub name: &'static str,
+    /// Human-readable description.
+    pub description: &'static str,
+    /// Implementation status.
+    pub status: ModelStatus,
+    /// Available model variants.
+    pub variants: &'static [&'static str],
+    /// Default API key environment variable.
+    pub default_api_key_env: &'static str,
+}
+
+/// Get information about all supported models.
+///
+/// Returns a list of all model backends that Ralph supports or will support,
+/// including their current implementation status.
+///
+/// # Example
+///
+/// ```rust
+/// use ralph::llm::get_supported_models;
+///
+/// let models = get_supported_models();
+/// for model in &models {
+///     println!("{}: {:?}", model.name, model.status);
+/// }
+/// ```
+#[must_use]
+pub fn get_supported_models() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            name: "claude",
+            description: "Anthropic Claude models via Claude Code CLI",
+            status: ModelStatus::Available,
+            variants: &["opus", "sonnet", "haiku"],
+            default_api_key_env: "ANTHROPIC_API_KEY",
+        },
+        ModelInfo {
+            name: "openai",
+            description: "OpenAI GPT models (coming soon)",
+            status: ModelStatus::ComingSoon,
+            variants: &["gpt-4", "gpt-4o", "gpt-4o-mini", "o1", "o1-mini"],
+            default_api_key_env: "OPENAI_API_KEY",
+        },
+        ModelInfo {
+            name: "gemini",
+            description: "Google Gemini models (coming soon)",
+            status: ModelStatus::ComingSoon,
+            variants: &["pro", "flash", "ultra"],
+            default_api_key_env: "GOOGLE_API_KEY",
+        },
+        ModelInfo {
+            name: "ollama",
+            description: "Local models via Ollama (coming soon)",
+            status: ModelStatus::ComingSoon,
+            variants: &["llama3", "mistral", "codellama", "custom"],
+            default_api_key_env: "",
+        },
+    ]
+}
+
+// =============================================================================
+// OpenAI Client Stub (Phase 12.3)
+// =============================================================================
+
+/// OpenAI client stub for GPT models.
+///
+/// **Status: Coming Soon**
+///
+/// This is a placeholder implementation for OpenAI API integration.
+/// Currently, calling `run_prompt` will return an error indicating
+/// that the implementation is not yet available.
+///
+/// # Implementation Roadmap
+///
+/// When implemented, this client will:
+///
+/// 1. Use the `OPENAI_API_KEY` environment variable for authentication
+/// 2. Support GPT-4, GPT-4o, and o1 model variants
+/// 3. Handle tool/function calling via OpenAI's function calling API
+/// 4. Support streaming responses for real-time output
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::llm::OpenAiClient;
+///
+/// // Create client for GPT-4o
+/// let client = OpenAiClient::new("gpt-4o");
+///
+/// // Currently returns an error - not yet implemented
+/// let result = client.run_prompt("Hello!").await;
+/// assert!(result.is_err());
+/// ```
+#[derive(Debug, Clone)]
+pub struct OpenAiClient {
+    /// Model variant (e.g., "gpt-4", "gpt-4o", "o1").
+    model: String,
+    /// API key environment variable name.
+    api_key_env: String,
+}
+
+impl OpenAiClient {
+    /// Create a new OpenAI client stub.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model variant to use (e.g., "gpt-4o", "o1")
+    #[must_use]
+    pub fn new(model: &str) -> Self {
+        Self {
+            model: model.to_string(),
+            api_key_env: "OPENAI_API_KEY".to_string(),
+        }
+    }
+
+    /// Set the API key environment variable.
+    #[must_use]
+    pub fn with_api_key_env(mut self, env_var: &str) -> Self {
+        self.api_key_env = env_var.to_string();
+        self
+    }
+}
+
+#[async_trait]
+impl LlmClient for OpenAiClient {
+    async fn run_prompt(&self, _prompt: &str) -> Result<String> {
+        anyhow::bail!(
+            "OpenAI model '{}' is not yet implemented (coming soon). \
+            To use Ralph now, switch to Claude with --model claude or \
+            set \"model\": \"claude\" in .claude/settings.json. \
+            \n\nImplementation tracking: https://github.com/anthropics/ralph/issues/openai",
+            self.model
+        )
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn supports_tools(&self) -> bool {
+        // OpenAI supports function calling, but stub doesn't implement it
+        false
+    }
+}
+
+// =============================================================================
+// Gemini Client Stub (Phase 12.3)
+// =============================================================================
+
+/// Google Gemini client stub.
+///
+/// **Status: Coming Soon**
+///
+/// This is a placeholder implementation for Google's Gemini API integration.
+/// Currently, calling `run_prompt` will return an error indicating
+/// that the implementation is not yet available.
+///
+/// # Implementation Roadmap
+///
+/// When implemented, this client will:
+///
+/// 1. Use the `GOOGLE_API_KEY` environment variable for authentication
+/// 2. Support Gemini Pro, Flash, and Ultra variants
+/// 3. Handle tool use via Gemini's function calling API
+/// 4. Support multimodal inputs (future)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::llm::GeminiClient;
+///
+/// // Create client for Gemini Pro
+/// let client = GeminiClient::new("pro");
+///
+/// // Currently returns an error - not yet implemented
+/// let result = client.run_prompt("Hello!").await;
+/// assert!(result.is_err());
+/// ```
+#[derive(Debug, Clone)]
+pub struct GeminiClient {
+    /// Model variant (e.g., "pro", "flash", "ultra").
+    variant: String,
+    /// API key environment variable name.
+    api_key_env: String,
+}
+
+impl GeminiClient {
+    /// Create a new Gemini client stub.
+    ///
+    /// # Arguments
+    ///
+    /// * `variant` - The model variant to use (e.g., "pro", "flash")
+    #[must_use]
+    pub fn new(variant: &str) -> Self {
+        Self {
+            variant: variant.to_string(),
+            api_key_env: "GOOGLE_API_KEY".to_string(),
+        }
+    }
+
+    /// Set the API key environment variable.
+    #[must_use]
+    pub fn with_api_key_env(mut self, env_var: &str) -> Self {
+        self.api_key_env = env_var.to_string();
+        self
+    }
+}
+
+#[async_trait]
+impl LlmClient for GeminiClient {
+    async fn run_prompt(&self, _prompt: &str) -> Result<String> {
+        anyhow::bail!(
+            "Gemini model 'gemini-{}' is not yet implemented (coming soon). \
+            To use Ralph now, switch to Claude with --model claude or \
+            set \"model\": \"claude\" in .claude/settings.json. \
+            \n\nImplementation tracking: https://github.com/anthropics/ralph/issues/gemini",
+            self.variant
+        )
+    }
+
+    fn model_name(&self) -> &str {
+        // Return the full model name (e.g., "gemini-pro")
+        // We can't return a dynamically created string, so we match variants
+        match self.variant.as_str() {
+            "pro" => "gemini-pro",
+            "flash" => "gemini-flash",
+            "ultra" => "gemini-ultra",
+            _ => "gemini-unknown",
+        }
+    }
+
+    fn supports_tools(&self) -> bool {
+        // Gemini supports function calling, but stub doesn't implement it
+        false
+    }
+}
+
+// =============================================================================
+// Ollama Client Stub (Phase 12.3)
+// =============================================================================
+
+/// Ollama client stub for local models.
+///
+/// **Status: Coming Soon**
+///
+/// This is a placeholder implementation for Ollama integration, enabling
+/// Ralph to work with locally-hosted LLMs. Currently, calling `run_prompt`
+/// will return an error indicating that the implementation is not yet available.
+///
+/// # Implementation Roadmap
+///
+/// When implemented, this client will:
+///
+/// 1. Connect to Ollama server at configurable host (default: `localhost:11434`)
+/// 2. Support any model available in the local Ollama installation
+/// 3. Work offline without requiring API keys
+/// 4. Support custom quantization and model configurations
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::llm::OllamaClient;
+///
+/// // Create client for llama3
+/// let client = OllamaClient::new("llama3", None);
+///
+/// // Create client with custom host
+/// let client = OllamaClient::new("codellama", Some("http://192.168.1.100:11434"));
+///
+/// // Currently returns an error - not yet implemented
+/// let result = client.run_prompt("Hello!").await;
+/// assert!(result.is_err());
+/// ```
+#[derive(Debug, Clone)]
+pub struct OllamaClient {
+    /// Model name (e.g., "llama3", "mistral", "codellama").
+    model: String,
+    /// Ollama server host URL.
+    host: String,
+}
+
+impl OllamaClient {
+    /// Default Ollama host.
+    pub const DEFAULT_HOST: &'static str = "http://localhost:11434";
+
+    /// Create a new Ollama client stub.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model name to use (e.g., "llama3", "codellama")
+    /// * `host` - Optional custom host URL. Defaults to `http://localhost:11434`
+    #[must_use]
+    pub fn new(model: &str, host: Option<&str>) -> Self {
+        Self {
+            model: model.to_string(),
+            host: host.unwrap_or(Self::DEFAULT_HOST).to_string(),
+        }
+    }
+
+    /// Get the configured host URL.
+    #[must_use]
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+}
+
+#[async_trait]
+impl LlmClient for OllamaClient {
+    async fn run_prompt(&self, _prompt: &str) -> Result<String> {
+        anyhow::bail!(
+            "Ollama model '{}' at '{}' is not yet implemented (coming soon). \
+            To use Ralph now, switch to Claude with --model claude or \
+            set \"model\": \"claude\" in .claude/settings.json. \
+            \n\nImplementation tracking: https://github.com/anthropics/ralph/issues/ollama",
+            self.model,
+            self.host
+        )
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn supports_tools(&self) -> bool {
+        // Ollama supports some function calling, but stub doesn't implement it
+        false
+    }
+}
+
+// =============================================================================
+// LLM Client Factory (Phase 12.2 + 12.3)
+// =============================================================================
+
 /// Create an LLM client based on configuration.
 ///
 /// This factory function creates the appropriate LLM client implementation
@@ -573,22 +936,40 @@ pub fn create_llm_client(
             Ok(Box::new(client))
         }
         "openai" => {
-            anyhow::bail!(
-                "OpenAI model support is not yet implemented (coming soon). \
-                Use --model claude or set \"model\": \"claude\" in settings.json"
-            )
+            // Return stub client - will error on run_prompt but allows testing
+            let variant = config
+                .options
+                .get("variant")
+                .and_then(|v| v.as_str())
+                .unwrap_or("gpt-4o");
+            let client = OpenAiClient::new(variant)
+                .with_api_key_env(&config.api_key_env);
+            Ok(Box::new(client))
         }
         "gemini" => {
-            anyhow::bail!(
-                "Gemini model support is not yet implemented (coming soon). \
-                Use --model claude or set \"model\": \"claude\" in settings.json"
-            )
+            // Return stub client - will error on run_prompt but allows testing
+            let variant = config
+                .options
+                .get("variant")
+                .and_then(|v| v.as_str())
+                .unwrap_or("pro");
+            let client = GeminiClient::new(variant)
+                .with_api_key_env(&config.api_key_env);
+            Ok(Box::new(client))
         }
         "ollama" => {
-            anyhow::bail!(
-                "Ollama model support is not yet implemented (coming soon). \
-                Use --model claude or set \"model\": \"claude\" in settings.json"
-            )
+            // Return stub client - will error on run_prompt but allows testing
+            let model = config
+                .options
+                .get("model_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("llama3");
+            let host = config
+                .options
+                .get("host")
+                .and_then(|v| v.as_str());
+            let client = OllamaClient::new(model, host);
+            Ok(Box::new(client))
         }
         other => {
             anyhow::bail!(
@@ -788,24 +1169,24 @@ mod tests {
         assert!(client.model_name().contains("sonnet"));
     }
 
-    /// Test model factory returns error for unsupported model.
+    /// Test model factory returns error for invalid model name.
     #[test]
-    fn test_create_llm_client_unsupported_model() {
+    fn test_create_llm_client_invalid_model() {
         let config = LlmConfig {
-            model: "openai".to_string(),
-            api_key_env: "OPENAI_API_KEY".to_string(),
+            model: "invalid_model_xyz".to_string(),
+            api_key_env: "API_KEY".to_string(),
             options: std::collections::HashMap::new(),
         };
         let project_dir = std::path::PathBuf::from(".");
 
         let result = create_llm_client(&config, &project_dir);
         match result {
-            Ok(_) => panic!("Expected error for unsupported model"),
+            Ok(_) => panic!("Expected error for invalid model name"),
             Err(e) => {
                 let err = e.to_string();
                 assert!(
-                    err.contains("not yet implemented") || err.contains("coming soon"),
-                    "Error should mention model not implemented: {}",
+                    err.contains("Unknown model") || err.contains("Invalid model"),
+                    "Error should mention invalid model: {}",
                     err
                 );
             }
@@ -1024,5 +1405,261 @@ mod tests {
         let client: Box<dyn LlmClient> = Box::new(ClaudeClient::new("."));
         assert_eq!(client.model_name(), "claude-opus-4");
         assert!(client.supports_tools());
+    }
+
+    // =========================================================================
+    // OpenAI Client Stub Tests (Phase 12.3)
+    // =========================================================================
+
+    /// Test OpenAI client stub exists and can be created.
+    #[test]
+    fn test_openai_client_stub_exists() {
+        let client = OpenAiClient::new("gpt-4o");
+        assert!(client.model_name().contains("gpt"));
+    }
+
+    /// Test OpenAI client stub returns "not implemented" error.
+    #[tokio::test]
+    async fn test_openai_client_stub_returns_not_implemented() {
+        let client = OpenAiClient::new("gpt-4o");
+        let result = client.run_prompt("test").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("not yet implemented") || err.contains("coming soon"),
+            "Error should indicate not implemented: {}",
+            err
+        );
+    }
+
+    /// Test OpenAI client stub model variants.
+    #[test]
+    fn test_openai_client_stub_model_variants() {
+        let gpt4 = OpenAiClient::new("gpt-4");
+        assert_eq!(gpt4.model_name(), "gpt-4");
+
+        let gpt4o = OpenAiClient::new("gpt-4o");
+        assert_eq!(gpt4o.model_name(), "gpt-4o");
+
+        let o1 = OpenAiClient::new("o1");
+        assert_eq!(o1.model_name(), "o1");
+    }
+
+    /// Test OpenAI client stub is Send + Sync.
+    #[test]
+    fn test_openai_client_stub_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<OpenAiClient>();
+    }
+
+    /// Test OpenAI client stub can be used as trait object.
+    #[test]
+    fn test_openai_client_stub_as_trait_object() {
+        let client: Box<dyn LlmClient> = Box::new(OpenAiClient::new("gpt-4o"));
+        assert!(client.model_name().contains("gpt"));
+    }
+
+    // =========================================================================
+    // Gemini Client Stub Tests (Phase 12.3)
+    // =========================================================================
+
+    /// Test Gemini client stub exists and can be created.
+    #[test]
+    fn test_gemini_client_stub_exists() {
+        let client = GeminiClient::new("pro");
+        assert!(client.model_name().contains("gemini"));
+    }
+
+    /// Test Gemini client stub returns "not implemented" error.
+    #[tokio::test]
+    async fn test_gemini_client_stub_returns_not_implemented() {
+        let client = GeminiClient::new("pro");
+        let result = client.run_prompt("test").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("not yet implemented") || err.contains("coming soon"),
+            "Error should indicate not implemented: {}",
+            err
+        );
+    }
+
+    /// Test Gemini client stub model variants.
+    #[test]
+    fn test_gemini_client_stub_model_variants() {
+        let pro = GeminiClient::new("pro");
+        assert_eq!(pro.model_name(), "gemini-pro");
+
+        let flash = GeminiClient::new("flash");
+        assert_eq!(flash.model_name(), "gemini-flash");
+
+        let ultra = GeminiClient::new("ultra");
+        assert_eq!(ultra.model_name(), "gemini-ultra");
+    }
+
+    /// Test Gemini client stub is Send + Sync.
+    #[test]
+    fn test_gemini_client_stub_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<GeminiClient>();
+    }
+
+    /// Test Gemini client stub can be used as trait object.
+    #[test]
+    fn test_gemini_client_stub_as_trait_object() {
+        let client: Box<dyn LlmClient> = Box::new(GeminiClient::new("pro"));
+        assert!(client.model_name().contains("gemini"));
+    }
+
+    // =========================================================================
+    // Ollama Client Stub Tests (Phase 12.3)
+    // =========================================================================
+
+    /// Test Ollama client stub exists and can be created.
+    #[test]
+    fn test_ollama_client_stub_exists() {
+        let client = OllamaClient::new("llama3", None);
+        assert!(client.model_name().contains("llama3"));
+    }
+
+    /// Test Ollama client stub returns "not implemented" error.
+    #[tokio::test]
+    async fn test_ollama_client_stub_returns_not_implemented() {
+        let client = OllamaClient::new("llama3", None);
+        let result = client.run_prompt("test").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("not yet implemented") || err.contains("coming soon"),
+            "Error should indicate not implemented: {}",
+            err
+        );
+    }
+
+    /// Test Ollama client stub with custom host.
+    #[test]
+    fn test_ollama_client_stub_with_custom_host() {
+        let client = OllamaClient::new("llama3", Some("http://localhost:11434"));
+        assert_eq!(client.host(), "http://localhost:11434");
+
+        let client_default = OllamaClient::new("llama3", None);
+        assert_eq!(client_default.host(), OllamaClient::DEFAULT_HOST);
+    }
+
+    /// Test Ollama client stub is Send + Sync.
+    #[test]
+    fn test_ollama_client_stub_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<OllamaClient>();
+    }
+
+    /// Test Ollama client stub can be used as trait object.
+    #[test]
+    fn test_ollama_client_stub_as_trait_object() {
+        let client: Box<dyn LlmClient> = Box::new(OllamaClient::new("llama3", None));
+        assert!(client.model_name().contains("llama"));
+    }
+
+    // =========================================================================
+    // Model Status and List Tests (Phase 12.3)
+    // =========================================================================
+
+    /// Test ModelStatus enum has correct variants.
+    #[test]
+    fn test_model_status_variants() {
+        let available = ModelStatus::Available;
+        let coming_soon = ModelStatus::ComingSoon;
+
+        assert!(available.is_available());
+        assert!(!coming_soon.is_available());
+    }
+
+    /// Test get_supported_models returns all models with correct status.
+    #[test]
+    fn test_get_supported_models_includes_all() {
+        let models = get_supported_models();
+
+        // Should include Claude (available)
+        let claude = models.iter().find(|m| m.name == "claude");
+        assert!(claude.is_some());
+        assert!(claude.unwrap().status.is_available());
+
+        // Should include OpenAI (coming soon)
+        let openai = models.iter().find(|m| m.name == "openai");
+        assert!(openai.is_some());
+        assert!(!openai.unwrap().status.is_available());
+
+        // Should include Gemini (coming soon)
+        let gemini = models.iter().find(|m| m.name == "gemini");
+        assert!(gemini.is_some());
+        assert!(!gemini.unwrap().status.is_available());
+
+        // Should include Ollama (coming soon)
+        let ollama = models.iter().find(|m| m.name == "ollama");
+        assert!(ollama.is_some());
+        assert!(!ollama.unwrap().status.is_available());
+    }
+
+    /// Test ModelInfo contains documentation.
+    #[test]
+    fn test_model_info_has_documentation() {
+        let models = get_supported_models();
+
+        for model in &models {
+            assert!(!model.description.is_empty(), "Model {} should have description", model.name);
+            assert!(!model.variants.is_empty(), "Model {} should have variants", model.name);
+        }
+    }
+
+    // =========================================================================
+    // Updated Factory Tests (Phase 12.3)
+    // =========================================================================
+
+    /// Test factory can create OpenAI stub when enabled.
+    #[test]
+    fn test_create_llm_client_openai_stub() {
+        let config = LlmConfig {
+            model: "openai".to_string(),
+            api_key_env: "OPENAI_API_KEY".to_string(),
+            options: std::collections::HashMap::new(),
+        };
+        let project_dir = std::path::PathBuf::from(".");
+
+        // Factory should return a stub client (not an error)
+        let client = create_llm_client(&config, &project_dir).unwrap();
+        assert!(client.model_name().contains("gpt"));
+    }
+
+    /// Test factory can create Gemini stub when enabled.
+    #[test]
+    fn test_create_llm_client_gemini_stub() {
+        let config = LlmConfig {
+            model: "gemini".to_string(),
+            api_key_env: "GOOGLE_API_KEY".to_string(),
+            options: std::collections::HashMap::new(),
+        };
+        let project_dir = std::path::PathBuf::from(".");
+
+        // Factory should return a stub client (not an error)
+        let client = create_llm_client(&config, &project_dir).unwrap();
+        assert!(client.model_name().contains("gemini"));
+    }
+
+    /// Test factory can create Ollama stub when enabled.
+    #[test]
+    fn test_create_llm_client_ollama_stub() {
+        let mut options = std::collections::HashMap::new();
+        options.insert("model_name".to_string(), serde_json::json!("llama3"));
+
+        let config = LlmConfig {
+            model: "ollama".to_string(),
+            api_key_env: String::new(),
+            options,
+        };
+        let project_dir = std::path::PathBuf::from(".");
+
+        // Factory should return a stub client (not an error)
+        let client = create_llm_client(&config, &project_dir).unwrap();
+        assert!(client.model_name().contains("llama"));
     }
 }
