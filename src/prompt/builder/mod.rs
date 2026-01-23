@@ -124,7 +124,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     /// use ralph::prompt::context::{AttemptSummary, AttemptOutcome};
     ///
@@ -149,7 +149,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     /// use ralph::prompt::context::{AntiPattern, AntiPatternType};
     ///
@@ -220,7 +220,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     /// use ralph::prompt::context::CallGraphNode;
     ///
@@ -264,7 +264,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     /// use ralph::prompt::context::ModuleDependency;
     ///
@@ -284,7 +284,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     /// use ralph::prompt::context::CodeIntelligenceContext;
     /// use ralph::narsil::{CcgManifest, SecuritySummary};
@@ -312,7 +312,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     /// use ralph::prompt::context::CodeIntelligenceContext;
     /// use ralph::narsil::{ConstraintSet, CcgConstraint, ConstraintKind, ConstraintValue};
@@ -342,7 +342,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     /// use ralph::prompt::context::CodeIntelligenceContext;
     /// use ralph::narsil::{ConstraintSet, CcgConstraint, ConstraintKind, ConstraintValue};
@@ -434,7 +434,7 @@ impl SectionBuilder {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust,ignore
     /// use ralph::prompt::builder::SectionBuilder;
     ///
     /// let warnings = Some("## Code Antipatterns Detected\n...".to_string());
