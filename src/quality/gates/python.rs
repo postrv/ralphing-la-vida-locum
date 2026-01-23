@@ -260,6 +260,10 @@ Found {} errors and {} warnings.
             error_count, warning_count
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("ruff")
+    }
 }
 
 // ============================================================================
@@ -414,6 +418,10 @@ impl QualityGate for PytestGate {
                     .join("\n")
             }
         )
+    }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("pytest")
     }
 }
 
@@ -600,6 +608,10 @@ Found {} type errors.
             error_count
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("mypy")
+    }
 }
 
 // ============================================================================
@@ -756,6 +768,10 @@ Found {} critical and {} high severity security issues.
 "#,
             critical, high
         )
+    }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("bandit")
     }
 }
 

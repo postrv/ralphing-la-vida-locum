@@ -268,6 +268,10 @@ Found {} errors and {} warnings.
             error_count, warning_count
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("cargo")
+    }
 }
 
 // ============================================================================
@@ -407,6 +411,10 @@ impl QualityGate for CargoTestGate {
                 .collect::<Vec<_>>()
                 .join("\n")
         )
+    }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("cargo")
     }
 }
 

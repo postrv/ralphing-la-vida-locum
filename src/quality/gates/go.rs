@@ -198,6 +198,10 @@ Found {} issues.
             error_count
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("go")
+    }
 }
 
 // ============================================================================
@@ -427,6 +431,10 @@ Found {} errors and {} warnings.
             error_count, warning_count
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("golangci-lint")
+    }
 }
 
 // ============================================================================
@@ -653,6 +661,10 @@ impl QualityGate for GoTestGate {
             }
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("go")
+    }
 }
 
 // ============================================================================
@@ -852,6 +864,10 @@ Found {} critical and {} high severity vulnerabilities.
 "#,
             critical, high
         )
+    }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("govulncheck")
     }
 }
 

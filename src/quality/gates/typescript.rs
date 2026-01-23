@@ -187,6 +187,10 @@ Found {} errors and {} warnings.
             error_count, warning_count
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("npx")
+    }
 }
 
 // ============================================================================
@@ -421,6 +425,10 @@ impl QualityGate for JestGate {
             }
         )
     }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("npx")
+    }
 }
 
 // ============================================================================
@@ -580,6 +588,10 @@ Found {} type errors.
 "#,
             error_count
         )
+    }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("npx")
     }
 }
 
@@ -763,6 +775,10 @@ Found {} critical and {} high severity vulnerabilities.
 "#,
             critical, high, fixable
         )
+    }
+
+    fn required_tool(&self) -> Option<&str> {
+        Some("npm")
     }
 }
 

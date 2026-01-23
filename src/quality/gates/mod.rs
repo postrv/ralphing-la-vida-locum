@@ -51,6 +51,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+use tracing::debug;
 
 use crate::bootstrap::language::Language;
 use crate::narsil::{NarsilClient, NarsilConfig, SecurityFinding, SecuritySeverity};
@@ -366,6 +367,27 @@ pub trait QualityGate: Send + Sync {
 
     /// Generates remediation guidance for the given issues.
     fn remediation(&self, issues: &[GateIssue]) -> String;
+
+    /// Returns the name of the external tool required to run this gate.
+    ///
+    /// Returns `None` for built-in gates that don't require external tools.
+    /// Returns `Some("tool_name")` for gates that require a specific tool to be
+    /// installed and accessible via PATH.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::quality::gates::QualityGate;
+    ///
+    /// let gate = ClippyGate::new();
+    /// assert_eq!(gate.required_tool(), Some("cargo"));
+    ///
+    /// let builtin_gate = NoAllowGate::new();
+    /// assert_eq!(builtin_gate.required_tool(), None);
+    /// ```
+    fn required_tool(&self) -> Option<&str> {
+        None // Default: built-in gate with no external tool requirement
+    }
 }
 
 // ============================================================================
@@ -429,37 +451,6 @@ pub fn is_tool_available(tool_name: &str) -> bool {
     which::which(tool_name).is_ok()
 }
 
-/// Returns the tool binary name(s) required for a given gate.
-///
-/// This mapping allows the auto-detection system to check if the
-/// necessary tools are installed before adding a gate to the active set.
-fn tool_for_gate(gate_name: &str) -> Option<&'static str> {
-    match gate_name {
-        // Rust gates
-        "Clippy" => Some("cargo"),
-        "Tests" => Some("cargo"),
-        "NoAllow" => None,  // Built-in, no external tool
-        "Security" => None, // Uses narsil-mcp or cargo-audit, gracefully degrades
-        "NoTodo" => None,   // Built-in, no external tool
-        // Python gates
-        "Ruff" => Some("ruff"),
-        "Pytest" => Some("pytest"),
-        "Mypy" => Some("mypy"),
-        "Bandit" => Some("bandit"),
-        // TypeScript/JavaScript gates
-        "ESLint" => Some("npx"),     // ESLint runs via npx
-        "Jest" => Some("npx"),       // Jest runs via npx
-        "TypeScript" => Some("npx"), // tsc runs via npx
-        "npm-audit" => Some("npm"),
-        // Go gates
-        "go-vet" => Some("go"),
-        "golangci-lint" => Some("golangci-lint"),
-        "go-test" => Some("go"),
-        "govulncheck" => Some("govulncheck"),
-        _ => None,
-    }
-}
-
 /// Checks if a specific gate is available for use.
 ///
 /// A gate is considered available if:
@@ -475,7 +466,7 @@ fn tool_for_gate(gate_name: &str) -> Option<&'static str> {
 /// `true` if the gate can be used, `false` otherwise.
 #[must_use]
 pub fn is_gate_available(gate: &dyn QualityGate) -> bool {
-    match tool_for_gate(gate.name()) {
+    match gate.required_tool() {
         Some(tool) => is_tool_available(tool),
         None => true, // Built-in gates are always available
     }
@@ -530,6 +521,15 @@ pub fn detect_available_gates(
             if is_gate_available(&*gate) {
                 seen_names.insert(gate_name);
                 gates.push(gate);
+            } else {
+                // Log when gate is skipped due to missing tool
+                if let Some(tool) = gate.required_tool() {
+                    debug!(
+                        gate = %gate_name,
+                        tool = %tool,
+                        "Skipping gate: required tool not found in PATH"
+                    );
+                }
             }
         }
     }
@@ -2100,5 +2100,105 @@ version = "0.1.0"
             "Empty languages should return minimal gates. Got: {} gates",
             gates.len()
         );
+    }
+
+    // =========================================================================
+    // Gate Availability Tests - required_tool() Trait Method
+    // =========================================================================
+
+    #[test]
+    fn test_python_ruff_gate_requires_ruff() {
+        let gate = super::python::RuffGate::new();
+        assert_eq!(gate.required_tool(), Some("ruff"));
+    }
+
+    #[test]
+    fn test_python_pytest_gate_requires_pytest() {
+        let gate = super::python::PytestGate::new();
+        assert_eq!(gate.required_tool(), Some("pytest"));
+    }
+
+    #[test]
+    fn test_python_mypy_gate_requires_mypy() {
+        let gate = super::python::MypyGate::new();
+        assert_eq!(gate.required_tool(), Some("mypy"));
+    }
+
+    #[test]
+    fn test_python_bandit_gate_requires_bandit() {
+        let gate = super::python::BanditGate::new();
+        assert_eq!(gate.required_tool(), Some("bandit"));
+    }
+
+    #[test]
+    fn test_typescript_eslint_gate_requires_npx() {
+        let gate = super::typescript::EslintGate::new();
+        assert_eq!(gate.required_tool(), Some("npx"));
+    }
+
+    #[test]
+    fn test_typescript_jest_gate_requires_npx() {
+        let gate = super::typescript::JestGate::new();
+        assert_eq!(gate.required_tool(), Some("npx"));
+    }
+
+    #[test]
+    fn test_typescript_tsc_gate_requires_npx() {
+        let gate = super::typescript::TscGate::new();
+        assert_eq!(gate.required_tool(), Some("npx"));
+    }
+
+    #[test]
+    fn test_typescript_npm_audit_gate_requires_npm() {
+        let gate = super::typescript::NpmAuditGate::new();
+        assert_eq!(gate.required_tool(), Some("npm"));
+    }
+
+    #[test]
+    fn test_go_vet_gate_requires_go() {
+        let gate = super::go::GoVetGate::new();
+        assert_eq!(gate.required_tool(), Some("go"));
+    }
+
+    #[test]
+    fn test_go_golangci_lint_gate_requires_golangci_lint() {
+        let gate = super::go::GolangciLintGate::new();
+        assert_eq!(gate.required_tool(), Some("golangci-lint"));
+    }
+
+    #[test]
+    fn test_go_test_gate_requires_go() {
+        let gate = super::go::GoTestGate::new();
+        assert_eq!(gate.required_tool(), Some("go"));
+    }
+
+    #[test]
+    fn test_go_govulncheck_gate_requires_govulncheck() {
+        let gate = super::go::GovulncheckGate::new();
+        assert_eq!(gate.required_tool(), Some("govulncheck"));
+    }
+
+    #[test]
+    fn test_rust_clippy_gate_requires_cargo() {
+        let gate = super::rust::ClippyGate::new();
+        assert_eq!(gate.required_tool(), Some("cargo"));
+    }
+
+    #[test]
+    fn test_rust_tests_gate_requires_cargo() {
+        let gate = super::rust::CargoTestGate::new();
+        assert_eq!(gate.required_tool(), Some("cargo"));
+    }
+
+    #[test]
+    fn test_no_allow_gate_has_no_required_tool() {
+        let gate = super::rust::NoAllowGate::new();
+        assert_eq!(gate.required_tool(), None);
+    }
+
+    #[test]
+    fn test_no_todo_gate_has_no_required_tool() {
+        let gate = super::rust::NoTodoGate::new();
+        assert_eq!(gate.required_tool(), None);
     }
 }

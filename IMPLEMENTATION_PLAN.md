@@ -73,23 +73,23 @@ cargo test --lib -- real_quality_checker
 cargo test --lib -- with_gates
 ```
 
-### 3. Phase 7.3: Gate Availability Detection
+### 3. Phase 7.3: Gate Availability Detection ✅
 
 Implement tool availability checking so gates only run when tools are installed.
 
 **Test Requirements**:
-- [ ] Test `is_gate_available()` returns true when tool exists in PATH
-- [ ] Test `is_gate_available()` returns false when tool missing
-- [ ] Test `detect_available_gates()` filters out unavailable gates
-- [ ] Test Python gates check for `ruff`, `pytest`, `mypy`, `bandit`
-- [ ] Test TypeScript gates check for `eslint`, `jest`, `npx tsc`, `npm`
-- [ ] Test Go gates check for `go`, `golangci-lint`, `govulncheck`
+- [x] Test `is_gate_available()` returns true when tool exists in PATH
+- [x] Test `is_gate_available()` returns false when tool missing
+- [x] Test `detect_available_gates()` filters out unavailable gates
+- [x] Test Python gates check for `ruff`, `pytest`, `mypy`, `bandit`
+- [x] Test TypeScript gates check for `eslint`, `jest`, `npx tsc`, `npm`
+- [x] Test Go gates check for `go`, `golangci-lint`, `govulncheck`
 
 **Implementation**:
-- [ ] Add `fn required_tool(&self) -> &str` to `QualityGate` trait
-- [ ] Implement `is_gate_available(gate: &dyn QualityGate) -> bool` using `which`
-- [ ] Update `detect_available_gates()` to filter using availability check
-- [ ] Add logging when gates are skipped due to missing tools
+- [x] Add `fn required_tool(&self) -> Option<&str>` to `QualityGate` trait
+- [x] Implement `is_gate_available(gate: &dyn QualityGate) -> bool` using `which`
+- [x] Update `detect_available_gates()` to filter using availability check
+- [x] Add logging when gates are skipped due to missing tools
 
 **Quality Gates**:
 ```bash
