@@ -1,0 +1,123 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'benches/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'benches/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Grant permissions for gh-pages deployment and PR comments
+permissions:
+  contents: write
+  pull-requests: write
+  deployments: write
+
+jobs:
+  benchmark:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      # Run benchmarks and output to JSON
+      - name: Run benchmarks
+        run: cargo bench --bench benchmarks -- --noplot --save-baseline current
+
+      # Convert Criterion output to benchmark.js format
+      - name: Process benchmark results
+        id: process
+        run: |
+          # Create output directory
+          mkdir -p bench-results
+
+          # Extract timing data from Criterion's JSON output
+          # Criterion stores results in target/criterion/<group>/<benchmark>/new/estimates.json
+          python3 << 'EOF'
+          import json
+          import os
+          import glob
+
+          results = []
+          criterion_base = "target/criterion"
+
+          # Find all estimate files
+          for estimates_file in glob.glob(f"{criterion_base}/**/new/estimates.json", recursive=True):
+              # Parse the path to get group and benchmark name
+              parts = estimates_file.replace(criterion_base + "/", "").split("/")
+              if len(parts) >= 3:
+                  group = parts[0]
+                  bench_name = parts[1]
+                  full_name = f"{group}/{bench_name}"
+
+                  try:
+                      with open(estimates_file) as f:
+                          data = json.load(f)
+
+                      # Criterion stores point estimate in nanoseconds
+                      point_estimate_ns = data.get("mean", {}).get("point_estimate", 0)
+
+                      results.append({
+                          "name": full_name,
+                          "unit": "ns",
+                          "value": point_estimate_ns,
+                      })
+                  except (json.JSONDecodeError, KeyError) as e:
+                      print(f"Warning: Could not parse {estimates_file}: {e}")
+
+          # Write results for github-action-benchmark
+          with open("bench-results/benchmark-results.json", "w") as f:
+              json.dump(results, f, indent=2)
+
+          print(f"Processed {len(results)} benchmark results")
+          for r in results:
+              print(f"  {r['name']}: {r['value']:.2f} ns")
+          EOF
+
+      # Store benchmark results and compare against baseline
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Ralph Performance Benchmarks
+          tool: 'customSmallerIsBetter'
+          output-file-path: bench-results/benchmark-results.json
+          # Store results in gh-pages branch
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # Comment on PRs with performance comparison
+          comment-on-alert: true
+          # Alert if performance regresses by more than 20%
+          alert-threshold: '120%'
+          # Don't fail the workflow on regression (just alert)
+          fail-on-alert: false
+          # Compare against previous results
+          comment-always: ${{ github.event_name == 'pull_request' }}
+
+      # Upload raw Criterion results as artifact for detailed analysis
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: criterion-results
+          path: |
+            target/criterion/
+            bench-results/
+          retention-days: 30
