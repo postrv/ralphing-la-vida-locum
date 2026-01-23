@@ -1725,6 +1725,328 @@ impl Analytics {
 
         Ok(report)
     }
+
+    // ========================================================================
+    // Phase 16.3: Quality Trend Visualization
+    // ========================================================================
+
+    /// Get aggregated trend data across sessions.
+    ///
+    /// Collects quality metrics from all sessions and aggregates them into
+    /// trend data suitable for visualization and export.
+    ///
+    /// # Arguments
+    ///
+    /// * `days` - Optional number of days to include. `None` means all data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the analytics file fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::analytics::Analytics;
+    ///
+    /// let analytics = Analytics::new(project_dir);
+    /// let trend_data = analytics.get_trend_data(Some(30))?; // Last 30 days
+    /// println!("{}", trend_data.render_ascii_chart(TrendMetric::Warnings, 60, 15));
+    /// ```
+    pub fn get_trend_data(&self, days: Option<u32>) -> Result<TrendData> {
+        let cutoff = days.map(|d| Utc::now() - chrono::Duration::days(i64::from(d)));
+
+        // Get quality metrics snapshots
+        let all_snapshots = self.get_quality_metrics_history(None, usize::MAX)?;
+
+        // Filter by time range if specified
+        let snapshots: Vec<_> = if let Some(cutoff_time) = cutoff {
+            all_snapshots
+                .into_iter()
+                .filter(|s| s.timestamp >= cutoff_time)
+                .collect()
+        } else {
+            all_snapshots
+        };
+
+        // Build trend data from snapshots (snapshots are newest-first from get_quality_metrics_history)
+        let mut trend_data = TrendData::default();
+
+        for snapshot in &snapshots {
+            trend_data.warning_count_points.push(TrendPoint {
+                timestamp: snapshot.timestamp,
+                value: snapshot.clippy_warnings as i64,
+            });
+
+            trend_data.test_count_points.push(TrendPoint {
+                timestamp: snapshot.timestamp,
+                value: snapshot.test_total as i64,
+            });
+
+            if let Some(rate) = snapshot.test_pass_rate() {
+                trend_data.test_pass_rate_points.push(TrendPoint {
+                    timestamp: snapshot.timestamp,
+                    value: (rate * 100.0) as i64, // Store as percentage
+                });
+            }
+
+            trend_data.security_issue_points.push(TrendPoint {
+                timestamp: snapshot.timestamp,
+                value: snapshot.security_issues as i64,
+            });
+        }
+
+        // Get commit data from structured events
+        let events = self.read_structured_events()?;
+        let commit_events: Vec<_> = events
+            .into_iter()
+            .filter(|e| e.event_type == EventType::SessionEnd)
+            .filter(|e| cutoff.is_none_or(|c| e.timestamp >= c))
+            .collect();
+
+        for event in commit_events {
+            if let Some(commits) = event.data.get("commits").and_then(|v| v.as_i64()) {
+                trend_data.commit_points.push(TrendPoint {
+                    timestamp: event.timestamp,
+                    value: commits,
+                });
+            }
+        }
+
+        // Sort commit points newest first
+        trend_data
+            .commit_points
+            .sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        Ok(trend_data)
+    }
+}
+
+// ============================================================================
+// Phase 16.3: Quality Trend Visualization Types
+// ============================================================================
+
+/// A single data point in a trend series.
+///
+/// Represents a timestamped value for tracking changes over time.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::TrendPoint;
+///
+/// let point = TrendPoint::new(42);
+/// assert_eq!(point.value, 42);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrendPoint {
+    /// When this data point was recorded.
+    pub timestamp: DateTime<Utc>,
+    /// The value at this point in time.
+    pub value: i64,
+}
+
+impl TrendPoint {
+    /// Create a new trend point with the current timestamp.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value for this data point
+    #[must_use]
+    pub fn new(value: i64) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            value,
+        }
+    }
+}
+
+/// The type of metric to display in a trend chart.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::TrendMetric;
+///
+/// assert_eq!(TrendMetric::Warnings.label(), "Warnings");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrendMetric {
+    /// Clippy warning count.
+    Warnings,
+    /// Total test count.
+    TestCount,
+    /// Test pass rate as percentage.
+    TestPassRate,
+    /// Commit count per session.
+    Commits,
+    /// Security issue count.
+    SecurityIssues,
+}
+
+impl TrendMetric {
+    /// Get the display label for this metric.
+    #[must_use]
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Warnings => "Warnings",
+            Self::TestCount => "Test Count",
+            Self::TestPassRate => "Test Pass Rate (%)",
+            Self::Commits => "Commits",
+            Self::SecurityIssues => "Security Issues",
+        }
+    }
+}
+
+/// Aggregated trend data across sessions.
+///
+/// Contains multiple trend series suitable for visualization and analysis.
+///
+/// # Example
+///
+/// ```
+/// use ralph::analytics::{TrendData, TrendMetric};
+///
+/// let trend_data = TrendData::default();
+/// let chart = trend_data.render_ascii_chart(TrendMetric::Warnings, 40, 10);
+/// ```
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TrendData {
+    /// Warning count trend (clippy warnings over time).
+    pub warning_count_points: Vec<TrendPoint>,
+    /// Test count trend (total tests over time).
+    pub test_count_points: Vec<TrendPoint>,
+    /// Test pass rate trend (percentage over time).
+    pub test_pass_rate_points: Vec<TrendPoint>,
+    /// Commit count trend (commits per session).
+    pub commit_points: Vec<TrendPoint>,
+    /// Security issue count trend.
+    pub security_issue_points: Vec<TrendPoint>,
+}
+
+impl TrendData {
+    /// Export trend data as JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if JSON serialization fails.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::analytics::TrendData;
+    ///
+    /// let trend_data = TrendData::default();
+    /// let json = trend_data.to_json().unwrap();
+    /// assert!(json.contains("warning_count_points"));
+    /// ```
+    pub fn to_json(&self) -> Result<String> {
+        serde_json::to_string_pretty(self).context("Failed to serialize trend data to JSON")
+    }
+
+    /// Get the data points for a specific metric.
+    #[must_use]
+    pub fn points_for_metric(&self, metric: TrendMetric) -> &[TrendPoint] {
+        match metric {
+            TrendMetric::Warnings => &self.warning_count_points,
+            TrendMetric::TestCount => &self.test_count_points,
+            TrendMetric::TestPassRate => &self.test_pass_rate_points,
+            TrendMetric::Commits => &self.commit_points,
+            TrendMetric::SecurityIssues => &self.security_issue_points,
+        }
+    }
+
+    /// Render an ASCII chart for the specified metric.
+    ///
+    /// # Arguments
+    ///
+    /// * `metric` - The metric to chart
+    /// * `width` - Chart width in characters
+    /// * `height` - Chart height in lines
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::analytics::{TrendData, TrendMetric, TrendPoint};
+    ///
+    /// let mut trend_data = TrendData::default();
+    /// trend_data.warning_count_points.push(TrendPoint::new(10));
+    /// trend_data.warning_count_points.push(TrendPoint::new(5));
+    ///
+    /// let chart = trend_data.render_ascii_chart(TrendMetric::Warnings, 40, 10);
+    /// assert!(chart.contains("Warnings"));
+    /// ```
+    #[must_use]
+    pub fn render_ascii_chart(&self, metric: TrendMetric, width: usize, height: usize) -> String {
+        let points = self.points_for_metric(metric);
+
+        if points.is_empty() {
+            return format!("{}\n\nNo data available.", metric.label());
+        }
+
+        // Reverse to get chronological order (oldest to newest for chart)
+        let mut chronological: Vec<_> = points.iter().collect();
+        chronological.reverse();
+
+        let values: Vec<i64> = chronological.iter().map(|p| p.value).collect();
+
+        let min_val = *values.iter().min().unwrap_or(&0);
+        let max_val = *values.iter().max().unwrap_or(&0);
+        let range = if max_val == min_val {
+            1
+        } else {
+            max_val - min_val
+        };
+
+        let mut chart = String::new();
+
+        // Title
+        chart.push_str(&format!("{}\n", metric.label()));
+        chart.push_str(&"─".repeat(width));
+        chart.push('\n');
+
+        // Y-axis labels and chart area
+        let effective_height = height.saturating_sub(3); // Reserve space for title, axis, legend
+        let effective_width = width.saturating_sub(8); // Reserve space for Y-axis labels
+
+        for row in 0..effective_height {
+            let y_value = max_val - (row as i64 * range / effective_height.max(1) as i64);
+            chart.push_str(&format!("{:>6} │", y_value));
+
+            for col in 0..effective_width {
+                let data_idx = col * values.len() / effective_width.max(1);
+                if data_idx < values.len() {
+                    let val = values[data_idx];
+                    let val_height =
+                        ((val - min_val) * effective_height as i64 / range.max(1)) as usize;
+                    let row_from_bottom = effective_height.saturating_sub(1) - row;
+
+                    if val_height >= row_from_bottom {
+                        chart.push('█');
+                    } else {
+                        chart.push(' ');
+                    }
+                } else {
+                    chart.push(' ');
+                }
+            }
+            chart.push('\n');
+        }
+
+        // X-axis
+        chart.push_str(&format!("{:>6} └", ""));
+        chart.push_str(&"─".repeat(effective_width));
+        chart.push('\n');
+
+        // Legend
+        chart.push_str(&format!(
+            "        {} points | Range: {} - {}\n",
+            values.len(),
+            min_val,
+            max_val
+        ));
+
+        chart
+    }
 }
 
 #[cfg(test)]
@@ -3074,5 +3396,220 @@ mod tests {
 
         let markdown_output = report.export(ReportFormat::Markdown).unwrap();
         assert!(markdown_output.contains("# Session Report"));
+    }
+
+    // ========================================================================
+    // Phase 16.3: Quality Trend Visualization Tests
+    // ========================================================================
+
+    #[test]
+    fn test_trend_data_shows_test_count_over_sessions() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log quality metrics for multiple sessions
+        analytics
+            .log_quality_metrics(
+                &QualityMetricsSnapshot::new("session-1", 1).with_test_counts(100, 95, 5),
+            )
+            .unwrap();
+        analytics
+            .log_quality_metrics(
+                &QualityMetricsSnapshot::new("session-2", 1).with_test_counts(110, 108, 2),
+            )
+            .unwrap();
+
+        let trend_data = analytics.get_trend_data(None).unwrap();
+
+        assert_eq!(trend_data.test_count_points.len(), 2);
+        // Newest first
+        assert_eq!(trend_data.test_count_points[0].value, 110);
+        assert_eq!(trend_data.test_count_points[1].value, 100);
+    }
+
+    #[test]
+    fn test_trend_data_shows_warning_count_over_sessions() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log quality metrics with decreasing warnings
+        analytics
+            .log_quality_metrics(
+                &QualityMetricsSnapshot::new("session-1", 1).with_clippy_warnings(10),
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        analytics
+            .log_quality_metrics(
+                &QualityMetricsSnapshot::new("session-2", 1).with_clippy_warnings(5),
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        analytics
+            .log_quality_metrics(
+                &QualityMetricsSnapshot::new("session-3", 1).with_clippy_warnings(2),
+            )
+            .unwrap();
+
+        let trend_data = analytics.get_trend_data(None).unwrap();
+
+        assert_eq!(trend_data.warning_count_points.len(), 3);
+        // Newest first
+        assert_eq!(trend_data.warning_count_points[0].value, 2);
+        assert_eq!(trend_data.warning_count_points[2].value, 10);
+    }
+
+    #[test]
+    fn test_trend_data_shows_commit_frequency() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log session events with commits
+        analytics
+            .log_structured_event(
+                "session-1",
+                EventType::SessionEnd,
+                serde_json::json!({"commits": 3}),
+            )
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        analytics
+            .log_structured_event(
+                "session-2",
+                EventType::SessionEnd,
+                serde_json::json!({"commits": 5}),
+            )
+            .unwrap();
+
+        let trend_data = analytics.get_trend_data(None).unwrap();
+
+        assert_eq!(trend_data.commit_points.len(), 2);
+        assert_eq!(trend_data.commit_points[0].value, 5);
+        assert_eq!(trend_data.commit_points[1].value, 3);
+    }
+
+    #[test]
+    fn test_trend_data_ascii_chart_output() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log some metrics
+        for i in 1..=5 {
+            analytics
+                .log_quality_metrics(
+                    &QualityMetricsSnapshot::new(format!("session-{}", i), 1)
+                        .with_clippy_warnings(10 - i),
+                )
+                .unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        let trend_data = analytics.get_trend_data(None).unwrap();
+        let chart = trend_data.render_ascii_chart(TrendMetric::Warnings, 40, 10);
+
+        // Chart should contain expected elements
+        assert!(chart.contains("Warnings")); // Title
+        assert!(chart.lines().count() >= 5); // Has multiple lines
+    }
+
+    #[test]
+    fn test_trend_data_json_export() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        analytics
+            .log_quality_metrics(
+                &QualityMetricsSnapshot::new("session-1", 1)
+                    .with_clippy_warnings(5)
+                    .with_test_counts(50, 48, 2),
+            )
+            .unwrap();
+
+        let trend_data = analytics.get_trend_data(None).unwrap();
+        let json = trend_data.to_json().unwrap();
+
+        // Should be valid JSON
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(value.is_object());
+        assert!(value.get("warning_count_points").is_some());
+        assert!(value.get("test_count_points").is_some());
+    }
+
+    #[test]
+    fn test_trend_data_filtered_by_days() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        // Log a recent metric
+        analytics
+            .log_quality_metrics(
+                &QualityMetricsSnapshot::new("session-recent", 1).with_clippy_warnings(3),
+            )
+            .unwrap();
+
+        // Filter to last 7 days (recent data should be included)
+        let trend_data = analytics.get_trend_data(Some(7)).unwrap();
+
+        assert!(!trend_data.warning_count_points.is_empty());
+    }
+
+    #[test]
+    fn test_trend_point_structure() {
+        let point = TrendPoint::new(5);
+        assert_eq!(point.value, 5);
+        assert!(point.timestamp <= Utc::now());
+    }
+
+    #[test]
+    fn test_trend_data_empty_when_no_data() {
+        let temp = TempDir::new().unwrap();
+        let analytics = Analytics::new(temp.path().to_path_buf());
+
+        let trend_data = analytics.get_trend_data(None).unwrap();
+
+        assert!(trend_data.warning_count_points.is_empty());
+        assert!(trend_data.test_count_points.is_empty());
+        assert!(trend_data.commit_points.is_empty());
+    }
+
+    #[test]
+    fn test_trend_metric_enum() {
+        assert_eq!(TrendMetric::Warnings.label(), "Warnings");
+        assert_eq!(TrendMetric::TestCount.label(), "Test Count");
+        assert_eq!(TrendMetric::Commits.label(), "Commits");
+        assert_eq!(TrendMetric::TestPassRate.label(), "Test Pass Rate (%)");
+    }
+
+    #[test]
+    fn test_ascii_chart_handles_empty_data() {
+        let trend_data = TrendData::default();
+        let chart = trend_data.render_ascii_chart(TrendMetric::Warnings, 40, 10);
+
+        assert!(chart.contains("No data"));
+    }
+
+    #[test]
+    fn test_ascii_chart_handles_single_point() {
+        let mut trend_data = TrendData::default();
+        trend_data.warning_count_points.push(TrendPoint::new(5));
+
+        let chart = trend_data.render_ascii_chart(TrendMetric::Warnings, 40, 10);
+
+        // Should still render something useful
+        assert!(!chart.is_empty());
+    }
+
+    #[test]
+    fn test_trend_data_serialization_roundtrip() {
+        let mut trend_data = TrendData::default();
+        trend_data.warning_count_points.push(TrendPoint::new(10));
+        trend_data.warning_count_points.push(TrendPoint::new(5));
+        trend_data.test_count_points.push(TrendPoint::new(100));
+
+        let json = trend_data.to_json().unwrap();
+        let restored: TrendData = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.warning_count_points.len(), 2);
+        assert_eq!(restored.test_count_points.len(), 1);
     }
 }

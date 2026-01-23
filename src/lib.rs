@@ -92,7 +92,7 @@ pub use analytics::{
     AggregateStats, Analytics, AnalyticsEvent, EventFilter, EventType, GateIssueEventData,
     GateResultEventData, GateStats, PredictorAccuracyStats, PredictorDecisionEventData,
     QualityMetricsSnapshot, QualityTrend, ReportFormat, SessionReport, SessionSummary,
-    StructuredEvent, TrendDirection, SCHEMA_VERSION,
+    StructuredEvent, TrendData, TrendDirection, TrendMetric, TrendPoint, SCHEMA_VERSION,
 };
 
 // Re-export LLM types

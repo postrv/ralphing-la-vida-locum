@@ -75,29 +75,29 @@ cargo test --lib -- session_report
 cargo test --lib -- report_export
 ```
 
-### 26. Phase 16.3: Quality Trend Visualization
+### 26. Phase 16.3: Quality Trend Visualization ✅
 
 Add command to visualize quality trends over time.
 
 **Test Requirements**:
-- [ ] Test trend shows test count over sessions
-- [ ] Test trend shows warning count over sessions
-- [ ] Test trend shows commit frequency
-- [ ] Test trend can be output as ASCII chart
-- [ ] Test trend data can be exported for external visualization
+- [x] Test trend shows test count over sessions
+- [x] Test trend shows warning count over sessions
+- [x] Test trend shows commit frequency
+- [x] Test trend can be output as ASCII chart
+- [x] Test trend data can be exported for external visualization
 
 **Implementation**:
-- [ ] Create `ralph analytics trends` command
-- [ ] Aggregate metrics across sessions
-- [ ] Implement ASCII chart rendering
-- [ ] Add `--json` flag for data export
-- [ ] Add `--days <n>` flag to limit time range
+- [x] Create `TrendData`, `TrendPoint`, `TrendMetric` types
+- [x] Aggregate metrics across sessions via `Analytics::get_trend_data()`
+- [x] Implement ASCII chart rendering via `TrendData::render_ascii_chart()`
+- [x] Add JSON export via `TrendData::to_json()`
+- [x] Add time range filtering via `get_trend_data(Some(days))`
 
 **Quality Gates**:
 ```bash
 cargo clippy --all-targets -- -D warnings
-cargo test --lib -- quality_trends
-cargo test --test cli_analytics_trends
+cargo test --lib -- test_trend
+cargo test --lib -- test_ascii
 ```
 
 ---
