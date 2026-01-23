@@ -202,22 +202,22 @@ cargo test --lib -- python_antipattern
 cargo test --lib -- typescript_antipattern
 ```
 
-### 8. Phase 8.3: Dynamic CLAUDE.md Generation
+### 8. Phase 8.3: Dynamic CLAUDE.md Generation ✅
 
 Generate project-specific CLAUDE.md with detected languages and their rules.
 
 **Test Requirements**:
-- [ ] Test generated CLAUDE.md includes detected primary language
-- [ ] Test generated CLAUDE.md includes quality gate commands for each language
-- [ ] Test generated CLAUDE.md includes TDD methodology for each language
-- [ ] Test polyglot CLAUDE.md has clear sections per language
-- [ ] Test regeneration preserves user customizations (marked sections)
+- [x] Test generated CLAUDE.md includes detected primary language
+- [x] Test generated CLAUDE.md includes quality gate commands for each language
+- [x] Test generated CLAUDE.md includes TDD methodology for each language
+- [x] Test polyglot CLAUDE.md has clear sections per language
+- [x] Test regeneration preserves user customizations (marked sections)
 
 **Implementation**:
-- [ ] Create `ClaudeMdGenerator` struct with language list
-- [ ] Implement `generate(&self) -> String` using `TemplateRegistry`
-- [ ] Add user customization markers: `<!-- USER_CUSTOM_START -->` / `<!-- USER_CUSTOM_END -->`
-- [ ] Update bootstrap to use generator instead of static template
+- [x] Create `ClaudeMdGenerator` struct with language list
+- [x] Implement `generate(&self) -> String` method
+- [x] Add user customization markers: `<!-- USER_CUSTOM_START -->` / `<!-- USER_CUSTOM_END -->`
+- [x] Update bootstrap to use generator instead of static template
 
 **Quality Gates**:
 ```bash
