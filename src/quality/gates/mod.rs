@@ -1821,6 +1821,29 @@ fn test_fn() {
     }
 
     #[test]
+    fn test_no_allow_gate_passes_on_this_project() {
+        // Self-check: Verify the NoAllowGate passes on this project.
+        // All #[allow] patterns should be inside raw string literals.
+        let project_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let gate = NoAllowGate::new(project_dir);
+        let result = gate.check().unwrap();
+
+        if !result.passed {
+            for issue in &result.issues {
+                eprintln!("Issue: {}", issue.message);
+                if let (Some(file), Some(line)) = (&issue.file, issue.line) {
+                    eprintln!("  at {}:{}", file.display(), line);
+                }
+            }
+        }
+
+        assert!(
+            result.passed,
+            "NoAllowGate should pass on this project - all #[allow] should be in raw strings"
+        );
+    }
+
+    #[test]
     fn test_no_todo_gate_detects_todos() {
         let temp_dir = TempDir::new().unwrap();
         let src_dir = temp_dir.path().join("src");
