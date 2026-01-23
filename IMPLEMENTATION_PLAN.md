@@ -60,22 +60,22 @@ cargo test --lib -- weighted_scoring
 cargo test --lib -- gate_weights
 ```
 
-### 10. Phase 9.2: Context Window Language Prioritization
+### 10. Phase 9.2: Context Window Language Prioritization ✅ COMPLETE
 
 Prioritize context inclusion based on detected languages and changed files.
 
 **Test Requirements**:
-- [ ] Test changed files are always included in context
-- [ ] Test primary language files are prioritized over secondary
-- [ ] Test context respects token limits while maximizing relevant content
-- [ ] Test test files are included when related source files change
-- [ ] Test config files (Cargo.toml, package.json) included when relevant
+- [x] Test changed files are always included in context
+- [x] Test primary language files are prioritized over secondary
+- [x] Test context respects token limits while maximizing relevant content
+- [x] Test test files are included when related source files change
+- [x] Test config files (Cargo.toml, package.json) included when relevant
 
 **Implementation**:
-- [ ] Add `prioritize_by_language(files: Vec<Path>, languages: Vec<Language>) -> Vec<Path>`
-- [ ] Implement relevance scoring: changed > primary > secondary > other
-- [ ] Update context builder to use prioritization
-- [ ] Add `context_priority` configuration options
+- [x] Add `prioritize_by_language(files: Vec<Path>, languages: Vec<Language>) -> Vec<Path>`
+- [x] Implement relevance scoring: changed > primary > secondary > other
+- [x] Update context builder to use prioritization
+- [x] Add `context_priority` configuration options
 
 **Quality Gates**:
 ```bash

@@ -60,6 +60,7 @@ pub mod builder;
 pub mod claude_md_generator;
 pub mod code_antipatterns;
 pub mod context;
+pub mod context_priority;
 pub mod templates;
 
 // Re-export commonly used types for convenience
@@ -77,5 +78,8 @@ pub use context::{
     AntiPattern, AntiPatternSeverity, AntiPatternType, AttemptOutcome, AttemptSummary,
     CurrentTaskContext, ErrorAggregator, ErrorContext, ErrorSeverity, GateResult, PromptContext,
     QualityGateStatus, SessionStats, TaskPhase,
+};
+pub use context_priority::{
+    prioritize_by_language, ContextPriorityConfig, ContextPrioritizer, ScoredFile,
 };
 pub use templates::{PromptTemplates, Template, TemplateMarker};

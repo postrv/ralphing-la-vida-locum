@@ -126,6 +126,13 @@ pub struct ProjectConfig {
     /// language were changed in the current working tree.
     #[serde(default, rename = "gateWeights")]
     pub gate_weights: crate::quality::gates::GateWeightConfig,
+
+    /// Configuration for context window prioritization (Sprint 9.2).
+    ///
+    /// Controls how files are prioritized for context inclusion based on
+    /// language and change status.
+    #[serde(default, rename = "contextPriority")]
+    pub context_priority: crate::prompt::context_priority::ContextPriorityConfig,
 }
 
 fn default_true() -> bool {
@@ -139,6 +146,7 @@ impl Default for ProjectConfig {
             hooks: HooksConfig::default(),
             respect_gitignore: true, // Match the serde default
             gate_weights: crate::quality::gates::GateWeightConfig::default(),
+            context_priority: crate::prompt::context_priority::ContextPriorityConfig::default(),
         }
     }
 }
@@ -901,6 +909,69 @@ mod tests {
         assert!(
             (config.gate_weights.unchanged_weight - 0.3).abs() < f64::EPSILON,
             "Missing gate_weights should use default unchanged_weight"
+        );
+    }
+
+    // =========================================================================
+    // Context Priority Configuration Tests (Sprint 9, Phase 9.2)
+    // =========================================================================
+
+    #[test]
+    fn test_project_config_context_priority_default() {
+        let config = ProjectConfig::default();
+        assert!(
+            (config.context_priority.changed_score - 10.0).abs() < f64::EPSILON,
+            "Default changed_score should be 10.0"
+        );
+        assert!(
+            (config.context_priority.primary_language_score - 5.0).abs() < f64::EPSILON,
+            "Default primary_language_score should be 5.0"
+        );
+        assert!(
+            config.context_priority.include_related_tests,
+            "Default include_related_tests should be true"
+        );
+    }
+
+    #[test]
+    fn test_project_config_load_with_context_priority() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"contextPriority": {"changed_score": 20.0, "include_related_tests": false}}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert!(
+            (config.context_priority.changed_score - 20.0).abs() < f64::EPSILON,
+            "Custom changed_score should be loaded"
+        );
+        assert!(
+            !config.context_priority.include_related_tests,
+            "Custom include_related_tests should be loaded"
+        );
+    }
+
+    #[test]
+    fn test_project_config_context_priority_missing_uses_default() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".claude")).unwrap();
+        std::fs::write(
+            temp.path().join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let config = ProjectConfig::load(temp.path()).unwrap();
+        assert!(
+            (config.context_priority.changed_score - 10.0).abs() < f64::EPSILON,
+            "Missing context_priority should use default changed_score"
+        );
+        assert!(
+            (config.context_priority.primary_language_score - 5.0).abs() < f64::EPSILON,
+            "Missing context_priority should use default primary_language_score"
         );
     }
 }
