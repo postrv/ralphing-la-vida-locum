@@ -20,7 +20,7 @@ use crate::r#loop::{LoopManager, LoopManagerConfig, LoopMode};
 use ralph::bootstrap::language_detector::LanguageDetector;
 use ralph::bootstrap::Bootstrap;
 use ralph::quality::gates::{detect_available_gates, gates_for_language, is_gate_available};
-use ralph::quality::EnforcerConfig;
+use ralph::quality::{EnforcerConfig, PluginLoader};
 use ralph::Analytics;
 use ralph::ProjectConfig;
 
@@ -174,6 +174,12 @@ enum Commands {
     Checkpoint {
         #[command(subcommand)]
         action: CheckpointAction,
+    },
+
+    /// Manage quality gate plugins
+    Plugins {
+        #[command(subcommand)]
+        action: PluginsAction,
     },
 }
 
@@ -333,6 +339,22 @@ enum ConfigAction {
 
     /// Show configuration file paths
     Paths,
+}
+
+#[derive(Subcommand)]
+enum PluginsAction {
+    /// List all discovered plugins
+    List {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show detailed information about a specific plugin
+    Info {
+        /// Plugin name
+        name: String,
+    },
 }
 
 #[tokio::main]
@@ -1181,6 +1203,124 @@ async fn main() -> anyhow::Result<()> {
                             println!("   Tags: {}", checkpoint.tags.join(", "));
                         }
                     }
+                }
+            }
+        }
+
+        Commands::Plugins { action } => {
+            let loader = PluginLoader::new().with_project_dir(&project_path);
+
+            match action {
+                PluginsAction::List { json } => {
+                    let result = loader.load_plugins();
+
+                    if json {
+                        // Serialize manifest data as JSON
+                        let output = serde_json::json!({
+                            "plugins": result.manifests.iter().map(|m| {
+                                serde_json::json!({
+                                    "name": m.plugin.name,
+                                    "version": m.plugin.version,
+                                    "author": m.plugin.author,
+                                    "description": m.plugin.description,
+                                    "homepage": m.plugin.homepage,
+                                    "license": m.plugin.license,
+                                    "library_path": m.library.path,
+                                })
+                            }).collect::<Vec<_>>(),
+                            "warnings": result.warnings,
+                            "errors": result.errors,
+                        });
+                        println!("{}", serde_json::to_string_pretty(&output)?);
+                    } else {
+                        if result.manifests.is_empty() {
+                            println!("\n{} No plugins found.", "Plugins:".cyan().bold());
+                            println!();
+                            println!("   Plugin locations:");
+                            if let Some(user_dir) = PluginLoader::default_user_plugins_dir() {
+                                println!("   - User:    {}", user_dir.display());
+                            }
+                            println!(
+                                "   - Project: {}",
+                                project_path.join(".ralph/plugins").display()
+                            );
+                        } else {
+                            println!(
+                                "\n{} Installed Plugins ({} total)",
+                                "Plugins:".cyan().bold(),
+                                result.manifests.len()
+                            );
+                            println!("{}", "─".repeat(60));
+
+                            for manifest in &result.manifests {
+                                println!(
+                                    "   {} v{}",
+                                    manifest.plugin.name.green().bold(),
+                                    manifest.plugin.version
+                                );
+                                println!("     by {}", manifest.plugin.author);
+                                if let Some(ref desc) = manifest.plugin.description {
+                                    println!("     {}", desc);
+                                }
+                                if let Some(ref license) = manifest.plugin.license {
+                                    println!("     License: {}", license);
+                                }
+                                println!();
+                            }
+                        }
+
+                        // Show warnings
+                        if !result.warnings.is_empty() {
+                            println!("\n{}", "Warnings:".yellow().bold());
+                            for warning in &result.warnings {
+                                println!("   - {}", warning);
+                            }
+                        }
+
+                        // Show errors
+                        if !result.errors.is_empty() {
+                            println!("\n{}", "Errors:".red().bold());
+                            for error in &result.errors {
+                                println!("   - {}", error);
+                            }
+                        }
+                    }
+                }
+
+                PluginsAction::Info { name } => {
+                    let result = loader.load_plugins();
+
+                    let manifest = result
+                        .manifests
+                        .iter()
+                        .find(|m| m.plugin.name == name)
+                        .ok_or_else(|| anyhow::anyhow!("Plugin not found: {}", name))?;
+
+                    println!("\n{} Plugin Details", "Plugin:".cyan().bold());
+                    println!("{}", "─".repeat(60));
+                    println!("   Name:        {}", manifest.plugin.name);
+                    println!("   Version:     {}", manifest.plugin.version);
+                    println!("   Author:      {}", manifest.plugin.author);
+                    if let Some(ref desc) = manifest.plugin.description {
+                        println!("   Description: {}", desc);
+                    }
+                    if let Some(ref homepage) = manifest.plugin.homepage {
+                        println!("   Homepage:    {}", homepage);
+                    }
+                    if let Some(ref license) = manifest.plugin.license {
+                        println!("   License:     {}", license);
+                    }
+                    println!();
+                    println!("   Library Configuration:");
+                    println!("     Path:        {}", manifest.library.path);
+                    println!("     Entry point: {}", manifest.library.entry_point);
+                    println!();
+                    println!("   Runtime Configuration:");
+                    println!("     Timeout:     {:?}", manifest.config.timeout);
+                    println!(
+                        "     Enabled:     {}",
+                        if manifest.config.enabled { "Yes" } else { "No" }
+                    );
                 }
             }
         }

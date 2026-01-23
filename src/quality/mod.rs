@@ -100,6 +100,6 @@ pub use remediation::{
 
 // Re-export plugin types
 pub use plugin::{
-    GatePlugin, LibraryConfig, PluginConfig, PluginError, PluginExecutor, PluginManifest,
-    PluginMetadata,
+    GatePlugin, LibraryConfig, PluginConfig, PluginError, PluginExecutor, PluginLoadResult,
+    PluginLoader, PluginManifest, PluginMetadata,
 };

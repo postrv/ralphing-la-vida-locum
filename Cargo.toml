@@ -72,6 +72,11 @@ async-trait = "0.1"
 # Regex
 regex = "1.11"
 
+# Plugin system
+toml = "0.8"
+libloading = "0.8"
+dirs = "6.0"
+
 [dev-dependencies]
 tempfile = "3.14"
 assert_cmd = "2.0"
