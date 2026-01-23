@@ -48,6 +48,8 @@ pub struct PromptContext {
     pub anti_patterns: Vec<AntiPattern>,
     /// Code intelligence context from narsil-mcp.
     pub code_intelligence: CodeIntelligenceContext,
+    /// Language-specific quality rules for the project.
+    pub language_rules: Option<String>,
 }
 
 impl PromptContext {
@@ -184,6 +186,23 @@ impl PromptContext {
     #[must_use]
     pub fn with_code_intelligence(mut self, intel: CodeIntelligenceContext) -> Self {
         self.code_intelligence = intel;
+        self
+    }
+
+    /// Set language-specific quality rules.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::context::PromptContext;
+    ///
+    /// let context = PromptContext::new()
+    ///     .with_language_rules("## Rust Quality Rules\n...");
+    /// assert!(context.language_rules.is_some());
+    /// ```
+    #[must_use]
+    pub fn with_language_rules(mut self, rules: impl Into<String>) -> Self {
+        self.language_rules = Some(rules.into());
         self
     }
 

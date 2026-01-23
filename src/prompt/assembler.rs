@@ -36,6 +36,7 @@ use crate::prompt::context::{
     ErrorSeverity, GateResult, PromptContext, QualityGateStatus, SessionStats, TaskPhase,
 };
 use crate::prompt::templates::PromptTemplates;
+use crate::Language;
 use std::path::{Path, PathBuf};
 
 /// Configuration for the PromptAssembler.
@@ -51,6 +52,8 @@ pub struct AssemblerConfig {
     pub max_attempts: usize,
     /// Maximum anti-patterns to include.
     pub max_anti_patterns: usize,
+    /// Languages detected in the project for language-specific rules.
+    pub languages: Vec<Language>,
 }
 
 impl Default for AssemblerConfig {
@@ -61,6 +64,7 @@ impl Default for AssemblerConfig {
             max_errors: 10,
             max_attempts: 5,
             max_anti_patterns: 5,
+            languages: Vec::new(),
         }
     }
 }
@@ -106,6 +110,402 @@ impl AssemblerConfig {
         self.max_anti_patterns = max;
         self
     }
+
+    /// Set the languages for language-specific rules in prompts.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::assembler::AssemblerConfig;
+    /// use ralph::Language;
+    ///
+    /// let config = AssemblerConfig::new()
+    ///     .with_languages(vec![Language::Rust, Language::Python]);
+    /// ```
+    #[must_use]
+    pub fn with_languages(mut self, languages: Vec<Language>) -> Self {
+        self.languages = languages;
+        self
+    }
+}
+
+/// Get language-specific quality rules for a given language.
+///
+/// Returns a string containing the quality gates, forbidden patterns,
+/// and TDD guidance specific to the language.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::assembler::get_language_rules;
+/// use ralph::Language;
+///
+/// let rules = get_language_rules(Language::Rust);
+/// assert!(rules.contains("clippy"));
+/// ```
+#[must_use]
+pub fn get_language_rules(lang: Language) -> String {
+    match lang {
+        Language::Rust => get_rust_rules(),
+        Language::Python => get_python_rules(),
+        Language::TypeScript | Language::JavaScript => get_typescript_rules(),
+        Language::Go => get_go_rules(),
+        Language::Java | Language::Kotlin => get_java_rules(),
+        Language::CSharp => get_csharp_rules(),
+        Language::Ruby => get_ruby_rules(),
+        Language::Php => get_php_rules(),
+        _ => get_generic_rules(lang),
+    }
+}
+
+fn get_rust_rules() -> String {
+    r#"## Rust Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+cargo clippy --all-targets -- -D warnings  # 0 warnings
+cargo test                                  # all pass
+```
+
+### Forbidden Patterns
+```rust
+#[allow(dead_code)]           // Wire in or delete
+#[allow(unused_*)]            // Use or remove
+#[allow(clippy::*)]           // Fix the issue
+todo!()                       // Implement now
+unimplemented!()              // Implement or remove
+// TODO: ...                  // Implement now or don't merge
+```
+
+### Required Patterns
+```rust
+#[must_use]                   // On functions returning values
+/// # Panics                  // Document panic conditions
+/// # Errors                  // Document error conditions
+/// # Examples                // Provide usage examples
+```
+
+### TDD Cycle
+1. RED: Write failing test with `#[test]`
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `cargo clippy` + `cargo test` before commit
+"#
+    .to_string()
+}
+
+fn get_python_rules() -> String {
+    r#"## Python Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+ruff check . (or flake8 .)                 # 0 warnings
+mypy .                                     # 0 errors
+pytest                                     # all pass
+bandit -r . -ll                            # 0 HIGH/CRITICAL
+```
+
+### Forbidden Patterns
+```python
+# type: ignore              # Fix the type error properly
+# noqa                      # Fix the linting issue
+# TODO: ...                 # Implement now or don't merge
+pass                        # As a placeholder - implement or remove
+...                         # As implementation - complete it
+```
+
+### Required Patterns
+```python
+def function(arg: Type) -> ReturnType:
+    """Short description.
+
+    Args:
+        arg: Description of argument.
+
+    Returns:
+        Description of return value.
+
+    Raises:
+        ExceptionType: When this happens.
+    """
+```
+
+### TDD Cycle
+1. RED: Write failing pytest test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `ruff` + `mypy` + `pytest` before commit
+"#
+    .to_string()
+}
+
+fn get_typescript_rules() -> String {
+    r#"## TypeScript Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+npm run lint (ESLint)                      # 0 warnings
+npm run typecheck (tsc)                    # 0 errors
+npm test                                   # all pass
+npm audit                                  # 0 high/critical
+```
+
+### Forbidden Patterns
+```typescript
+// @ts-ignore              // Fix the type error properly
+// eslint-disable          // Fix the linting issue
+any                        // Use proper types
+// TODO: ...               // Implement now or don't merge
+as any                     // Type properly instead
+```
+
+### Required Patterns
+```typescript
+/**
+ * Short description of function.
+ *
+ * @param arg - Description of argument
+ * @returns Description of return value
+ * @throws {ErrorType} When this happens
+ */
+function functionName(arg: Type): ReturnType {
+  // ...
+}
+```
+
+### TDD Cycle
+1. RED: Write failing Jest/Vitest test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `eslint` + `tsc` + `npm test` before commit
+"#
+    .to_string()
+}
+
+fn get_go_rules() -> String {
+    r#"## Go Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+go vet ./...                               # 0 issues
+golangci-lint run                          # 0 warnings
+go test ./...                              # all pass
+govulncheck ./...                          # 0 vulnerabilities
+```
+
+### Forbidden Patterns
+```go
+//nolint                    // Fix the issue properly
+_ = err                     // Handle the error
+// TODO: ...                // Implement now or don't merge
+panic("not implemented")    // Implement properly
+```
+
+### Required Patterns
+```go
+// FunctionName does something useful.
+//
+// It takes an input and returns a result.
+//
+// Example:
+//
+//	result, err := FunctionName("input")
+func FunctionName(input string) (Result, error) {
+    if input == "" {
+        return Result{}, errors.New("input cannot be empty")
+    }
+    // ...
+}
+```
+
+### TDD Cycle (Table-Driven Tests)
+1. RED: Write failing table-driven test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `go vet` + `golangci-lint` + `go test` before commit
+"#
+    .to_string()
+}
+
+fn get_java_rules() -> String {
+    r#"## Java/Kotlin Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+./gradlew check                            # 0 warnings
+./gradlew test                             # all pass
+./gradlew spotbugsMain                     # 0 bugs
+```
+
+### Forbidden Patterns
+```java
+@SuppressWarnings          // Fix the warning properly
+// TODO: ...               // Implement now or don't merge
+// FIXME: ...              // Fix now
+```
+
+### Required Patterns
+- Use Javadoc for public APIs
+- Handle all exceptions explicitly
+- Use Optional instead of null where possible
+
+### TDD Cycle
+1. RED: Write failing JUnit test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `./gradlew check test` before commit
+"#
+    .to_string()
+}
+
+fn get_csharp_rules() -> String {
+    r#"## C# Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+dotnet build --warnaserror                 # 0 warnings
+dotnet test                                # all pass
+dotnet format --verify-no-changes          # formatted
+```
+
+### Forbidden Patterns
+```csharp
+#pragma warning disable    // Fix the warning properly
+// TODO: ...               // Implement now or don't merge
+throw new NotImplementedException()  // Implement properly
+```
+
+### Required Patterns
+- XML documentation for public APIs
+- Use nullable reference types
+- Handle all exceptions explicitly
+
+### TDD Cycle
+1. RED: Write failing xUnit/NUnit test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `dotnet build` + `dotnet test` before commit
+"#
+    .to_string()
+}
+
+fn get_ruby_rules() -> String {
+    r#"## Ruby Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+rubocop                                    # 0 offenses
+bundle exec rspec                          # all pass
+```
+
+### Forbidden Patterns
+```ruby
+# rubocop:disable          # Fix the issue properly
+# TODO: ...                # Implement now or don't merge
+raise NotImplementedError  # Implement properly
+```
+
+### Required Patterns
+- YARD documentation for public methods
+- Use frozen_string_literal: true
+- Handle all exceptions explicitly
+
+### TDD Cycle
+1. RED: Write failing RSpec test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `rubocop` + `rspec` before commit
+"#
+    .to_string()
+}
+
+fn get_php_rules() -> String {
+    r#"## PHP Quality Rules
+
+### Quality Gates (Before Commit)
+```bash
+./vendor/bin/phpcs                         # 0 errors
+./vendor/bin/phpstan analyse               # 0 errors
+./vendor/bin/phpunit                       # all pass
+```
+
+### Forbidden Patterns
+```php
+// @phpcs:ignore           // Fix the issue properly
+// TODO: ...               // Implement now or don't merge
+// FIXME: ...              // Fix now
+```
+
+### Required Patterns
+- PHPDoc for public methods
+- Use strict types
+- Handle all exceptions explicitly
+
+### TDD Cycle
+1. RED: Write failing PHPUnit test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run `phpcs` + `phpstan` + `phpunit` before commit
+"#
+    .to_string()
+}
+
+fn get_generic_rules(lang: Language) -> String {
+    format!(
+        r#"## {lang} Quality Rules
+
+### General Guidelines
+- Write tests before implementation (TDD)
+- Run linters and type checkers before commit
+- Document public APIs
+- Handle all errors explicitly
+- No TODO/FIXME comments in merged code
+
+### TDD Cycle
+1. RED: Write failing test
+2. GREEN: Write minimal code to pass
+3. REFACTOR: Clean up while tests green
+4. Run quality gates before commit
+"#
+    )
+}
+
+/// Build combined language rules for multiple languages.
+///
+/// For single-language projects, returns the rules for that language.
+/// For polyglot projects, combines rules with clear separation.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::assembler::build_language_rules;
+/// use ralph::Language;
+///
+/// let rules = build_language_rules(&[Language::Rust, Language::Python]);
+/// assert!(rules.contains("Rust"));
+/// assert!(rules.contains("Python"));
+/// ```
+#[must_use]
+pub fn build_language_rules(languages: &[Language]) -> String {
+    if languages.is_empty() {
+        return String::new();
+    }
+
+    if languages.len() == 1 {
+        return get_language_rules(languages[0]);
+    }
+
+    // Polyglot project - combine rules with clear separation
+    let mut combined = String::from("# Language-Specific Quality Rules\n\n");
+    combined.push_str("This is a polyglot project. Follow the rules for each language:\n\n");
+    combined.push_str("---\n\n");
+
+    for lang in languages {
+        combined.push_str(&get_language_rules(*lang));
+        combined.push_str("\n---\n\n");
+    }
+
+    combined
 }
 
 /// High-level prompt assembler that coordinates all prompt generation components.
@@ -870,6 +1270,12 @@ impl PromptAssembler {
         }
 
         context = context.with_code_intelligence(intelligence);
+
+        // Add language-specific quality rules
+        if !self.config.languages.is_empty() {
+            let rules = build_language_rules(&self.config.languages);
+            context = context.with_language_rules(rules);
+        }
 
         context
     }
@@ -1663,5 +2069,205 @@ mod tests {
 
         // Project dir should be preserved after reset
         assert!(assembler.project_dir().is_some());
+    }
+
+    // =========================================================================
+    // Phase 8.1: Language Awareness Tests
+    // =========================================================================
+
+    #[test]
+    fn test_assembler_config_with_languages() {
+        use crate::Language;
+
+        let config = AssemblerConfig::new().with_languages(vec![Language::Rust]);
+
+        assert_eq!(config.languages.len(), 1);
+        assert_eq!(config.languages[0], Language::Rust);
+    }
+
+    #[test]
+    fn test_assembler_config_with_multiple_languages() {
+        use crate::Language;
+
+        let config = AssemblerConfig::new()
+            .with_languages(vec![Language::Python, Language::TypeScript, Language::Go]);
+
+        assert_eq!(config.languages.len(), 3);
+        assert!(config.languages.contains(&Language::Python));
+        assert!(config.languages.contains(&Language::TypeScript));
+        assert!(config.languages.contains(&Language::Go));
+    }
+
+    #[test]
+    fn test_assembler_includes_rust_quality_rules() {
+        use crate::Language;
+
+        let config = AssemblerConfig::new().with_languages(vec![Language::Rust]);
+        let assembler = PromptAssembler::with_config(config);
+
+        let prompt = assembler.build_prompt("build").unwrap();
+
+        // Rust-specific rules should be present
+        assert!(
+            prompt.contains("cargo clippy"),
+            "Rust prompt should include clippy"
+        );
+        assert!(
+            prompt.contains("cargo test"),
+            "Rust prompt should include cargo test"
+        );
+        assert!(
+            prompt.contains("#[allow("),
+            "Rust prompt should mention forbidden #[allow(...)]"
+        );
+    }
+
+    #[test]
+    fn test_assembler_includes_python_quality_rules() {
+        use crate::Language;
+
+        let config = AssemblerConfig::new().with_languages(vec![Language::Python]);
+        let assembler = PromptAssembler::with_config(config);
+
+        let prompt = assembler.build_prompt("build").unwrap();
+
+        // Python-specific rules should be present
+        assert!(
+            prompt.contains("pytest") || prompt.contains("python"),
+            "Python prompt should include pytest or python"
+        );
+        assert!(
+            prompt.contains("ruff") || prompt.contains("mypy") || prompt.contains("flake8"),
+            "Python prompt should include linting tools"
+        );
+    }
+
+    #[test]
+    fn test_assembler_includes_typescript_quality_rules() {
+        use crate::Language;
+
+        let config = AssemblerConfig::new().with_languages(vec![Language::TypeScript]);
+        let assembler = PromptAssembler::with_config(config);
+
+        let prompt = assembler.build_prompt("build").unwrap();
+
+        // TypeScript-specific rules should be present
+        assert!(
+            prompt.contains("npm") || prompt.contains("eslint") || prompt.contains("tsc"),
+            "TypeScript prompt should include npm/eslint/tsc"
+        );
+        assert!(
+            prompt.contains("@ts-ignore") || prompt.contains("any"),
+            "TypeScript prompt should mention forbidden patterns"
+        );
+    }
+
+    #[test]
+    fn test_assembler_polyglot_combined_rules() {
+        use crate::Language;
+
+        let config =
+            AssemblerConfig::new().with_languages(vec![Language::Python, Language::TypeScript]);
+        let assembler = PromptAssembler::with_config(config);
+
+        let prompt = assembler.build_prompt("build").unwrap();
+
+        // Both language rules should be present with clear separation
+        assert!(
+            prompt.contains("Python") || prompt.contains("pytest"),
+            "Polyglot prompt should include Python rules"
+        );
+        assert!(
+            prompt.contains("TypeScript") || prompt.contains("npm"),
+            "Polyglot prompt should include TypeScript rules"
+        );
+    }
+
+    #[test]
+    fn test_assembler_includes_language_specific_tdd_patterns() {
+        use crate::Language;
+
+        let config = AssemblerConfig::new().with_languages(vec![Language::Python]);
+        let assembler = PromptAssembler::with_config(config);
+
+        let prompt = assembler.build_prompt("build").unwrap();
+
+        // Should include TDD guidance specific to the language
+        assert!(
+            prompt.contains("test") || prompt.contains("TDD") || prompt.contains("Test"),
+            "Prompt should include TDD guidance"
+        );
+    }
+
+    #[test]
+    fn test_get_language_rules_rust() {
+        use crate::Language;
+
+        let rules = get_language_rules(Language::Rust);
+
+        assert!(!rules.is_empty(), "Rust rules should not be empty");
+        assert!(rules.contains("clippy"), "Rust rules should mention clippy");
+        assert!(
+            rules.contains("cargo test"),
+            "Rust rules should mention cargo test"
+        );
+    }
+
+    #[test]
+    fn test_get_language_rules_python() {
+        use crate::Language;
+
+        let rules = get_language_rules(Language::Python);
+
+        assert!(!rules.is_empty(), "Python rules should not be empty");
+        assert!(
+            rules.contains("pytest") || rules.contains("ruff") || rules.contains("mypy"),
+            "Python rules should mention quality tools"
+        );
+    }
+
+    #[test]
+    fn test_get_language_rules_typescript() {
+        use crate::Language;
+
+        let rules = get_language_rules(Language::TypeScript);
+
+        assert!(!rules.is_empty(), "TypeScript rules should not be empty");
+        assert!(
+            rules.contains("eslint") || rules.contains("tsc") || rules.contains("npm"),
+            "TypeScript rules should mention quality tools"
+        );
+    }
+
+    #[test]
+    fn test_get_language_rules_go() {
+        use crate::Language;
+
+        let rules = get_language_rules(Language::Go);
+
+        assert!(!rules.is_empty(), "Go rules should not be empty");
+        assert!(
+            rules.contains("go test") || rules.contains("golangci-lint"),
+            "Go rules should mention quality tools"
+        );
+    }
+
+    #[test]
+    fn test_assembler_default_has_empty_languages() {
+        let config = AssemblerConfig::default();
+        assert!(
+            config.languages.is_empty(),
+            "Default config should have no languages"
+        );
+    }
+
+    #[test]
+    fn test_assembler_no_languages_uses_default_template() {
+        // When no languages specified, should use the default template without language rules
+        let assembler = PromptAssembler::new();
+        let prompt = assembler.build_prompt("build").unwrap();
+
+        // Should still produce a valid prompt
+        assert!(prompt.contains("Build Phase") || prompt.contains("build"));
     }
 }

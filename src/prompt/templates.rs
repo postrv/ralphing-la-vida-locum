@@ -46,6 +46,8 @@ pub enum TemplateMarker {
     HistoricalGuidance,
     /// Code intelligence data injection point.
     CodeIntelligence,
+    /// Language-specific quality rules injection point.
+    LanguageRules,
     /// Custom section injection point.
     CustomSection,
 }
@@ -71,6 +73,7 @@ impl TemplateMarker {
             TemplateMarker::AntiPatterns => "{{ANTI_PATTERNS}}",
             TemplateMarker::HistoricalGuidance => "{{HISTORICAL_GUIDANCE}}",
             TemplateMarker::CodeIntelligence => "{{CODE_INTELLIGENCE}}",
+            TemplateMarker::LanguageRules => "{{LANGUAGE_RULES}}",
             TemplateMarker::CustomSection => "{{CUSTOM_SECTION}}",
         }
     }
@@ -87,6 +90,7 @@ impl TemplateMarker {
             TemplateMarker::AntiPatterns,
             TemplateMarker::HistoricalGuidance,
             TemplateMarker::CodeIntelligence,
+            TemplateMarker::LanguageRules,
             TemplateMarker::CustomSection,
         ]
     }
@@ -115,6 +119,7 @@ impl TemplateMarker {
             "{{ANTI_PATTERNS}}" => Some(TemplateMarker::AntiPatterns),
             "{{HISTORICAL_GUIDANCE}}" => Some(TemplateMarker::HistoricalGuidance),
             "{{CODE_INTELLIGENCE}}" => Some(TemplateMarker::CodeIntelligence),
+            "{{LANGUAGE_RULES}}" => Some(TemplateMarker::LanguageRules),
             "{{CUSTOM_SECTION}}" => Some(TemplateMarker::CustomSection),
             _ => None,
         }
@@ -493,6 +498,8 @@ const DEFAULT_BUILD_TEMPLATE: &str = r#"# Build Phase - Production Standard
 
 {{CODE_INTELLIGENCE}}
 
+{{LANGUAGE_RULES}}
+
 ## Phase 1: PLAN
 - Read IMPLEMENTATION_PLAN.md
 - Select highest-priority incomplete task
@@ -718,8 +725,9 @@ mod tests {
         assert!(all.contains(&TemplateMarker::QualityStatus));
         assert!(all.contains(&TemplateMarker::SessionStats));
         assert!(all.contains(&TemplateMarker::CodeIntelligence));
+        assert!(all.contains(&TemplateMarker::LanguageRules));
         assert!(all.contains(&TemplateMarker::CustomSection));
-        assert_eq!(all.len(), 9);
+        assert_eq!(all.len(), 10);
     }
 
     #[test]

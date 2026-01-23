@@ -503,6 +503,27 @@ pub fn build_history_section(guidance: &[String]) -> String {
     lines.join("\n")
 }
 
+/// Build the language-specific quality rules section.
+///
+/// Returns the pre-formatted language rules if provided, otherwise returns empty.
+///
+/// # Example
+///
+/// ```
+/// use ralph::prompt::builder::sections::build_language_rules_section;
+///
+/// let rules = Some("## Rust Quality Rules\n\n### Quality Gates\n...".to_string());
+/// let section = build_language_rules_section(&rules);
+/// assert!(section.contains("Quality Rules"));
+/// ```
+#[must_use]
+pub fn build_language_rules_section(rules: &Option<String>) -> String {
+    match rules {
+        Some(content) if !content.is_empty() => content.clone(),
+        _ => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

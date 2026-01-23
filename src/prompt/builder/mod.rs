@@ -409,4 +409,22 @@ impl SectionBuilder {
     ) -> String {
         sections::build_combined_intelligence_section(intel, max_bytes)
     }
+
+    /// Build the language-specific quality rules section.
+    ///
+    /// Returns the pre-formatted language rules if provided, otherwise returns empty.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::prompt::builder::SectionBuilder;
+    ///
+    /// let rules = Some("## Rust Quality Rules\n...".to_string());
+    /// let section = SectionBuilder::build_language_rules_section(&rules);
+    /// assert!(section.contains("Quality Rules"));
+    /// ```
+    #[must_use]
+    pub fn build_language_rules_section(rules: &Option<String>) -> String {
+        sections::build_language_rules_section(rules)
+    }
 }

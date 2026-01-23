@@ -96,6 +96,11 @@ impl DynamicPromptBuilder {
             SectionBuilder::build_intelligence_section(&context.code_intelligence);
         substitutions.insert(TemplateMarker::CodeIntelligence, intelligence_section);
 
+        // Language-specific quality rules
+        let language_rules_section =
+            SectionBuilder::build_language_rules_section(&context.language_rules);
+        substitutions.insert(TemplateMarker::LanguageRules, language_rules_section);
+
         // Historical guidance placeholder (populated by history module)
         substitutions.insert(TemplateMarker::HistoricalGuidance, String::new());
 
@@ -165,6 +170,10 @@ impl DynamicPromptBuilder {
         substitutions.insert(
             TemplateMarker::CodeIntelligence,
             SectionBuilder::build_intelligence_section(&context.code_intelligence),
+        );
+        substitutions.insert(
+            TemplateMarker::LanguageRules,
+            SectionBuilder::build_language_rules_section(&context.language_rules),
         );
         substitutions.insert(TemplateMarker::HistoricalGuidance, String::new());
         substitutions.insert(TemplateMarker::CustomSection, String::new());
