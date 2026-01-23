@@ -37,6 +37,7 @@
 //! ```
 
 pub mod analytics;
+pub mod audit;
 pub mod bootstrap;
 pub mod checkpoint;
 pub mod config;
@@ -94,6 +95,11 @@ pub use analytics::{
     GateResultEventData, GateStats, PredictorAccuracyStats, PredictorDecisionEventData,
     QualityMetricsSnapshot, QualityTrend, ReportFormat, SessionReport, SessionSummary,
     StructuredEvent, TrendData, TrendDirection, TrendMetric, TrendPoint, SCHEMA_VERSION,
+};
+
+// Re-export audit types
+pub use audit::{
+    AuditEntry, AuditEventType, AuditLogger, RotationConfig, VerificationResult,
 };
 
 // Re-export LLM types

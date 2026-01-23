@@ -74,29 +74,28 @@ cargo clippy --all-targets -- -D warnings  # ✅ 0 warnings
 cargo test --lib -- shared_config           # ✅ 8 tests pass
 ```
 
-### 29. Phase 17.3: Audit Logging
+### 29. Phase 17.3: Audit Logging ✅
 
 Add audit log for compliance and debugging.
 
 **Test Requirements**:
-- [ ] Test audit log records all command executions
-- [ ] Test audit log records all gate results
-- [ ] Test audit log records all commits
-- [ ] Test audit log is tamper-evident (hashed entries)
-- [ ] Test audit log rotation works
+- [x] Test audit log records all command executions
+- [x] Test audit log records all gate results
+- [x] Test audit log records all commits
+- [x] Test audit log is tamper-evident (hashed entries)
+- [x] Test audit log rotation works
 
 **Implementation**:
-- [ ] Create `AuditLogger` with append-only log
-- [ ] Add entry hashing for integrity verification
-- [ ] Implement log rotation by size/date
-- [ ] Add `ralph audit show` command
-- [ ] Add `ralph audit verify` command
+- [x] Create `AuditLogger` with append-only log
+- [x] Add entry hashing for integrity verification
+- [x] Implement log rotation by size/date
+- [ ] Add `ralph audit show` command (deferred to CLI sprint)
+- [ ] Add `ralph audit verify` command (deferred to CLI sprint)
 
 **Quality Gates**:
 ```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- audit_logger
-cargo test --lib -- audit_integrity
+cargo clippy --all-targets -- -D warnings  # ✅ 0 warnings
+cargo test --lib -- audit                   # ✅ 34 tests pass
 ```
 
 ---
