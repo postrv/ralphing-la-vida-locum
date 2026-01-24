@@ -27,54 +27,7 @@
 
 **Goal**: Add CLI commands for config validation, audit management, and verification.
 
-### 33. Phase 19.1: Config Validate Command ✅
-
-Add `ralph config validate` command.
-
-**Test Requirements**:
-- [x] Test validates project config syntax
-- [x] Test validates inheritance chain resolution
-- [x] Test validates extends references exist
-- [x] Test reports missing required fields
-- [x] Test exits with appropriate error codes
-
-**Implementation**:
-- [x] Add `ConfigValidator` struct
-- [x] Implement validation for all config sections
-- [x] Add `ralph config validate` subcommand to CLI
-- [x] Add `--verbose` flag for detailed output
-- [x] Add `--json` flag for machine-readable output
-- [x] Document in CLI help
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- config_validate
-```
-
-### 34. Phase 19.2: Audit Show Command ✅
-
-Add `ralph audit show` command.
-
-**Test Requirements**:
-- [x] Test displays recent audit entries
-- [x] Test supports `--limit N` flag
-- [x] Test supports `--since <datetime>` filter
-- [x] Test supports `--type <event_type>` filter
-- [x] Test outputs JSON with `--json` flag
-
-**Implementation**:
-- [x] Add `AuditReader` for querying log
-- [x] Implement filter/limit logic
-- [x] Add `ralph audit show` subcommand to CLI
-- [x] Add formatted table output
-- [x] Document in CLI help
-
-**Quality Gates**:
-```bash
-cargo clippy --all-targets -- -D warnings
-cargo test --lib -- audit_show
-```
+> ✅ **Completed**: 19.1 Config Validate, 19.2 Audit Show (see `docs/COMPLETED_SPRINTS.md`)
 
 ### 35. Phase 19.3: Audit Verify Command
 

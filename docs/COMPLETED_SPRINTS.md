@@ -254,14 +254,38 @@ Added opt-in analytics upload stub, cloud campaign API stub, and CCG-Diff verifi
 **Deferred to CLI Sprint:**
 - `ralph verify --mock` command
 
+### Sprint 19: CLI Commands (In Progress)
+
+#### 19.1: Config Validate Command ✅
+
+**Completed 2026-01-24**
+
+- `ConfigValidator` struct for comprehensive config validation
+- `ValidationReport` with errors, warnings, inheritance chain
+- `ralph config validate` CLI command
+- `--verbose` flag for detailed output
+- `--json` flag for machine-readable output
+- 18 comprehensive tests
+
+#### 19.2: Audit Show Command ✅
+
+**Completed 2026-01-24**
+
+- `AuditReader` for querying audit log
+- Filter by `--limit`, `--since`, `--type`
+- `ralph audit show` CLI command
+- Formatted table output
+- `--json` flag for machine-readable output
+- 12 comprehensive tests
+
 ---
 
 ## Summary Statistics
 
 | Metric | Value |
 |--------|-------|
-| Sprints Completed | 12 (7-18) |
-| Phases Completed | 33 |
+| Sprints Completed | 12 (7-18) + Sprint 19 in progress |
+| Phases Completed | 35 |
 | Completion Date | 2026-01-24 |
 
 ## Key Artifacts Added
