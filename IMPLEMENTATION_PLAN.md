@@ -521,12 +521,12 @@ cargo clippy --all-targets -- -D warnings
 **Description**: Persist stagnation predictor accuracy statistics.
 
 **Requirements**:
-- [ ] Create `src/stagnation/persistence.rs`
-- [ ] Define `PredictorStats` struct: predictions made, accuracy by risk level, factor weights
-- [ ] Implement save/load to `.ralph/predictor_stats.json`
-- [ ] Load stats in `StagnationPredictor::new()`
-- [ ] Save stats after each prediction verification
-- [ ] Add stats summary to `ralph status` command
+- [x] Create `src/stagnation/persistence.rs`
+- [x] Define `PredictorStats` struct: predictions made, accuracy by risk level, factor weights
+- [x] Implement save/load to `.ralph/predictor_stats.json`
+- [ ] Load stats in `StagnationPredictor::new()` (integration pending)
+- [ ] Save stats after each prediction verification (integration pending)
+- [ ] Add stats summary to `ralph status` command (integration pending)
 
 **Test-First Requirements**:
 ```rust
@@ -901,7 +901,7 @@ cargo deny check licenses
 - [ ] Phase 23.6: Cost Tracking
 
 ### Sprint 24: Predictor Persistence & Diagnostics
-- [ ] Phase 24.1: Predictor Stats Persistence
+- [x] Phase 24.1: Predictor Stats Persistence (core module complete - integration pending)
 - [ ] Phase 24.2: Enhanced Diagnostic Reports
 - [ ] Phase 24.3: Adaptive Weight Tuning
 
