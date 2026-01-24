@@ -79,6 +79,7 @@
 
 pub mod enforcer;
 pub mod gates;
+pub mod parser;
 pub mod plugin;
 pub mod remediation;
 
