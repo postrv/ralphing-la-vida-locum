@@ -53,6 +53,7 @@ use crate::supervisor::predictor::{
     InterventionThresholds, PredictorConfig, PreventiveAction, RiskSignals, RiskWeights,
     StagnationPredictor, WeightPreset,
 };
+use ralph::stagnation::StatsPersistence;
 use crate::supervisor::{Supervisor, SupervisorVerdict};
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
@@ -1003,7 +1004,21 @@ impl LoopManager {
                 .with_max_file_touches(5)
                 .with_history_length(10);
 
-            let p = StagnationPredictor::new(tuned_config);
+            let mut p = StagnationPredictor::new(tuned_config);
+
+            // Load existing predictor stats from disk for cross-session learning
+            let stats_persistence = StatsPersistence::new(&self.project_dir);
+            if let Ok(Some(stats)) = stats_persistence.load() {
+                p.apply_stats(&stats);
+                if self.verbose {
+                    debug!(
+                        "Loaded predictor stats: {} predictions, accuracy={:?}",
+                        stats.total_predictions(),
+                        stats.accuracy().map(|a| format!("{:.0}%", a * 100.0))
+                    );
+                }
+            }
+
             if self.verbose {
                 let config = p.config();
                 debug!(
@@ -1163,6 +1178,15 @@ impl LoopManager {
                 // If we predicted low risk (score < 60) and progress was made, prediction was correct
                 let actually_stagnated = !made_progress;
                 predictor.record_prediction(score, actually_stagnated);
+
+                // Save predictor stats for cross-session learning (every 5 predictions)
+                if predictor.prediction_history().len() % 5 == 0 {
+                    let stats_persistence = StatsPersistence::new(&self.project_dir);
+                    let stats = predictor.export_stats();
+                    if let Err(e) = stats_persistence.save(&stats) {
+                        debug!("Failed to save predictor stats: {}", e);
+                    }
+                }
             }
 
             if made_progress {
@@ -1974,7 +1998,36 @@ impl LoopManager {
                                 reason
                             );
                             // Generate and save diagnostics before aborting
-                            if let Ok(report) = supervisor.generate_diagnostics(&self.analytics) {
+                            if let Ok(mut report) = supervisor.generate_diagnostics(&self.analytics) {
+                                // Add predictor summary if we have a predictor
+                                let predictor_stats = predictor.export_stats();
+                                let predictor_summary = crate::supervisor::PredictorSummary {
+                                    current_risk_level: predictor
+                                        .config()
+                                        .thresholds
+                                        .classify(last_risk_score.unwrap_or(0.0)),
+                                    risk_score: last_risk_score.unwrap_or(0.0),
+                                    factor_breakdown: Vec::new(),
+                                    total_predictions: predictor_stats.total_predictions(),
+                                    accuracy_percent: predictor_stats.accuracy().map(|a| a * 100.0),
+                                    recent_predictions: predictor.prediction_history()
+                                        .iter()
+                                        .rev()
+                                        .take(5)
+                                        .copied()
+                                        .collect(),
+                                };
+
+                                // Print summary to console
+                                if self.verbose {
+                                    debug!(
+                                        "Predictor summary:\n{}",
+                                        predictor_summary.format_human_readable()
+                                    );
+                                }
+
+                                report.predictor_summary = Some(predictor_summary);
+
                                 if let Ok(path) = report.save(&self.project_dir) {
                                     println!(
                                         "   {} Diagnostics saved to: {}",

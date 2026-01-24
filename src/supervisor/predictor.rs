@@ -1218,6 +1218,146 @@ impl StagnationPredictor {
     }
 
     // =========================================================================
+    // Phase 24.1: Predictor Stats Integration
+    // =========================================================================
+
+    /// Exports the current predictor state to a `PredictorStats` for persistence.
+    ///
+    /// This converts the internal prediction history into the aggregated format
+    /// used for cross-session persistence. The exported stats include:
+    /// - Total prediction count and correct predictions
+    /// - Breakdown by risk level
+    /// - Current factor weights
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::StagnationPredictor;
+    ///
+    /// let mut predictor = StagnationPredictor::with_defaults();
+    /// predictor.record_prediction(50.0, true);
+    ///
+    /// let stats = predictor.export_stats();
+    /// assert_eq!(stats.total_predictions(), 1);
+    /// ```
+    #[must_use]
+    pub fn export_stats(&self) -> ralph::stagnation::PredictorStats {
+        use ralph::stagnation::RiskLevel as PersistRiskLevel;
+
+        let mut stats = ralph::stagnation::PredictorStats::new();
+
+        // Convert internal prediction history to aggregated stats
+        for &(score, actually_stagnated) in &self.prediction_history {
+            // Classify the score using our thresholds
+            let internal_level = self.config.thresholds.classify(score);
+
+            // Convert to the persistence RiskLevel
+            let persist_level = match internal_level {
+                RiskLevel::Low => PersistRiskLevel::Low,
+                RiskLevel::Medium => PersistRiskLevel::Medium,
+                RiskLevel::High => PersistRiskLevel::High,
+                RiskLevel::Critical => PersistRiskLevel::Critical,
+            };
+
+            // A prediction is "correct" if:
+            // - High/Critical risk and stagnation occurred, OR
+            // - Low/Medium risk and no stagnation
+            let predicted_high_risk = score >= self.config.thresholds.medium_max;
+            let was_correct = predicted_high_risk == actually_stagnated;
+
+            stats.record_prediction(persist_level, was_correct);
+        }
+
+        // Include current weights
+        let persist_weights = ralph::stagnation::RiskWeights::new(
+            self.config.weights.commit_gap,
+            self.config.weights.file_churn,
+            self.config.weights.error_repeat,
+            self.config.weights.test_stagnation,
+            self.config.weights.mode_oscillation,
+            self.config.weights.warning_growth,
+        );
+        stats.set_factor_weights(persist_weights);
+
+        stats
+    }
+
+    /// Applies loaded stats to initialize the predictor state.
+    ///
+    /// This restores the aggregate prediction counts from a previously saved
+    /// `PredictorStats`. Note that the raw prediction history cannot be
+    /// restored (only aggregate metrics are preserved).
+    ///
+    /// # Arguments
+    ///
+    /// * `stats` - The loaded predictor stats to apply.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::stagnation::{PredictorStats, StatsPersistence};
+    /// use ralph::supervisor::predictor::StagnationPredictor;
+    ///
+    /// let persistence = StatsPersistence::new("/project");
+    /// if let Ok(Some(stats)) = persistence.load() {
+    ///     let mut predictor = StagnationPredictor::with_defaults();
+    ///     predictor.apply_stats(&stats);
+    /// }
+    /// ```
+    pub fn apply_stats(&mut self, stats: &ralph::stagnation::PredictorStats) {
+        use ralph::stagnation::RiskLevel as PersistRiskLevel;
+
+        // Clear existing history
+        self.prediction_history.clear();
+
+        // Reconstruct approximate history from aggregated stats.
+        // We use the midpoint of each risk level's score range.
+        for persist_level in PersistRiskLevel::all() {
+            let count = stats.predictions_at_level(persist_level);
+            if count == 0 {
+                continue;
+            }
+
+            // Calculate how many were correct at this level
+            let accuracy = stats.accuracy_for_level(persist_level).unwrap_or(0.5);
+            let correct_count = (count as f64 * accuracy).round() as u64;
+
+            // Use midpoint score for this level
+            let score = (persist_level.min_score() + persist_level.max_score()) / 2.0;
+
+            // Determine if high-risk level (for what "correct" means)
+            let is_high_risk = persist_level.requires_intervention();
+
+            // Add correct predictions
+            for _ in 0..correct_count {
+                // For high risk: correct means stagnation occurred
+                // For low risk: correct means no stagnation
+                let stagnated = is_high_risk;
+                self.prediction_history.push((score, stagnated));
+            }
+
+            // Add incorrect predictions
+            for _ in 0..(count - correct_count) {
+                // Incorrect is opposite of correct
+                let stagnated = !is_high_risk;
+                self.prediction_history.push((score, stagnated));
+            }
+        }
+
+        // Apply factor weights if available
+        if let Some(weights) = stats.factor_weights() {
+            self.config.weights = RiskWeights::new(
+                weights.commit_gap,
+                weights.file_churn,
+                weights.error_repeat,
+                weights.test_stagnation,
+                weights.mode_oscillation,
+                weights.warning_growth,
+            );
+        }
+    }
+
+    // =========================================================================
     // Private: Individual Factor Scoring (0.0 to 1.0)
     // =========================================================================
 
@@ -1355,6 +1495,8 @@ impl StagnationPredictor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ralph::stagnation::{PredictorStats, StatsPersistence};
+    use tempfile::TempDir;
 
     // =========================================================================
     // Phase 6.1: Risk Model Tests
@@ -2120,5 +2262,100 @@ mod tests {
             (config.weights.commit_gap - aggressive_weights.commit_gap).abs() < 0.001,
             "Config should use preset weights"
         );
+    }
+
+    // =========================================================================
+    // Phase 24.1: Predictor Stats Integration Tests
+    // =========================================================================
+
+    #[test]
+    fn test_export_stats_for_persistence() {
+        let mut predictor = StagnationPredictor::with_defaults();
+
+        // Record some predictions
+        predictor.record_prediction(20.0, false); // Low risk, no stagnation
+        predictor.record_prediction(70.0, true); // High risk, stagnated
+        predictor.record_prediction(85.0, true); // Critical, stagnated
+
+        let stats = predictor.export_stats();
+
+        assert_eq!(stats.total_predictions(), 3);
+        assert_eq!(stats.correct_predictions(), 3);
+        assert!(stats.accuracy().is_some());
+    }
+
+    #[test]
+    fn test_apply_stats_restores_accuracy() {
+        let temp = TempDir::new().unwrap();
+        let persistence = StatsPersistence::new(temp.path());
+
+        // Create stats and save them
+        let mut original_stats = PredictorStats::new();
+        original_stats.record_prediction(ralph::stagnation::RiskLevel::High, true);
+        original_stats.record_prediction(ralph::stagnation::RiskLevel::Low, true); // Both correct
+        persistence.save(&original_stats).expect("save");
+
+        // Verify original stats
+        assert_eq!(original_stats.total_predictions(), 2);
+        assert_eq!(original_stats.correct_predictions(), 2);
+
+        // Load stats into a new predictor
+        let loaded_stats = persistence.load().expect("load").expect("stats");
+        assert_eq!(loaded_stats.total_predictions(), 2);
+        assert_eq!(loaded_stats.correct_predictions(), 2);
+
+        let mut predictor = StagnationPredictor::with_defaults();
+        predictor.apply_stats(&loaded_stats);
+
+        // Check prediction history was populated
+        assert_eq!(
+            predictor.prediction_history().len(),
+            2,
+            "prediction_history should have 2 entries"
+        );
+
+        // Verify the restored state via export
+        let exported = predictor.export_stats();
+        assert_eq!(exported.total_predictions(), 2);
+        assert_eq!(exported.correct_predictions(), 2);
+    }
+
+    #[test]
+    fn test_predictor_stats_roundtrip() {
+        let temp = TempDir::new().unwrap();
+        let persistence = StatsPersistence::new(temp.path());
+
+        // Create predictor and record predictions
+        let mut predictor = StagnationPredictor::with_defaults();
+        predictor.record_prediction(25.0, false);
+        predictor.record_prediction(65.0, true);
+        predictor.record_prediction(90.0, true);
+
+        // Save stats
+        let stats = predictor.export_stats();
+        persistence.save(&stats).expect("save");
+
+        // Load into new predictor
+        let loaded_stats = persistence.load().expect("load").expect("stats");
+        let mut new_predictor = StagnationPredictor::with_defaults();
+        new_predictor.apply_stats(&loaded_stats);
+
+        // Verify
+        let new_stats = new_predictor.export_stats();
+        assert_eq!(new_stats.total_predictions(), stats.total_predictions());
+        assert_eq!(new_stats.correct_predictions(), stats.correct_predictions());
+    }
+
+    #[test]
+    fn test_export_stats_includes_weights() {
+        let predictor =
+            StagnationPredictor::with_preset(WeightPreset::Conservative);
+
+        let stats = predictor.export_stats();
+
+        // Should include the weights
+        assert!(stats.factor_weights().is_some());
+        let weights = stats.factor_weights().unwrap();
+        assert!(weights.commit_gap >= 0.30); // Conservative emphasizes commit_gap
     }
 }

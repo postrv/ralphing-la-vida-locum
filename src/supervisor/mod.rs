@@ -95,6 +95,96 @@ impl Default for HealthMetrics {
     }
 }
 
+/// Summary of stagnation predictor state for diagnostics.
+///
+/// Provides a snapshot of the predictor's assessment including risk level,
+/// contributing factors, and prediction accuracy for debugging and reporting.
+///
+/// # Example
+///
+/// ```rust
+/// use ralph::supervisor::{PredictorSummary, predictor::RiskLevel};
+///
+/// let summary = PredictorSummary {
+///     current_risk_level: RiskLevel::Medium,
+///     risk_score: 45.0,
+///     factor_breakdown: vec![("commit_gap".to_string(), 0.3)],
+///     total_predictions: 50,
+///     accuracy_percent: Some(75.0),
+///     recent_predictions: vec![(35.0, false)],
+/// };
+///
+/// assert_eq!(summary.current_risk_level, RiskLevel::Medium);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PredictorSummary {
+    /// Current assessed risk level
+    pub current_risk_level: predictor::RiskLevel,
+    /// Raw risk score (0-100)
+    pub risk_score: f64,
+    /// Breakdown of individual factor contributions (factor_name, score)
+    pub factor_breakdown: Vec<(String, f64)>,
+    /// Total predictions made since stats were loaded
+    pub total_predictions: u64,
+    /// Accuracy percentage if enough predictions exist
+    pub accuracy_percent: Option<f64>,
+    /// Recent predictions: (score, actually_stagnated)
+    pub recent_predictions: Vec<(f64, bool)>,
+}
+
+impl PredictorSummary {
+    /// Formats the predictor summary as a human-readable string.
+    ///
+    /// Useful for including in diagnostic reports or logging.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::{PredictorSummary, predictor::RiskLevel};
+    ///
+    /// let summary = PredictorSummary {
+    ///     current_risk_level: RiskLevel::High,
+    ///     risk_score: 65.0,
+    ///     factor_breakdown: vec![("commit_gap".to_string(), 0.5)],
+    ///     total_predictions: 25,
+    ///     accuracy_percent: Some(80.0),
+    ///     recent_predictions: vec![],
+    /// };
+    ///
+    /// let formatted = summary.format_human_readable();
+    /// assert!(formatted.contains("Risk Level: High"));
+    /// ```
+    #[must_use]
+    pub fn format_human_readable(&self) -> String {
+        let mut lines = vec![
+            format!("Risk Level: {:?} (score: {:.1})", self.current_risk_level, self.risk_score),
+        ];
+
+        if !self.factor_breakdown.is_empty() {
+            lines.push("Factor Breakdown:".to_string());
+            for (factor, score) in &self.factor_breakdown {
+                lines.push(format!("  - {}: {:.2}", factor, score));
+            }
+        }
+
+        lines.push(format!("Total Predictions: {}", self.total_predictions));
+
+        if let Some(accuracy) = self.accuracy_percent {
+            lines.push(format!("Accuracy: {:.1}%", accuracy));
+        }
+
+        if !self.recent_predictions.is_empty() {
+            lines.push("Recent Predictions:".to_string());
+            for (score, stagnated) in self.recent_predictions.iter().take(5) {
+                let outcome = if *stagnated { "stagnated" } else { "progressed" };
+                lines.push(format!("  - score={:.1}, {}", score, outcome));
+            }
+        }
+
+        lines.join("\n")
+    }
+}
+
 /// Diagnostic report for failures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiagnosticReport {
@@ -112,6 +202,12 @@ pub struct DiagnosticReport {
     pub recent_events: Vec<serde_json::Value>,
     /// Generated timestamp
     pub generated_at: DateTime<Utc>,
+    /// Stagnation predictor summary (Phase 24.2)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predictor_summary: Option<PredictorSummary>,
+    /// Preventive actions already attempted (Phase 24.2)
+    #[serde(default)]
+    pub preventive_actions_taken: Vec<String>,
 }
 
 impl DiagnosticReport {
@@ -602,6 +698,8 @@ impl Supervisor {
             clippy_output,
             recent_events,
             generated_at: Utc::now(),
+            predictor_summary: None,
+            preventive_actions_taken: Vec::new(),
         })
     }
 
@@ -799,6 +897,8 @@ mod tests {
             clippy_output: None,
             recent_events: vec![],
             generated_at: Utc::now(),
+            predictor_summary: None,
+            preventive_actions_taken: vec![],
         };
 
         let path = report.save(temp.path()).unwrap();
@@ -829,5 +929,121 @@ mod tests {
                 reason: "test".into()
             }
         );
+    }
+
+    // =========================================================================
+    // Phase 24.2: Enhanced Diagnostic Reports Tests
+    // =========================================================================
+
+    #[test]
+    fn test_predictor_summary_creation() {
+        use crate::supervisor::predictor::RiskLevel;
+
+        let summary = PredictorSummary {
+            current_risk_level: RiskLevel::Medium,
+            risk_score: 45.0,
+            factor_breakdown: vec![
+                ("commit_gap".to_string(), 0.3),
+                ("file_churn".to_string(), 0.2),
+            ],
+            total_predictions: 50,
+            accuracy_percent: Some(75.0),
+            recent_predictions: vec![(35.0, false), (65.0, true)],
+        };
+
+        assert_eq!(summary.current_risk_level, RiskLevel::Medium);
+        assert_eq!(summary.total_predictions, 50);
+        assert!(summary.accuracy_percent.is_some());
+    }
+
+    #[test]
+    fn test_predictor_summary_serialization() {
+        use crate::supervisor::predictor::RiskLevel;
+
+        let summary = PredictorSummary {
+            current_risk_level: RiskLevel::High,
+            risk_score: 72.5,
+            factor_breakdown: vec![("error_repeat".to_string(), 0.8)],
+            total_predictions: 100,
+            accuracy_percent: Some(82.3),
+            recent_predictions: vec![],
+        };
+
+        let json = serde_json::to_string(&summary).expect("serialize");
+        assert!(json.contains("High"));
+        assert!(json.contains("72.5"));
+
+        let parsed: PredictorSummary = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed.current_risk_level, RiskLevel::High);
+    }
+
+    #[test]
+    fn test_diagnostic_report_with_predictor_summary() {
+        use crate::supervisor::predictor::RiskLevel;
+
+        let summary = PredictorSummary {
+            current_risk_level: RiskLevel::Critical,
+            risk_score: 85.0,
+            factor_breakdown: vec![],
+            total_predictions: 20,
+            accuracy_percent: Some(90.0),
+            recent_predictions: vec![],
+        };
+
+        let report = DiagnosticReport {
+            git_status: String::new(),
+            git_diff_summary: String::new(),
+            recent_commits: vec![],
+            test_output: None,
+            clippy_output: None,
+            recent_events: vec![],
+            generated_at: Utc::now(),
+            predictor_summary: Some(summary),
+            preventive_actions_taken: vec!["Switched to debug mode".to_string()],
+        };
+
+        assert!(report.predictor_summary.is_some());
+        assert_eq!(report.preventive_actions_taken.len(), 1);
+    }
+
+    #[test]
+    fn test_diagnostic_report_predictor_summary_format() {
+        use crate::supervisor::predictor::RiskLevel;
+
+        let summary = PredictorSummary {
+            current_risk_level: RiskLevel::High,
+            risk_score: 65.0,
+            factor_breakdown: vec![
+                ("commit_gap".to_string(), 0.5),
+                ("file_churn".to_string(), 0.3),
+            ],
+            total_predictions: 25,
+            accuracy_percent: Some(80.0),
+            recent_predictions: vec![(45.0, false), (70.0, true)],
+        };
+
+        let formatted = summary.format_human_readable();
+        assert!(formatted.contains("Risk Level: High"));
+        assert!(formatted.contains("65.0"));
+        assert!(formatted.contains("commit_gap"));
+        assert!(formatted.contains("Accuracy: 80.0%"));
+    }
+
+    #[test]
+    fn test_diagnostic_report_backwards_compatible() {
+        // Old format without predictor_summary should deserialize with None
+        let old_json = r#"{
+            "git_status": "clean",
+            "git_diff_summary": "",
+            "recent_commits": [],
+            "test_output": null,
+            "clippy_output": null,
+            "recent_events": [],
+            "generated_at": "2024-01-01T00:00:00Z"
+        }"#;
+
+        let report: DiagnosticReport = serde_json::from_str(old_json).expect("deserialize");
+        assert!(report.predictor_summary.is_none());
+        assert!(report.preventive_actions_taken.is_empty());
     }
 }
