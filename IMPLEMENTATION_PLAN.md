@@ -17,63 +17,21 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 2,430 passing (1,918 lib + 512 bin)
+**Current Test Count**: 2,440 passing (1,918 lib + 522 bin)
 
 ---
 
-## Sprint 26: Incremental Execution Mode
-
-**Goal**: Run Ralph on changed files only for large codebase support.
-
-**Success Criteria**:
-- `--changed-since <commit>` runs gates only on changed files
-- `--files <glob>` explicitly specifies files to process
-- Task selection prioritizes tasks affecting changed files
-- 10x+ speedup on large repos with small changes
-
-**Already Complete**:
-- [x] Phase 26.1: Change Detection (`src/changes/mod.rs`)
-- [x] Phase 26.2: Scoped Quality Gates (`run_scoped()` on all gates)
-- [x] Phase 26.3: Scoped Context Building (`ChangeScope`, CCG neighbors)
-- [x] Phase 26.4: Scoped Task Selection (`affected_files`, prioritization)
-
-### Phase 26.5: CLI Integration ✅
-
-**Description**: Add incremental execution flags to CLI.
-
-**Requirements**:
-- [x] Add `--changed-since <commit>` flag to `ralph loop`
-- [x] Add `--files <glob>` flag to `ralph loop`
-- [x] Add `--changed` flag as shorthand for `--changed-since HEAD~1`
-- [x] Flags are mutually exclusive (error if both specified)
-- [x] Log scope at start: "Running in incremental mode: 5 files changed since abc123"
-
----
-
-## Optional: Phase 24.3 - Adaptive Weight Tuning
+## Phase 24.3: Adaptive Weight Tuning ✅
 
 **Description**: Slowly adjust predictor weights based on recorded accuracy.
 
 **Requirements**:
-- [ ] Add `enable_adaptive_weights` config option (default: false)
-- [ ] Track which factors contributed to correct vs incorrect predictions
-- [ ] Implement simple weight adjustment: +0.1 for factors in correct predictions, -0.1 for incorrect
-- [ ] Clamp weights to [0.1, 2.0] range to prevent runaway
-- [ ] Add `ralph predictor tune` command to manually trigger tuning
-- [ ] Log weight changes
-
----
-
-## Pending CLI Integration ✅
-
-These CLI flags were implemented in the library and are now wired to CLI:
-
-- [x] `--model` flag: `claude`, `openai`, `gemini`, `ollama`, `auto`
-  - Model variant (opus/sonnet/haiku) is read from config and passed to Claude CLI
-  - `RealClaudeProcess::with_model()` constructor added
-- [x] `--no-fallback` flag to disable automatic provider fallback
-  - Flag added to CLI, logs warning when used
-  - Currently a no-op until ProviderRouter is integrated into LoopManager
+- [x] Add `enable_adaptive_weights` config option (default: false)
+- [x] Track which factors contributed to correct vs incorrect predictions
+- [x] Implement simple weight adjustment: +0.1 for factors in correct predictions, -0.1 for incorrect
+- [x] Clamp weights to [0.1, 2.0] range to prevent runaway
+- [x] Add `ralph predictor tune` command to manually trigger tuning
+- [x] Log weight changes
 
 ---
 

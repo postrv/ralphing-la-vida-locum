@@ -50,8 +50,8 @@ use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransit
 use crate::session::persistence::SessionPersistence;
 use crate::session::{PredictorSnapshot, SessionState, SupervisorSnapshot};
 use crate::supervisor::predictor::{
-    InterventionThresholds, PredictorConfig, PreventiveAction, RiskSignals, RiskWeights,
-    StagnationPredictor, WeightPreset,
+    InterventionThresholds, PredictorConfig, PreventiveAction, RiskBreakdown, RiskSignals,
+    RiskWeights, StagnationPredictor, WeightPreset,
 };
 use crate::supervisor::{Supervisor, SupervisorVerdict};
 use anyhow::{bail, Context, Result};
@@ -1130,6 +1130,8 @@ impl LoopManager {
         let mut recent_errors: Vec<String> = Vec::new();
         // Track last prediction for accuracy recording
         let mut last_risk_score: Option<f64> = None;
+        // Track last risk breakdown for adaptive weight tuning
+        let mut last_risk_breakdown: Option<RiskBreakdown> = None;
 
         // Validate task tracker state against current plan on startup
         // This prevents Ralph from getting stuck on stale/orphaned tasks
@@ -1249,7 +1251,14 @@ impl LoopManager {
                 // If we predicted high risk (score >= 60) and no progress, prediction was correct
                 // If we predicted low risk (score < 60) and progress was made, prediction was correct
                 let actually_stagnated = !made_progress;
-                predictor.record_prediction(score, actually_stagnated);
+
+                // Use record_prediction_with_breakdown for adaptive weight tuning
+                // when we have breakdown data available
+                if let Some(ref breakdown) = last_risk_breakdown {
+                    predictor.record_prediction_with_breakdown(score, actually_stagnated, breakdown);
+                } else {
+                    predictor.record_prediction(score, actually_stagnated);
+                }
 
                 // Save predictor stats for cross-session learning (every 5 predictions)
                 if predictor.prediction_history().len() % 5 == 0 {
@@ -1990,8 +1999,9 @@ impl LoopManager {
                 )?;
             }
 
-            // Store risk score for accuracy tracking next iteration
+            // Store risk score and breakdown for accuracy tracking next iteration
             last_risk_score = Some(risk_score);
+            last_risk_breakdown = Some(risk_breakdown.clone());
 
             // Supervisor health check
             if supervisor.should_check(self.state.iteration) {

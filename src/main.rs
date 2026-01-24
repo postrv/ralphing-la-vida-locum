@@ -273,6 +273,43 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Manage the stagnation predictor
+    ///
+    /// View predictor statistics, tune weights, and manage prediction settings.
+    Predictor {
+        #[command(subcommand)]
+        action: PredictorAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum PredictorAction {
+    /// Tune predictor weights based on prediction history
+    ///
+    /// Adjusts factor weights based on which factors contributed to correct
+    /// vs incorrect predictions:
+    /// - Factors that contributed to correct predictions get +0.1 weight
+    /// - Factors that contributed to incorrect predictions get -0.1 weight
+    /// - Weights are clamped to [0.1, 2.0] to prevent runaway
+    ///
+    /// This command only works if `enable_adaptive_weights` is true in the config.
+    Tune {
+        /// Dry run - show what changes would be made without applying them
+        #[arg(short, long)]
+        dry_run: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show current predictor weights and statistics
+    Stats {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2110,6 +2147,174 @@ async fn main() -> anyhow::Result<()> {
                 }
 
                 println!();
+            }
+        }
+        Commands::Predictor { action } => {
+            use ralph::stagnation::StatsPersistence;
+
+            match action {
+                PredictorAction::Tune { dry_run, json } => {
+                    use crate::supervisor::predictor::{PredictorConfig, StagnationPredictor};
+
+                    // Load predictor stats
+                    let stats_persistence = StatsPersistence::new(&project_path);
+                    let predictor_stats = stats_persistence.load_or_default()?;
+
+                    // Create a predictor with adaptive weights enabled
+                    let config = PredictorConfig::default().with_adaptive_weights(true);
+                    let mut predictor = StagnationPredictor::new(config);
+
+                    // Apply existing stats to the predictor
+                    predictor.apply_stats(&predictor_stats);
+
+                    if predictor.prediction_history_with_factors().is_empty() {
+                        if json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "status": "no_changes",
+                                    "message": "No predictions with factor breakdowns available for tuning",
+                                    "changes": []
+                                })
+                            );
+                        } else {
+                            println!(
+                                "{} No predictions with factor breakdowns available for tuning.",
+                                "Warning:".yellow()
+                            );
+                            println!("Run automation with adaptive weights enabled to collect prediction data.");
+                        }
+                        return Ok(());
+                    }
+
+                    // Get the changes (or would-be changes)
+                    let original_weights = predictor.config().weights.clone();
+
+                    if dry_run {
+                        // For dry run, we'd need to simulate the changes
+                        // Since tune_weights modifies the predictor, we'll just report current state
+                        if json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "status": "dry_run",
+                                    "current_weights": {
+                                        "commit_gap": original_weights.commit_gap,
+                                        "file_churn": original_weights.file_churn,
+                                        "error_repeat": original_weights.error_repeat,
+                                        "test_stagnation": original_weights.test_stagnation,
+                                        "mode_oscillation": original_weights.mode_oscillation,
+                                        "warning_growth": original_weights.warning_growth,
+                                    },
+                                    "predictions_available": predictor.prediction_history_with_factors().len(),
+                                })
+                            );
+                        } else {
+                            println!("{} Dry run mode - no changes will be applied", "Info:".cyan());
+                            println!("Current weights:");
+                            println!("  commit_gap: {:.3}", original_weights.commit_gap);
+                            println!("  file_churn: {:.3}", original_weights.file_churn);
+                            println!("  error_repeat: {:.3}", original_weights.error_repeat);
+                            println!("  test_stagnation: {:.3}", original_weights.test_stagnation);
+                            println!("  mode_oscillation: {:.3}", original_weights.mode_oscillation);
+                            println!("  warning_growth: {:.3}", original_weights.warning_growth);
+                            println!(
+                                "\nPredictions available for tuning: {}",
+                                predictor.prediction_history_with_factors().len()
+                            );
+                        }
+                    } else {
+                        let changes = predictor.tune_weights();
+
+                        if json {
+                            let changes_json: Vec<_> = changes
+                                .iter()
+                                .map(|(name, old, new)| {
+                                    serde_json::json!({
+                                        "factor": name,
+                                        "old_weight": old,
+                                        "new_weight": new,
+                                        "delta": new - old,
+                                    })
+                                })
+                                .collect();
+
+                            println!(
+                                "{}",
+                                serde_json::to_string_pretty(&serde_json::json!({
+                                    "status": if changes.is_empty() { "no_changes" } else { "tuned" },
+                                    "changes": changes_json,
+                                }))?
+                            );
+                        } else if changes.is_empty() {
+                            println!("{} No weight changes needed.", "Info:".cyan());
+                        } else {
+                            println!("{} Tuned predictor weights:", "Success:".green().bold());
+                            for (factor, old, new) in &changes {
+                                let delta: f64 = new - old;
+                                let direction = if delta > 0.0 { "↑" } else { "↓" };
+                                println!(
+                                    "  {}: {:.3} → {:.3} ({}{:.3})",
+                                    factor, old, new, direction, delta.abs()
+                                );
+                            }
+                        }
+
+                        // Save updated stats
+                        let updated_stats = predictor.export_stats();
+                        stats_persistence.save(&updated_stats)?;
+                    }
+                }
+                PredictorAction::Stats { json } => {
+                    // Load predictor stats
+                    let stats_persistence = StatsPersistence::new(&project_path);
+                    let predictor_stats = stats_persistence.load_or_default()?;
+
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "total_predictions": predictor_stats.total_predictions(),
+                                "correct_predictions": predictor_stats.correct_predictions(),
+                                "accuracy": predictor_stats.accuracy(),
+                                "last_updated": predictor_stats.last_updated().to_rfc3339(),
+                                "weights": predictor_stats.factor_weights().map(|w| serde_json::json!({
+                                    "commit_gap": w.commit_gap,
+                                    "file_churn": w.file_churn,
+                                    "error_repeat": w.error_repeat,
+                                    "test_stagnation": w.test_stagnation,
+                                    "mode_oscillation": w.mode_oscillation,
+                                    "warning_growth": w.warning_growth,
+                                })),
+                            }))?
+                        );
+                    } else {
+                        println!("\n{} Predictor Statistics", "Ralph:".cyan().bold());
+                        println!("{}", "─".repeat(60));
+
+                        if predictor_stats.total_predictions() > 0 {
+                            println!("   {}", predictor_stats.summary());
+                            println!(
+                                "   Last updated: {}",
+                                predictor_stats.last_updated().format("%Y-%m-%d %H:%M:%S UTC")
+                            );
+                        } else {
+                            println!("   No predictions recorded yet");
+                        }
+
+                        if let Some(weights) = predictor_stats.factor_weights() {
+                            println!("\n{}", "Current Weights:".bold());
+                            println!("   commit_gap: {:.3}", weights.commit_gap);
+                            println!("   file_churn: {:.3}", weights.file_churn);
+                            println!("   error_repeat: {:.3}", weights.error_repeat);
+                            println!("   test_stagnation: {:.3}", weights.test_stagnation);
+                            println!("   mode_oscillation: {:.3}", weights.mode_oscillation);
+                            println!("   warning_growth: {:.3}", weights.warning_growth);
+                        }
+
+                        println!();
+                    }
+                }
             }
         }
     }

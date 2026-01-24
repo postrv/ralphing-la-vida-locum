@@ -4,6 +4,62 @@
 
 ---
 
+## Sprint 26: Incremental Execution Mode ✅
+
+**Completed**: 2026-01-24
+**Goal**: Run Ralph on changed files only for large codebase support.
+
+### Phase 26.1: Change Detection ✅
+
+**Location**: `src/changes/mod.rs`
+
+**Completed**:
+- `ChangeDetector` struct for git diff analysis
+- `ChangedFile` with path, status (Added/Modified/Deleted), and line ranges
+- Git integration via subprocess
+- Support for `--changed-since <commit>` detection
+
+### Phase 26.2: Scoped Quality Gates ✅
+
+**Location**: All gate implementations in `src/quality/gates/`
+
+**Completed**:
+- `run_scoped()` method on all quality gates
+- File filtering to run checks only on changed files
+- Graceful fallback to full checks when scoping not applicable
+
+### Phase 26.3: Scoped Context Building ✅
+
+**Location**: `src/changes/scope.rs`
+
+**Completed**:
+- `ChangeScope` struct for managing file scope
+- CCG (Code Context Graph) neighbor detection
+- Integration with prompt builder for focused context
+
+### Phase 26.4: Scoped Task Selection ✅
+
+**Location**: `src/loop/task_tracker/mod.rs`
+
+**Completed**:
+- `affected_files` field on tasks
+- Prioritization of tasks affecting changed files
+- `has_explicit_affected_file_match()` for precise matching
+
+### Phase 26.5: CLI Integration ✅
+
+**Location**: `src/main.rs`, `tests/cli_integration.rs`
+
+**Completed**:
+- `--changed-since <commit>` flag for git-based scoping
+- `--files <glob>` flag for explicit file scoping
+- `--changed` shorthand for `--changed-since HEAD~1`
+- Mutual exclusivity enforcement
+- Scope logging at startup
+- 8 integration tests
+
+---
+
 ## Sprint 25: Analytics Dashboard ✅
 
 **Completed**: 2026-01-24

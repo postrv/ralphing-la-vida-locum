@@ -405,6 +405,13 @@ pub struct PredictorConfig {
     pub max_mode_switches: u32,
     /// History length for tracking patterns (default: 10).
     pub history_length: usize,
+    /// Enable adaptive weight tuning based on prediction accuracy (default: false).
+    ///
+    /// When enabled, the predictor will adjust factor weights based on which
+    /// factors contributed to correct vs incorrect predictions. This is an
+    /// experimental feature that can improve prediction accuracy over time.
+    #[serde(default)]
+    pub enable_adaptive_weights: bool,
 }
 
 impl Default for PredictorConfig {
@@ -418,6 +425,7 @@ impl Default for PredictorConfig {
             max_test_stagnation: 5,
             max_mode_switches: 4,
             history_length: 10,
+            enable_adaptive_weights: false,
         }
     }
 }
@@ -482,6 +490,29 @@ impl PredictorConfig {
     #[must_use]
     pub fn with_history_length(mut self, length: usize) -> Self {
         self.history_length = length;
+        self
+    }
+
+    /// Enables or disables adaptive weight tuning.
+    ///
+    /// When enabled, the predictor adjusts factor weights based on which
+    /// factors contributed to correct vs incorrect predictions.
+    ///
+    /// # Arguments
+    ///
+    /// * `enabled` - Whether to enable adaptive weight tuning.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::PredictorConfig;
+    ///
+    /// let config = PredictorConfig::default().with_adaptive_weights(true);
+    /// assert!(config.enable_adaptive_weights);
+    /// ```
+    #[must_use]
+    pub fn with_adaptive_weights(mut self, enabled: bool) -> Self {
+        self.enable_adaptive_weights = enabled;
         self
     }
 }
@@ -608,6 +639,58 @@ impl RiskBreakdown {
             self.warning_growth_contribution
         )
     }
+
+    /// Returns all factor contributions as a vector of (name, contribution) pairs.
+    ///
+    /// Useful for iterating over factors during adaptive weight tuning.
+    #[must_use]
+    pub fn factor_contributions(&self) -> Vec<(&'static str, f64)> {
+        vec![
+            ("commit_gap", self.commit_gap_contribution),
+            ("file_churn", self.file_churn_contribution),
+            ("error_repeat", self.error_repeat_contribution),
+            ("test_stagnation", self.test_stagnation_contribution),
+            ("mode_oscillation", self.mode_oscillation_contribution),
+            ("warning_growth", self.warning_growth_contribution),
+        ]
+    }
+}
+
+/// A prediction record with factor contributions for adaptive weight tuning.
+///
+/// This struct captures not just the prediction outcome but also which factors
+/// contributed to the prediction, enabling weight adjustment based on accuracy.
+#[derive(Debug, Clone)]
+pub struct PredictionRecord {
+    /// The predicted risk score.
+    pub score: RiskScore,
+    /// Whether stagnation actually occurred.
+    pub actually_stagnated: bool,
+    /// The factor contributions at the time of prediction.
+    pub breakdown: RiskBreakdown,
+}
+
+impl PredictionRecord {
+    /// Creates a new prediction record.
+    #[must_use]
+    pub fn new(score: RiskScore, actually_stagnated: bool, breakdown: RiskBreakdown) -> Self {
+        Self {
+            score,
+            actually_stagnated,
+            breakdown,
+        }
+    }
+
+    /// Returns true if this prediction was correct.
+    ///
+    /// A prediction is correct if:
+    /// - High score (>=60) and stagnation occurred, or
+    /// - Low score (<60) and no stagnation occurred
+    #[must_use]
+    pub fn was_correct(&self, threshold: f64) -> bool {
+        let predicted_stagnation = self.score >= threshold;
+        predicted_stagnation == self.actually_stagnated
+    }
 }
 
 /// Statistics about prediction accuracy for analytics integration.
@@ -701,6 +784,8 @@ pub struct StagnationPredictor {
     config: PredictorConfig,
     /// History of recent predictions for accuracy tracking.
     prediction_history: Vec<(RiskScore, bool)>,
+    /// History of predictions with factor breakdowns for adaptive weight tuning.
+    prediction_history_with_breakdown: Vec<PredictionRecord>,
 }
 
 impl StagnationPredictor {
@@ -710,6 +795,7 @@ impl StagnationPredictor {
         Self {
             config,
             prediction_history: Vec::new(),
+            prediction_history_with_breakdown: Vec::new(),
         }
     }
 
@@ -1025,6 +1111,175 @@ impl StagnationPredictor {
         if self.prediction_history.len() > self.config.history_length * 10 {
             self.prediction_history.drain(0..self.config.history_length);
         }
+    }
+
+    /// Record a prediction with factor breakdown for adaptive weight tuning.
+    ///
+    /// This method captures both the prediction outcome and which factors
+    /// contributed to the prediction, enabling weight adjustment based on accuracy.
+    ///
+    /// # Arguments
+    ///
+    /// * `score` - The predicted risk score.
+    /// * `actually_stagnated` - Whether stagnation actually occurred.
+    /// * `breakdown` - The factor contributions at the time of prediction.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::{StagnationPredictor, RiskSignals, PredictorConfig};
+    ///
+    /// let config = PredictorConfig::default().with_adaptive_weights(true);
+    /// let mut predictor = StagnationPredictor::new(config);
+    ///
+    /// let signals = RiskSignals::new().with_commit_gap(10);
+    /// let breakdown = predictor.risk_breakdown(&signals);
+    /// predictor.record_prediction_with_breakdown(breakdown.total, true, &breakdown);
+    /// ```
+    pub fn record_prediction_with_breakdown(
+        &mut self,
+        score: RiskScore,
+        actually_stagnated: bool,
+        breakdown: &RiskBreakdown,
+    ) {
+        // Also record in the simple history for backward compatibility
+        self.record_prediction(score, actually_stagnated);
+
+        // Record with breakdown for adaptive tuning
+        let record = PredictionRecord::new(score, actually_stagnated, breakdown.clone());
+        self.prediction_history_with_breakdown.push(record);
+
+        // Keep history bounded
+        if self.prediction_history_with_breakdown.len() > self.config.history_length * 10 {
+            self.prediction_history_with_breakdown
+                .drain(0..self.config.history_length);
+        }
+    }
+
+    /// Returns the prediction history with factor breakdowns.
+    ///
+    /// This is used for adaptive weight tuning to understand which factors
+    /// contributed to correct vs incorrect predictions.
+    #[must_use]
+    pub fn prediction_history_with_factors(&self) -> &[PredictionRecord] {
+        &self.prediction_history_with_breakdown
+    }
+
+    /// Tune weights based on prediction history.
+    ///
+    /// Adjusts factor weights based on which factors contributed to correct
+    /// vs incorrect predictions:
+    /// - Factors that contributed to correct predictions get +0.1 weight
+    /// - Factors that contributed to incorrect predictions get -0.1 weight
+    /// - Weights are clamped to [0.1, 2.0] to prevent runaway
+    ///
+    /// This method only works if `enable_adaptive_weights` is true in the config.
+    ///
+    /// # Returns
+    ///
+    /// A vector of (factor_name, old_weight, new_weight) tuples describing the changes.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ralph::supervisor::predictor::{StagnationPredictor, RiskSignals, PredictorConfig};
+    ///
+    /// let config = PredictorConfig::default().with_adaptive_weights(true);
+    /// let mut predictor = StagnationPredictor::new(config);
+    ///
+    /// let signals = RiskSignals::new().with_commit_gap(15);
+    /// let breakdown = predictor.risk_breakdown(&signals);
+    /// predictor.record_prediction_with_breakdown(breakdown.total, true, &breakdown);
+    ///
+    /// let changes = predictor.tune_weights();
+    /// for (factor, old, new) in changes {
+    ///     println!("{}: {:.2} -> {:.2}", factor, old, new);
+    /// }
+    /// ```
+    pub fn tune_weights(&mut self) -> Vec<(String, f64, f64)> {
+        const ADJUSTMENT: f64 = 0.1;
+        const MIN_WEIGHT: f64 = 0.1;
+        const MAX_WEIGHT: f64 = 2.0;
+
+        // Return empty if adaptive weights are disabled
+        if !self.config.enable_adaptive_weights {
+            return Vec::new();
+        }
+
+        // Return empty if no predictions with breakdowns
+        if self.prediction_history_with_breakdown.is_empty() {
+            return Vec::new();
+        }
+
+        let threshold = self.config.thresholds.medium_max;
+
+        // Calculate adjustments for each factor based on all predictions
+        let mut adjustments: HashMap<&str, f64> = HashMap::new();
+        adjustments.insert("commit_gap", 0.0);
+        adjustments.insert("file_churn", 0.0);
+        adjustments.insert("error_repeat", 0.0);
+        adjustments.insert("test_stagnation", 0.0);
+        adjustments.insert("mode_oscillation", 0.0);
+        adjustments.insert("warning_growth", 0.0);
+
+        for record in &self.prediction_history_with_breakdown {
+            let was_correct = record.was_correct(threshold);
+            let multiplier = if was_correct { 1.0 } else { -1.0 };
+
+            // Weight adjustment by how much this factor contributed (normalized)
+            for (factor, contribution) in record.breakdown.factor_contributions() {
+                let normalized_contribution = contribution / record.breakdown.total.max(1.0);
+                let adjustment = multiplier * ADJUSTMENT * normalized_contribution;
+                *adjustments.get_mut(factor).unwrap() += adjustment;
+            }
+        }
+
+        // Normalize adjustments by number of predictions
+        let num_predictions = self.prediction_history_with_breakdown.len() as f64;
+        for adj in adjustments.values_mut() {
+            *adj /= num_predictions;
+        }
+
+        // Apply adjustments and collect changes
+        let mut changes = Vec::new();
+
+        let weights = &mut self.config.weights;
+
+        // Helper macro to apply adjustment to a weight field
+        macro_rules! apply_adjustment {
+            ($field:ident, $name:expr) => {
+                let old = weights.$field;
+                let adjustment = *adjustments.get($name).unwrap_or(&0.0);
+                let new = (old + adjustment).clamp(MIN_WEIGHT, MAX_WEIGHT);
+                if (new - old).abs() > f64::EPSILON {
+                    weights.$field = new;
+                    changes.push(($name.to_string(), old, new));
+                }
+            };
+        }
+
+        apply_adjustment!(commit_gap, "commit_gap");
+        apply_adjustment!(file_churn, "file_churn");
+        apply_adjustment!(error_repeat, "error_repeat");
+        apply_adjustment!(test_stagnation, "test_stagnation");
+        apply_adjustment!(mode_oscillation, "mode_oscillation");
+        apply_adjustment!(warning_growth, "warning_growth");
+
+        // Clear the prediction history after tuning
+        self.prediction_history_with_breakdown.clear();
+
+        // Log weight changes
+        for (factor, old, new) in &changes {
+            tracing::info!(
+                "Adjusted {} weight: {:.3} -> {:.3} (delta: {:+.3})",
+                factor,
+                old,
+                new,
+                new - old
+            );
+        }
+
+        changes
     }
 
     /// Calculate prediction accuracy.
@@ -2356,5 +2611,277 @@ mod tests {
         assert!(stats.factor_weights().is_some());
         let weights = stats.factor_weights().unwrap();
         assert!(weights.commit_gap >= 0.30); // Conservative emphasizes commit_gap
+    }
+
+    // =========================================================================
+    // Phase 24.3: Adaptive Weight Tuning Tests
+    // =========================================================================
+
+    #[test]
+    fn test_predictor_config_enable_adaptive_weights_defaults_to_false() {
+        let config = PredictorConfig::default();
+        assert!(
+            !config.enable_adaptive_weights,
+            "enable_adaptive_weights should default to false"
+        );
+    }
+
+    #[test]
+    fn test_predictor_config_enable_adaptive_weights_can_be_enabled() {
+        let config = PredictorConfig::default().with_adaptive_weights(true);
+        assert!(
+            config.enable_adaptive_weights,
+            "enable_adaptive_weights should be enabled after with_adaptive_weights(true)"
+        );
+    }
+
+    #[test]
+    fn test_record_prediction_with_breakdown_tracks_contributing_factors() {
+        let mut predictor = StagnationPredictor::with_defaults();
+
+        // Create signals where commit_gap is the dominant factor
+        let signals = RiskSignals::new()
+            .with_commit_gap(10)
+            .with_file_touches(vec![])
+            .with_errors(vec![]);
+
+        let breakdown = predictor.risk_breakdown(&signals);
+        let score = breakdown.total;
+
+        // Record prediction with breakdown
+        predictor.record_prediction_with_breakdown(score, true, &breakdown);
+
+        // Verify the prediction was recorded with factor contributions
+        let history = predictor.prediction_history_with_factors();
+        assert_eq!(history.len(), 1);
+        assert!(history[0].breakdown.commit_gap_contribution > 0.0);
+    }
+
+    #[test]
+    fn test_tune_weights_increases_weights_for_correct_predictions() {
+        let config = PredictorConfig::default().with_adaptive_weights(true);
+        let mut predictor = StagnationPredictor::new(config);
+
+        // Create signals that produce a HIGH score (>= 60)
+        // We need multiple factors at max to get a high score
+        let signals = RiskSignals::new()
+            .with_commit_gap(15) // Full commit gap risk (25%)
+            .with_file_touches(vec![("main.rs".into(), 5), ("lib.rs".into(), 5)]) // High churn (20%)
+            .with_errors(vec![
+                "error 1".into(),
+                "error 1".into(),
+                "error 1".into(),
+            ]) // Repeated errors (20%)
+            .with_test_history(vec![10, 10, 10, 10, 10]) // Stagnant tests (15%)
+            .with_mode_switches(4); // Max mode switches (10%)
+        let breakdown = predictor.risk_breakdown(&signals);
+
+        // Verify we actually have a high score
+        assert!(
+            breakdown.total >= 60.0,
+            "Test setup error: need high score, got {}",
+            breakdown.total
+        );
+
+        // Record a correct prediction (high score -> stagnation occurred = True Positive)
+        predictor.record_prediction_with_breakdown(breakdown.total, true, &breakdown);
+
+        let original_weights = predictor.config().weights.clone();
+
+        // Tune weights
+        let changes = predictor.tune_weights();
+
+        // commit_gap weight should have increased (contributed to correct prediction)
+        let new_weights = predictor.config().weights.clone();
+        assert!(
+            new_weights.commit_gap > original_weights.commit_gap,
+            "commit_gap weight should increase for correct prediction, old={}, new={}",
+            original_weights.commit_gap,
+            new_weights.commit_gap
+        );
+        assert!(!changes.is_empty(), "Should report weight changes");
+    }
+
+    #[test]
+    fn test_tune_weights_decreases_weights_for_incorrect_predictions() {
+        let config = PredictorConfig::default().with_adaptive_weights(true);
+        let mut predictor = StagnationPredictor::new(config);
+
+        // Create signals that produce a HIGH score (>= 60)
+        let signals = RiskSignals::new()
+            .with_commit_gap(15)
+            .with_file_touches(vec![("main.rs".into(), 5), ("lib.rs".into(), 5)])
+            .with_errors(vec![
+                "error 1".into(),
+                "error 1".into(),
+                "error 1".into(),
+            ])
+            .with_test_history(vec![10, 10, 10, 10, 10])
+            .with_mode_switches(4);
+        let breakdown = predictor.risk_breakdown(&signals);
+
+        // Verify we actually have a high score
+        assert!(
+            breakdown.total >= 60.0,
+            "Test setup error: need high score, got {}",
+            breakdown.total
+        );
+
+        // Record an incorrect prediction (high score -> but no stagnation = False Positive)
+        predictor.record_prediction_with_breakdown(breakdown.total, false, &breakdown);
+
+        let original_weights = predictor.config().weights.clone();
+
+        // Tune weights
+        let changes = predictor.tune_weights();
+
+        // commit_gap weight should have decreased (contributed to incorrect prediction)
+        let new_weights = predictor.config().weights.clone();
+        assert!(
+            new_weights.commit_gap < original_weights.commit_gap,
+            "commit_gap weight should decrease for incorrect prediction, old={}, new={}",
+            original_weights.commit_gap,
+            new_weights.commit_gap
+        );
+        assert!(!changes.is_empty(), "Should report weight changes");
+    }
+
+    #[test]
+    fn test_tune_weights_clamps_to_minimum() {
+        let config = PredictorConfig::default()
+            .with_adaptive_weights(true)
+            .with_weights(RiskWeights::new(0.15, 0.20, 0.20, 0.15, 0.10, 0.20));
+        let mut predictor = StagnationPredictor::new(config);
+
+        // Record multiple incorrect predictions to drive weight down
+        let signals = RiskSignals::new().with_commit_gap(15);
+        let breakdown = predictor.risk_breakdown(&signals);
+
+        for _ in 0..20 {
+            predictor.record_prediction_with_breakdown(breakdown.total, false, &breakdown);
+        }
+
+        // Tune weights multiple times
+        for _ in 0..10 {
+            predictor.tune_weights();
+        }
+
+        // Weight should not go below 0.1
+        let weights = &predictor.config().weights;
+        assert!(
+            weights.commit_gap >= 0.1,
+            "commit_gap weight should be clamped to minimum 0.1, got {}",
+            weights.commit_gap
+        );
+    }
+
+    #[test]
+    fn test_tune_weights_clamps_to_maximum() {
+        let config = PredictorConfig::default()
+            .with_adaptive_weights(true)
+            .with_weights(RiskWeights::new(1.9, 0.20, 0.20, 0.15, 0.10, 0.10));
+        let mut predictor = StagnationPredictor::new(config);
+
+        // Record multiple correct predictions to drive weight up
+        let signals = RiskSignals::new().with_commit_gap(15);
+        let breakdown = predictor.risk_breakdown(&signals);
+
+        for _ in 0..20 {
+            predictor.record_prediction_with_breakdown(breakdown.total, true, &breakdown);
+        }
+
+        // Tune weights multiple times
+        for _ in 0..10 {
+            predictor.tune_weights();
+        }
+
+        // Weight should not exceed 2.0
+        let weights = &predictor.config().weights;
+        assert!(
+            weights.commit_gap <= 2.0,
+            "commit_gap weight should be clamped to maximum 2.0, got {}",
+            weights.commit_gap
+        );
+    }
+
+    #[test]
+    fn test_tune_weights_does_nothing_when_disabled() {
+        let config = PredictorConfig::default().with_adaptive_weights(false);
+        let mut predictor = StagnationPredictor::new(config);
+
+        let signals = RiskSignals::new().with_commit_gap(15);
+        let breakdown = predictor.risk_breakdown(&signals);
+        predictor.record_prediction_with_breakdown(breakdown.total, true, &breakdown);
+
+        let original_weights = predictor.config().weights.clone();
+
+        // Try to tune weights
+        let changes = predictor.tune_weights();
+
+        // Weights should remain unchanged
+        let new_weights = &predictor.config().weights;
+        assert!(
+            (new_weights.commit_gap - original_weights.commit_gap).abs() < f64::EPSILON,
+            "Weights should not change when adaptive tuning is disabled"
+        );
+        assert!(changes.is_empty(), "Should report no changes when disabled");
+    }
+
+    #[test]
+    fn test_tune_weights_returns_weight_changes() {
+        let config = PredictorConfig::default().with_adaptive_weights(true);
+        let mut predictor = StagnationPredictor::new(config);
+
+        let signals = RiskSignals::new().with_commit_gap(15);
+        let breakdown = predictor.risk_breakdown(&signals);
+        predictor.record_prediction_with_breakdown(breakdown.total, true, &breakdown);
+
+        let changes = predictor.tune_weights();
+
+        // Should return a list of (factor_name, old_weight, new_weight) tuples
+        assert!(
+            changes.iter().any(|(name, _, _)| name == "commit_gap"),
+            "Changes should include commit_gap"
+        );
+    }
+
+    #[test]
+    fn test_weight_adjustment_magnitude() {
+        let config = PredictorConfig::default().with_adaptive_weights(true);
+        let mut predictor = StagnationPredictor::new(config);
+
+        // Create signals that produce a high score for a correct prediction
+        let signals = RiskSignals::new()
+            .with_commit_gap(15)
+            .with_file_touches(vec![("main.rs".into(), 5), ("lib.rs".into(), 5)])
+            .with_errors(vec![
+                "error 1".into(),
+                "error 1".into(),
+                "error 1".into(),
+            ])
+            .with_test_history(vec![10, 10, 10, 10, 10])
+            .with_mode_switches(4);
+        let breakdown = predictor.risk_breakdown(&signals);
+
+        // This should be a correct prediction (high score, stagnation occurred)
+        assert!(
+            breakdown.total >= 60.0,
+            "Test setup error: need high score, got {}",
+            breakdown.total
+        );
+        predictor.record_prediction_with_breakdown(breakdown.total, true, &breakdown);
+
+        let original_commit_gap = predictor.config().weights.commit_gap;
+        predictor.tune_weights();
+        let new_commit_gap = predictor.config().weights.commit_gap;
+
+        // The adjustment should be positive (correct prediction increases weight)
+        // and scaled by contribution ratio (commit_gap contributes ~25% of total)
+        let delta = new_commit_gap - original_commit_gap;
+        assert!(
+            delta > 0.0 && delta <= 0.1,
+            "Weight adjustment should be positive and at most 0.1, got {}",
+            delta
+        );
     }
 }
