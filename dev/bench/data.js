@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769279280661,
+  "lastUpdate": 1769280765988,
   "repoUrl": "https://github.com/postrv/ralphing-la-vida-locum",
   "entries": {
     "Ralph Performance Benchmarks": [
@@ -515,6 +515,135 @@ window.BENCHMARK_DATA = {
           {
             "name": "context_building/typical_context",
             "value": 823.0600948933413,
+            "unit": "ns"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "committer": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "distinct": true,
+          "id": "6e875c3461bb507de0eace9221928f6728f7df5d",
+          "message": "feat(predictor): Complete adaptive weight tuning (Phase 24.3)\n\n- Add enable_adaptive_weights config option (default: false)\n- Track factor contributions via PredictionRecord struct\n- Implement tune_weights() with +/-0.1 adjustment, clamped [0.1, 2.0]\n- Add `ralph predictor tune` CLI command with --dry-run and --json flags\n- Wire up LoopManager to use record_prediction_with_breakdown()\n- Log weight changes during tuning\n\nAlso:\n- Archive Sprint 26 to COMPLETED_SPRINTS.md\n- Streamline IMPLEMENTATION_PLAN.md\n- Fix clippy collapsible_else_if warning in main.rs\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+          "timestamp": "2026-01-24T18:47:00Z",
+          "tree_id": "2a0ff821be145146671fcf218f6dc05bfbc35c59",
+          "url": "https://github.com/postrv/ralphing-la-vida-locum/commit/6e875c3461bb507de0eace9221928f6728f7df5d"
+        },
+        "date": 1769280765689,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 243800.99799418624,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 220521.40239874425,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 231307.02658043828,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 1476398.1635071074,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 368240.4747113521,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 736671.2351295603,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/polyglot_project",
+            "value": 430374.61316098063,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/single_language",
+            "value": 257893.04231741946,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 743663.6170795548,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 382197.81009988615,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 93391.39191693561,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 859716.656574719,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 569829.306377681,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 429143.83372616937,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 322415.9505650669,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/plan",
+            "value": 10529.7270669087,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/build",
+            "value": 26879.429324230663,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/debug",
+            "value": 13084.171554710265,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/full_context",
+            "value": 3547.425404737961,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/minimal_context",
+            "value": 597.4142698910134,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/typical_context",
+            "value": 852.6536977714364,
             "unit": "ns"
           }
         ]
