@@ -756,6 +756,118 @@ edition = "2021"
         .stdout(predicate::str::contains("Selected gates"));
 }
 
+// ============================================================
+// Verify Command Tests (Sprint 19, Phase 19.4)
+// ============================================================
+
+#[test]
+fn test_verify_command_with_mock_flag() {
+    // Test: `ralph verify --mock` runs verification with MockCcgVerifier
+    // Expected behavior: Returns mock verification report showing quality improved
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("verify")
+        .arg("--mock")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Verification Report"))
+        .stdout(predicate::str::contains("Quality improved"));
+}
+
+#[test]
+fn test_verify_command_outputs_json() {
+    // Test: `ralph verify --mock --json` outputs verification report in JSON format
+    // Expected behavior: JSON output with quality_improved, deltas, findings fields
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("verify")
+        .arg("--mock")
+        .arg("--json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("quality_improved"))
+        .stdout(predicate::str::contains("deltas"))
+        .stdout(predicate::str::contains("findings"));
+}
+
+#[test]
+fn test_verify_command_outputs_markdown() {
+    // Test: `ralph verify --mock --markdown` outputs verification report in Markdown format
+    // Expected behavior: Markdown output with headers and formatted content
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("verify")
+        .arg("--mock")
+        .arg("--markdown")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("# Verification Report"))
+        .stdout(predicate::str::contains("## Quality Deltas"));
+}
+
+#[test]
+fn test_verify_command_writes_output_to_file() {
+    // Test: `ralph verify --mock --output <file>` writes report to specified file
+    // Expected behavior: Report is written to the output file
+    let temp = TempDir::new().unwrap();
+    let output_file = temp.path().join("verification_report.json");
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("verify")
+        .arg("--mock")
+        .arg("--json")
+        .arg("--output")
+        .arg(&output_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Report written to"));
+
+    // Verify file was created and contains valid JSON
+    assert!(output_file.exists());
+    let content = std::fs::read_to_string(&output_file).unwrap();
+    assert!(content.contains("quality_improved"));
+}
+
+#[test]
+fn test_verify_command_help_text() {
+    // Test: `ralph verify --help` shows verification purpose in help text
+    // Expected behavior: Help describes CCG-Diff verification purpose
+    ralph()
+        .arg("verify")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Verify"))
+        .stdout(predicate::str::contains("quality"))
+        .stdout(predicate::str::contains("--mock"));
+}
+
+#[test]
+fn test_verify_command_requires_mock_flag() {
+    // Test: `ralph verify` without --mock fails (until real verifier is implemented)
+    // Expected behavior: Error message explaining --mock is required
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("verify")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--mock"));
+}
+
 #[test]
 fn test_show_gates_flag() {
     // Test: `ralph --show-gates` lists available gates for project

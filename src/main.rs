@@ -202,6 +202,29 @@ enum Commands {
         #[command(subcommand)]
         action: AuditAction,
     },
+
+    /// Verify code quality changes using CCG-Diff verification
+    ///
+    /// Compares code quality before and after changes to verify
+    /// improvements. Currently requires --mock flag as the real
+    /// narsil-mcp integration is not yet complete.
+    Verify {
+        /// Use mock verifier for development/testing (required until narsil-mcp integration)
+        #[arg(long)]
+        mock: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Output as Markdown
+        #[arg(long)]
+        markdown: bool,
+
+        /// Write report to file
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1568,6 +1591,56 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+
+        Commands::Verify {
+            mock,
+            json,
+            markdown,
+            output,
+        } => {
+            use ralph::verify::{CcgVerifier, MockCcgVerifier, VerificationConfig};
+
+            // Currently only mock verifier is available
+            if !mock {
+                eprintln!(
+                    "{} The --mock flag is required until narsil-mcp integration is complete.",
+                    "Error:".red().bold()
+                );
+                eprintln!("   Use: ralph verify --mock");
+                std::process::exit(1);
+            }
+
+            // Create verifier
+            let config = VerificationConfig {
+                mock_mode: true,
+                ..Default::default()
+            };
+            let verifier = MockCcgVerifier::new(config);
+
+            // Run verification
+            let report = verifier.verify_changes(project_path.to_str().unwrap_or("."))?;
+
+            // Format output
+            let output_content = if json {
+                report.to_json()?
+            } else if markdown {
+                format_verification_report_markdown(&report)
+            } else {
+                format_verification_report_human(&report)
+            };
+
+            // Write to file or stdout
+            if let Some(output_path) = output {
+                std::fs::write(&output_path, &output_content)?;
+                println!(
+                    "{} Report written to: {}",
+                    "OK".green().bold(),
+                    output_path.display()
+                );
+            } else {
+                println!("{}", output_content);
+            }
+        }
     }
 
     Ok(())
@@ -1616,4 +1689,162 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     } else {
         format!("{}...", &s[..max_len - 3])
     }
+}
+
+/// Format verification report as human-readable text.
+fn format_verification_report_human(report: &ralph::VerificationReport) -> String {
+    use colored::Colorize;
+
+    let mut output = String::new();
+
+    // Header
+    output.push_str(&format!(
+        "\n{} Verification Report\n",
+        "Verify:".cyan().bold()
+    ));
+    output.push_str(&"─".repeat(60));
+    output.push('\n');
+
+    // Summary
+    let status = if report.quality_improved {
+        "✓ Quality improved".green().to_string()
+    } else {
+        "✗ Quality regression".red().to_string()
+    };
+    output.push_str(&format!("   Status: {}\n", status));
+    output.push_str(&format!("   Summary: {}\n", report.summary));
+    output.push_str(&format!(
+        "   Improvement score: {:.0}%\n",
+        report.improvement_score * 100.0
+    ));
+    output.push_str(&format!(
+        "   Verified at: {}\n",
+        report.verified_at.format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+
+    // Quality deltas
+    if !report.deltas.is_empty() {
+        output.push('\n');
+        output.push_str("   Quality Deltas:\n");
+        for delta in &report.deltas {
+            let direction = if delta.is_improvement() { "↓" } else { "↑" };
+            let color_direction = if delta.is_improvement() {
+                direction.green().to_string()
+            } else {
+                direction.red().to_string()
+            };
+            output.push_str(&format!(
+                "     {} {}: {:.1} → {:.1} ({:+.1}%)\n",
+                color_direction,
+                delta.metric,
+                delta.before,
+                delta.after,
+                delta.improvement_percent()
+            ));
+        }
+    }
+
+    // Findings
+    if !report.findings.is_empty() {
+        output.push('\n');
+        output.push_str("   Findings:\n");
+        for finding in &report.findings {
+            let severity_str = match finding.severity {
+                ralph::VerificationSeverity::Info => "INFO".blue().to_string(),
+                ralph::VerificationSeverity::Warning => "WARN".yellow().to_string(),
+                ralph::VerificationSeverity::Error => "ERROR".red().to_string(),
+                ralph::VerificationSeverity::Critical => "CRIT".red().bold().to_string(),
+            };
+            output.push_str(&format!(
+                "     [{}] {}: {}\n",
+                severity_str, finding.category, finding.message
+            ));
+        }
+    }
+
+    // Metadata
+    if !report.metadata.is_empty() {
+        output.push('\n');
+        output.push_str("   Metadata:\n");
+        for (key, value) in &report.metadata {
+            output.push_str(&format!("     {}: {}\n", key, value));
+        }
+    }
+
+    output.push_str(&"─".repeat(60));
+    output.push('\n');
+
+    output
+}
+
+/// Format verification report as Markdown.
+fn format_verification_report_markdown(report: &ralph::VerificationReport) -> String {
+    let mut output = String::new();
+
+    // Header
+    output.push_str("# Verification Report\n\n");
+
+    // Summary
+    let status = if report.quality_improved {
+        "✅ Quality improved"
+    } else {
+        "❌ Quality regression"
+    };
+    output.push_str(&format!("**Status:** {}\n\n", status));
+    output.push_str(&format!("**Summary:** {}\n\n", report.summary));
+    output.push_str(&format!(
+        "**Improvement Score:** {:.0}%\n\n",
+        report.improvement_score * 100.0
+    ));
+    output.push_str(&format!(
+        "**Verified at:** {}\n\n",
+        report.verified_at.format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+
+    // Quality deltas
+    if !report.deltas.is_empty() {
+        output.push_str("## Quality Deltas\n\n");
+        output.push_str("| Metric | Before | After | Change |\n");
+        output.push_str("|--------|--------|-------|--------|\n");
+        for delta in &report.deltas {
+            let direction = if delta.is_improvement() { "↓" } else { "↑" };
+            output.push_str(&format!(
+                "| {} | {:.1} | {:.1} | {} {:+.1}% |\n",
+                delta.metric,
+                delta.before,
+                delta.after,
+                direction,
+                delta.improvement_percent()
+            ));
+        }
+        output.push('\n');
+    }
+
+    // Findings
+    if !report.findings.is_empty() {
+        output.push_str("## Findings\n\n");
+        for finding in &report.findings {
+            let severity_emoji = match finding.severity {
+                ralph::VerificationSeverity::Info => "ℹ️",
+                ralph::VerificationSeverity::Warning => "⚠️",
+                ralph::VerificationSeverity::Error => "❌",
+                ralph::VerificationSeverity::Critical => "🚨",
+            };
+            output.push_str(&format!(
+                "- {} **{}**: {}\n",
+                severity_emoji, finding.category, finding.message
+            ));
+        }
+        output.push('\n');
+    }
+
+    // Metadata
+    if !report.metadata.is_empty() {
+        output.push_str("## Metadata\n\n");
+        for (key, value) in &report.metadata {
+            output.push_str(&format!("- **{}**: {}\n", key, value));
+        }
+    }
+
+    output
 }

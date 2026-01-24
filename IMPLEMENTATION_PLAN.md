@@ -53,28 +53,29 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- audit_verify
 ```
 
-### 36. Phase 19.4: Verify Mock Command
+### ~~36. Phase 19.4: Verify Mock Command~~ ✅ Complete
 
 Add `ralph verify --mock` command (deferred from Sprint 18.3).
 
 **Test Requirements**:
-- [ ] Test `ralph verify` with `--mock` flag
-- [ ] Test outputs verification report in JSON format
-- [ ] Test outputs verification report in Markdown format
-- [ ] Test integrates with existing `MockCcgVerifier`
-- [ ] Test help text describes verification purpose
+- [x] Test `ralph verify` with `--mock` flag
+- [x] Test outputs verification report in JSON format
+- [x] Test outputs verification report in Markdown format
+- [x] Test integrates with existing `MockCcgVerifier`
+- [x] Test help text describes verification purpose
 
 **Implementation**:
-- [ ] Add `ralph verify` subcommand to CLI
-- [ ] Add `--mock` flag to use `MockCcgVerifier`
-- [ ] Add `--json` flag for JSON output
-- [ ] Add `--output <file>` flag to write report to file
-- [ ] Document in CLI help
+- [x] Add `ralph verify` subcommand to CLI
+- [x] Add `--mock` flag to use `MockCcgVerifier`
+- [x] Add `--json` flag for JSON output
+- [x] Add `--markdown` flag for Markdown output
+- [x] Add `--output <file>` flag to write report to file
+- [x] Document in CLI help
 
 **Quality Gates**:
 ```bash
 cargo clippy --all-targets -- -D warnings
-cargo test --lib -- verify_command
+cargo test --test cli_integration verify_command
 ```
 
 ---
