@@ -3,6 +3,7 @@
 //! This module handles session tracking, event logging, and
 //! performance analytics in JSONL format.
 
+pub mod cost;
 pub mod dashboard;
 pub mod events;
 pub mod reporting;
@@ -10,6 +11,7 @@ pub mod session;
 pub mod storage;
 pub mod trends;
 
+pub use cost::{CostData, CostTracker, ProviderCost, SessionCost};
 pub use events::{
     EventFilter, EventType, GateIssueEventData, GateResultEventData, PredictorDecisionEventData,
     StructuredEvent, SCHEMA_VERSION,

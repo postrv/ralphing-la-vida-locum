@@ -334,6 +334,17 @@ enum AnalyticsAction {
         json: bool,
     },
 
+    /// Show LLM cost tracking (cumulative and per-session)
+    Costs {
+        /// Show per-session breakdown
+        #[arg(short, long)]
+        sessions: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Clear all analytics data
     Clear {
         /// Skip confirmation prompt
@@ -1033,7 +1044,7 @@ async fn main() -> anyhow::Result<()> {
         }
 
         Commands::Analytics { action } => {
-            let analytics = Analytics::new(project_path);
+            let analytics = Analytics::new(project_path.clone());
 
             match action {
                 AnalyticsAction::Sessions {
@@ -1063,6 +1074,71 @@ async fn main() -> anyhow::Result<()> {
                         println!("   Total errors: {}", stats.total_errors);
                         println!("   Total stagnations: {}", stats.total_stagnations);
                         println!("   Docs drift events: {}", stats.total_drift_events);
+                    }
+                }
+
+                AnalyticsAction::Costs { sessions, json } => {
+                    use ralph::analytics::CostTracker;
+
+                    let tracker = CostTracker::new(&project_path)?;
+
+                    if json {
+                        // Output structured JSON
+                        let output = serde_json::json!({
+                            "total_cost_usd": tracker.total_cost(),
+                            "total_tokens": tracker.total_tokens(),
+                            "providers": tracker.all_providers(),
+                            "recent_sessions": if sessions { Some(tracker.recent_sessions()) } else { None }
+                        });
+                        println!("{}", serde_json::to_string_pretty(&output)?);
+                    } else {
+                        // Human-readable output
+                        println!("\n{} LLM Cost Summary", "Analytics:".cyan().bold());
+                        println!("{}", "─".repeat(40));
+                        println!(
+                            "   Total cost: {}",
+                            format!("${:.4}", tracker.total_cost()).green()
+                        );
+                        println!(
+                            "   Total tokens: {} ({} requests)",
+                            tracker.total_tokens(),
+                            tracker
+                                .all_providers()
+                                .values()
+                                .map(|p| p.request_count)
+                                .sum::<u64>()
+                        );
+
+                        if !tracker.all_providers().is_empty() {
+                            println!("\n   {} By Provider:", "─".repeat(20));
+                            let mut providers: Vec<_> = tracker.all_providers().iter().collect();
+                            providers.sort_by(|a, b| {
+                                b.1.total_cost_usd
+                                    .partial_cmp(&a.1.total_cost_usd)
+                                    .unwrap()
+                            });
+
+                            for (name, cost) in providers {
+                                println!(
+                                    "   {}: ${:.4} ({} tokens, {} requests)",
+                                    name.cyan(),
+                                    cost.total_cost_usd,
+                                    cost.total_tokens(),
+                                    cost.request_count
+                                );
+                            }
+                        }
+
+                        if sessions && !tracker.recent_sessions().is_empty() {
+                            println!("\n   {} Recent Sessions:", "─".repeat(20));
+                            for session in tracker.recent_sessions().iter().rev().take(10) {
+                                println!(
+                                    "   {} ${:.4}",
+                                    session.session_id.dimmed(),
+                                    session.total_cost_usd
+                                );
+                            }
+                        }
                     }
                 }
 

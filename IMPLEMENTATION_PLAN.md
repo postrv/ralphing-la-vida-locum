@@ -10,14 +10,14 @@
 
 | Sprint | Focus | Effort | Status |
 |--------|-------|--------|--------|
-| 23 | LLM Provider Abstraction | 2-3 days | **Current** |
+| 23 | LLM Provider Abstraction | 2-3 days | **Complete** |
 | 24 | Predictor Persistence & Diagnostics | 1-2 days | Pending |
 | 25 | Analytics Dashboard | 1-2 days | Pending |
 | 26 | Incremental Execution Mode | 2-3 days | Pending |
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,830 passing
+**Current Test Count**: 1,852 passing
 
 ---
 
@@ -37,6 +37,7 @@
 - [x] Phase 23.3: Ollama Provider (`src/llm/ollama.rs`)
 - [x] Phase 23.4: OpenAI Provider (`src/llm/openai.rs`)
 - [x] Phase 23.5: Provider Router & Fallback (`src/llm/router.rs`)
+- [x] Phase 23.6: Cost Tracking (`src/analytics/cost.rs`)
 
 ### Phase 23.2: Claude Provider (Refactor Existing) ✅
 
@@ -112,22 +113,22 @@
 // - test_provider_router_no_fallback_flag ✅
 ```
 
-### Phase 23.6: Cost Tracking
+### Phase 23.6: Cost Tracking ✅
 
 **Description**: Track LLM costs across providers.
 
 **Requirements**:
-- [ ] Add `CostTracker` to analytics module
-- [ ] Track tokens in/out per provider per session
-- [ ] Calculate estimated cost based on provider pricing
-- [ ] Add `ralph stats` command to show cumulative costs
-- [ ] Persist cost data in `.ralph/costs.json`
+- [x] Add `CostTracker` to analytics module
+- [x] Track tokens in/out per provider per session
+- [x] Calculate estimated cost based on provider pricing
+- [x] Add `ralph analytics costs` command to show cumulative costs
+- [x] Persist cost data in `.ralph/costs.json`
 
 **Test-First**:
 ```rust
-// - test_cost_tracker_records_tokens
-// - test_cost_tracker_calculates_cost_per_provider
-// - test_cost_tracker_persistence
+// - test_cost_tracker_records_tokens ✅
+// - test_cost_tracker_calculates_cost_per_provider ✅
+// - test_cost_tracker_persistence ✅
 ```
 
 ---
