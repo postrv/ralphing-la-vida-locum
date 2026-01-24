@@ -1041,7 +1041,9 @@ fn test_loop_help_shows_changed_flag() {
         .assert()
         .success()
         .stdout(predicate::str::is_match(r"--changed\n").unwrap())
-        .stdout(predicate::str::contains("Shorthand for --changed-since HEAD~1"));
+        .stdout(predicate::str::contains(
+            "Shorthand for --changed-since HEAD~1",
+        ));
 }
 
 #[test]

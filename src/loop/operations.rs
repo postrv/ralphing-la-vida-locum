@@ -840,8 +840,7 @@ mod tests {
     #[test]
     fn test_real_claude_process_with_model_haiku() {
         let temp = TempDir::new().unwrap();
-        let claude =
-            RealClaudeProcess::with_model(temp.path().to_path_buf(), "haiku".to_string());
+        let claude = RealClaudeProcess::with_model(temp.path().to_path_buf(), "haiku".to_string());
         assert_eq!(claude.model(), "haiku");
     }
 

@@ -607,14 +607,10 @@ async fn main() -> anyhow::Result<()> {
             no_fallback,
         } => {
             // Check mutual exclusivity of incremental execution flags (Phase 26.5)
-            let incremental_flag_count = [
-                changed_since.is_some(),
-                files.is_some(),
-                changed,
-            ]
-            .iter()
-            .filter(|&&x| x)
-            .count();
+            let incremental_flag_count = [changed_since.is_some(), files.is_some(), changed]
+                .iter()
+                .filter(|&&x| x)
+                .count();
 
             if incremental_flag_count > 1 {
                 eprintln!(
@@ -2210,13 +2206,19 @@ async fn main() -> anyhow::Result<()> {
                                 })
                             );
                         } else {
-                            println!("{} Dry run mode - no changes will be applied", "Info:".cyan());
+                            println!(
+                                "{} Dry run mode - no changes will be applied",
+                                "Info:".cyan()
+                            );
                             println!("Current weights:");
                             println!("  commit_gap: {:.3}", original_weights.commit_gap);
                             println!("  file_churn: {:.3}", original_weights.file_churn);
                             println!("  error_repeat: {:.3}", original_weights.error_repeat);
                             println!("  test_stagnation: {:.3}", original_weights.test_stagnation);
-                            println!("  mode_oscillation: {:.3}", original_weights.mode_oscillation);
+                            println!(
+                                "  mode_oscillation: {:.3}",
+                                original_weights.mode_oscillation
+                            );
                             println!("  warning_growth: {:.3}", original_weights.warning_growth);
                             println!(
                                 "\nPredictions available for tuning: {}",
@@ -2255,7 +2257,11 @@ async fn main() -> anyhow::Result<()> {
                                 let direction = if delta > 0.0 { "↑" } else { "↓" };
                                 println!(
                                     "  {}: {:.3} → {:.3} ({}{:.3})",
-                                    factor, old, new, direction, delta.abs()
+                                    factor,
+                                    old,
+                                    new,
+                                    direction,
+                                    delta.abs()
                                 );
                             }
                         }
@@ -2296,7 +2302,9 @@ async fn main() -> anyhow::Result<()> {
                             println!("   {}", predictor_stats.summary());
                             println!(
                                 "   Last updated: {}",
-                                predictor_stats.last_updated().format("%Y-%m-%d %H:%M:%S UTC")
+                                predictor_stats
+                                    .last_updated()
+                                    .format("%Y-%m-%d %H:%M:%S UTC")
                             );
                         } else {
                             println!("   No predictions recorded yet");

@@ -2711,11 +2711,7 @@ mod tests {
         let signals = RiskSignals::new()
             .with_commit_gap(15)
             .with_file_touches(vec![("main.rs".into(), 5), ("lib.rs".into(), 5)])
-            .with_errors(vec![
-                "error 1".into(),
-                "error 1".into(),
-                "error 1".into(),
-            ])
+            .with_errors(vec!["error 1".into(), "error 1".into(), "error 1".into()])
             .with_test_history(vec![10, 10, 10, 10, 10])
             .with_mode_switches(4);
         let breakdown = predictor.risk_breakdown(&signals);
@@ -2854,11 +2850,7 @@ mod tests {
         let signals = RiskSignals::new()
             .with_commit_gap(15)
             .with_file_touches(vec![("main.rs".into(), 5), ("lib.rs".into(), 5)])
-            .with_errors(vec![
-                "error 1".into(),
-                "error 1".into(),
-                "error 1".into(),
-            ])
+            .with_errors(vec!["error 1".into(), "error 1".into(), "error 1".into()])
             .with_test_history(vec![10, 10, 10, 10, 10])
             .with_mode_switches(4);
         let breakdown = predictor.risk_breakdown(&signals);

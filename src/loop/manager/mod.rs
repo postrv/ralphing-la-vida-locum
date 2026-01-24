@@ -1255,7 +1255,11 @@ impl LoopManager {
                 // Use record_prediction_with_breakdown for adaptive weight tuning
                 // when we have breakdown data available
                 if let Some(ref breakdown) = last_risk_breakdown {
-                    predictor.record_prediction_with_breakdown(score, actually_stagnated, breakdown);
+                    predictor.record_prediction_with_breakdown(
+                        score,
+                        actually_stagnated,
+                        breakdown,
+                    );
                 } else {
                     predictor.record_prediction(score, actually_stagnated);
                 }
