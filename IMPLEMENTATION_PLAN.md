@@ -17,7 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,735 passing
+**Current Test Count**: 1,759 passing
 
 ---
 
@@ -33,23 +33,24 @@
 
 **Already Complete**:
 - [x] Phase 23.1: LLM Client Trait Refinement (`src/llm/mod.rs`)
+- [x] Phase 23.2: Claude Provider (`src/llm/claude.rs`)
 
-### Phase 23.2: Claude Provider (Refactor Existing)
+### Phase 23.2: Claude Provider (Refactor Existing) ✅
 
 **Description**: Refactor existing Claude integration to implement the new trait.
 
 **Requirements**:
-- [ ] Create `src/llm/claude.rs` implementing `LlmClient`
-- [ ] Move existing Claude-specific code from scattered locations
-- [ ] Implement proper error handling for API errors
-- [ ] Add rate limit detection and backoff
-- [ ] Support both `claude-sonnet-4-20250514` and `claude-opus-4-5-20251101`
+- [x] Create `src/llm/claude.rs` implementing `LlmClient`
+- [x] Move existing Claude-specific code from scattered locations
+- [x] Implement proper error handling for API errors
+- [x] Add rate limit detection and backoff
+- [x] Support both `claude-sonnet-4-20250514` and `claude-opus-4-5-20251101`
 
 **Test-First**:
 ```rust
-// - test_claude_provider_implements_llm_client
-// - test_claude_rate_limit_detection
-// - test_claude_model_selection
+// - test_claude_provider_implements_llm_client ✅
+// - test_claude_rate_limit_detection ✅
+// - test_claude_model_selection ✅
 ```
 
 ### Phase 23.3: Ollama Provider

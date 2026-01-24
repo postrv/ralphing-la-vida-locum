@@ -30,6 +30,12 @@
 //! }
 //! ```
 
+pub mod claude;
+
+pub use claude::{
+    ClaudeApiError, ClaudeModel, ClaudeProvider, ParseClaudeModelError, RateLimitTracker,
+};
+
 use anyhow::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

@@ -119,8 +119,9 @@ pub use campaign::{
 
 // Re-export LLM types
 pub use llm::{
-    create_llm_client, get_supported_models, ClaudeClient, GeminiClient, LlmClient, LlmConfig,
-    MockLlmClient, ModelInfo, ModelStatus, OllamaClient, OpenAiClient,
+    create_llm_client, get_supported_models, ClaudeApiError, ClaudeClient, ClaudeModel,
+    ClaudeProvider, GeminiClient, LlmClient, LlmConfig, MockLlmClient, ModelInfo, ModelStatus,
+    OllamaClient, OpenAiClient, ParseClaudeModelError, RateLimitTracker,
 };
 
 // Re-export bootstrap types
