@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769276548115,
+  "lastUpdate": 1769277402124,
   "repoUrl": "https://github.com/postrv/ralphing-la-vida-locum",
   "entries": {
     "Ralph Performance Benchmarks": [
@@ -128,6 +128,135 @@ window.BENCHMARK_DATA = {
           {
             "name": "context_building/typical_context",
             "value": 819.7754793972738,
+            "unit": "ns"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "committer": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "distinct": true,
+          "id": "f2181e17fc7b253e8f18f3cb3665f6efbdd35bb2",
+          "message": "fix: Remove unused affects_file methods to fix release build\n\nThe affects_file and affects_any_file methods were only used in\ndebug_assertions blocks which are stripped in release builds,\ncausing dead_code errors. Removed the unused methods, their tests,\nand the debug tracing block.\n\nThe has_explicit_affected_file_match method (which IS used) is\nretained for scoped task selection.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+          "timestamp": "2026-01-24T17:50:53Z",
+          "tree_id": "18bbb557241d8b37867059f61c45e0435a68b763",
+          "url": "https://github.com/postrv/ralphing-la-vida-locum/commit/f2181e17fc7b253e8f18f3cb3665f6efbdd35bb2"
+        },
+        "date": 1769277401634,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 241568.5958518269,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 222193.33592415578,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 233059.2940211754,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 1481814.2650081173,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 370532.8466402389,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 740347.6232822884,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/polyglot_project",
+            "value": 435726.0261296545,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/single_language",
+            "value": 260047.01299187046,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 745164.5117836013,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 382112.07379445696,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 91814.86265960636,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 869384.7779931747,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 576874.8538851226,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 437360.02525160386,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 321530.9809622829,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/plan",
+            "value": 10564.77784544567,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/build",
+            "value": 26190.712491554143,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/debug",
+            "value": 12905.958962826217,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/full_context",
+            "value": 3725.067484949437,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/minimal_context",
+            "value": 527.6819754849089,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/typical_context",
+            "value": 818.312378826902,
             "unit": "ns"
           }
         ]
