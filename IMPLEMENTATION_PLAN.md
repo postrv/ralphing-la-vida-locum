@@ -38,12 +38,12 @@
 **Description**: Simple HTML template rendering for dashboard.
 
 **Requirements**:
-- [ ] Create `src/analytics/dashboard/template.rs`
-- [ ] Embed HTML template as const string (no external files)
-- [ ] Use simple string substitution for data injection
-- [ ] Include inline CSS (Tailwind-like utility classes)
-- [ ] Include inline JavaScript for interactivity (collapsible sections, tooltips)
-- [ ] No external CDN dependencies (fully offline)
+- [x] Create `src/analytics/dashboard/template.rs`
+- [x] Embed HTML template as const string (no external files)
+- [x] Use simple string substitution for data injection
+- [x] Include inline CSS (Tailwind-like utility classes)
+- [x] Include inline JavaScript for interactivity (collapsible sections, tooltips)
+- [x] No external CDN dependencies (fully offline)
 
 **Test-First**:
 ```rust

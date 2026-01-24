@@ -4,6 +4,10 @@
 //! into a dashboard-ready format, supporting time filtering and
 //! summary statistics calculation.
 
+pub mod template;
+
+pub use template::DashboardTemplate;
+
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
