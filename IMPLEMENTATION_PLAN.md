@@ -8,333 +8,16 @@
 
 ## Overview
 
-| Sprint | Focus | Effort | Risk Mitigation |
-|--------|-------|--------|-----------------|
-| 21 | Session Persistence & Resume | 2-3 days | Highest leverage - enables longer autonomous runs |
-| 22 | File Decomposition | 2-3 days | Improves maintainability, reduces cognitive load |
-| 23 | LLM Provider Abstraction | 2-3 days | Resilience through provider fallback |
-| 24 | Predictor Persistence & Diagnostics | 1-2 days | Cross-session learning, faster human intervention |
-| 25 | Analytics Dashboard | 1-2 days | Retrospectives, commercial demo value |
-| 26 | Incremental Execution Mode | 2-3 days | Large codebase support |
-
-**Total Estimated Effort**: 10-16 days
-
----
-
-**Current Focus: Sprint 22** (File Decomposition - Phases 22.3-22.5 remaining)
-
----
-
-## Sprint 21: Session Persistence & Resume
-
-**Goal**: Enable Ralph to survive crashes/restarts without losing loop state.
-
-**Success Criteria**:
-- Full loop state serialized on graceful shutdown and SIGTERM
-- State restored and validated on startup
-- Corrupted state files handled gracefully (fallback to fresh start)
-- Zero data loss on `Ctrl+C` interruption
-
-### 1. Phase 21.1: Session State Domain Model
-
-**Description**: Define the unified session state structure that captures all recoverable state.
-
-**Requirements**:
-- [x] Create `src/session/mod.rs` module with `SessionState` struct
-- [x] `SessionState` must include: `LoopState`, `TaskTracker` snapshot, `Supervisor` state, `StagnationPredictor` history, session metadata (version, timestamp, pid)
-- [x] Implement `Serialize`/`Deserialize` for `SessionState`
-- [x] Add version field for forward compatibility (reject incompatible versions gracefully)
-- [x] Write unit tests for serialization round-trip
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_session_state_serialization_roundtrip
-// - test_session_state_version_compatibility
-// - test_session_state_includes_all_components
-// - test_session_state_default_is_empty
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib session
-cargo clippy --all-targets -- -D warnings
-```
-
-### 2. Phase 21.2: Session Persistence Layer
-
-**Description**: Implement atomic file-based persistence with corruption protection.
-
-**Requirements**:
-- [x] Create `src/session/persistence.rs` with `SessionPersistence` struct
-- [x] Implement atomic write: write to `.ralph/session.json.tmp`, then rename (prevents corruption)
-- [x] Implement `save(&self, state: &SessionState) -> Result<()>`
-- [x] Implement `load(&self) -> Result<Option<SessionState>>` (returns None if no file or corrupted)
-- [x] Add file locking to prevent concurrent Ralph instances corrupting state
-- [x] Log warnings (not errors) for corrupted files, delete and continue
-- [x] Write integration tests with tempdir
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_persistence_save_creates_file
-// - test_persistence_load_returns_none_when_missing
-// - test_persistence_atomic_write_survives_crash (simulate by checking tmp file handling)
-// - test_persistence_corrupted_file_returns_none_and_logs
-// - test_persistence_incompatible_version_returns_none
-// - test_persistence_file_locking_prevents_concurrent_access
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib session::persistence
-cargo clippy --all-targets -- -D warnings
-```
-
-### 3. Phase 21.3: Signal Handler Integration
-
-**Description**: Save state on SIGTERM, SIGINT, and graceful shutdown.
-
-**Requirements**:
-- [x] Create `src/session/signals.rs` with signal handling logic
-- [x] Register handlers for SIGTERM and SIGINT (Unix) / CTRL_C_EVENT (Windows)
-- [x] On signal: save session state, then exit gracefully
-- [x] Add `--no-persist` CLI flag to disable persistence (for testing)
-- [x] Ensure signal handler doesn't panic (catch and log errors)
-- [x] Write tests using signal simulation where possible
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_signal_handler_registration
-// - test_graceful_shutdown_saves_state
-// - test_no_persist_flag_skips_save
-// - test_signal_handler_error_doesnt_panic
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib session::signals
-cargo clippy --all-targets -- -D warnings
-```
-
-### 4. Phase 21.4: LoopManager Integration ✅
-
-**Description**: Integrate session persistence into the main loop lifecycle.
-
-**Requirements**:
-- [x] Add `SessionPersistence` to `LoopManager` struct
-- [x] Call `persistence.load()` in `LoopManager::new()` to restore state
-- [x] Call `persistence.save()` after each iteration (debounced - max once per 30s)
-- [x] Call `persistence.save()` in `LoopManager::shutdown()` (unconditional)
-- [x] Add `--resume` CLI flag (default true) to control whether to load previous session
-- [x] Add `--fresh` CLI flag as alias for `--resume=false`
-- [x] Log session restoration: "Resuming session from <timestamp>, iteration <n>"
-- [x] Write integration tests with full loop lifecycle
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_loop_manager_loads_session_on_start
-// - test_loop_manager_saves_session_after_iteration
-// - test_loop_manager_saves_session_on_shutdown
-// - test_fresh_flag_ignores_existing_session
-// - test_resume_flag_restores_session
-// - test_debounced_save_respects_interval
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib loop::manager
-cargo test --test integration_session  # New integration test file
-cargo clippy --all-targets -- -D warnings
-```
-
-### 5. Phase 21.5: Documentation & CLI Help ✅
-
-**Description**: Document the session persistence feature.
-
-**Requirements**:
-- [x] Add module-level documentation to `src/session/mod.rs`
-- [x] Update README.md with session persistence section
-- [x] Update CLAUDE.md with session recovery notes
-- [x] Update CLI help text for `--resume`, `--fresh`, `--no-persist` flags
-- [x] Add example usage in docs
-
-**Quality Gates**:
-```bash
-cargo doc --no-deps
-cargo test --doc
-```
-
----
-
-## Sprint 22: File Decomposition
-
-**Goal**: Split oversized files into maintainable modules without changing public API.
-
-**Success Criteria**:
-- All files under 1,500 lines
-- No public API changes (all re-exports preserved)
-- All existing tests pass without modification
-- No new clippy warnings
-
-### 1. Phase 22.1: Extract `config` Submodules ✅
-
-**Description**: Split `src/config.rs` (3,362 lines) into focused submodules.
-
-**Target Structure**:
-```
-src/config.rs        # Main module with re-exports (~2,075 lines, hybrid structure)
-src/config/
-├── resolution.rs    # SharedConfigResolver, inheritance logic (1,731 lines)
-├── validation.rs    # ConfigValidator, error types (1,035 lines)
-└── git.rs           # Security patterns, SSH blocking (444 lines)
-```
-
-**Requirements**:
-- [x] Create `src/config/` directory structure
-- [x] Move `SharedConfigResolver` and related types to `resolution.rs`
-- [x] Move `ConfigValidator` and validation logic to `validation.rs`
-- [x] Move git/security patterns to `git.rs` (dangerous commands, secrets, SSH blocking)
-- [x] Keep `SharedConfig` struct in `config.rs` with re-exports
-- [x] Ensure all `pub use` statements maintain API compatibility
-- [x] Move tests to appropriate submodules
-
-**Note**: templates.rs not needed - template logic is in `src/bootstrap/templates.rs` and `src/prompt/templates.rs`.
-
-**Test-First Requirements**:
-```rust
-// Run BEFORE any changes to establish baseline:
-cargo test --lib config -- --nocapture > /tmp/config_tests_before.txt
-
-// After refactoring, diff output must be identical (except timing)
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib config
-cargo clippy --all-targets -- -D warnings
-# Verify no public API changes:
-cargo doc --no-deps 2>&1 | grep -i "warning.*config" && exit 1 || true
-```
-
-### 2. Phase 22.2: Extract `analytics` Submodules ✅
-
-**Description**: Split `src/analytics/mod.rs` into focused submodules.
-
-**Current Structure**:
-```
-src/analytics/
-├── mod.rs           # Analytics struct, AnalyticsEvent, SessionSummary (2,643 lines)
-├── events.rs        # StructuredEvent, EventFilter, EventType (640 lines)
-├── session.rs       # AggregateStats, PredictorAccuracyStats (168 lines)
-├── trends.rs        # QualityMetricsSnapshot, QualityTrend, TrendDirection (692 lines)
-├── storage.rs       # AnalyticsUploadConfig, AnalyticsUploader, PrivacySettings (475 lines)
-├── reporting.rs     # GateStats, ReportFormat, SessionReport (514 lines)
-└── dashboard/       # Dashboard data aggregation
-```
-
-**Requirements**:
-- [x] Create `src/analytics/` directory structure
-- [x] Move event types and builders to `events.rs`
-- [x] Move session metrics to `session.rs`
-- [x] Move trend analysis to `trends.rs`
-- [x] Move upload/privacy settings to `storage.rs`
-- [x] Move reporting to `reporting.rs`
-- [x] Maintain all `pub use` for API compatibility
-- [x] Move tests to appropriate submodules
-
-**Note**: mod.rs still contains Analytics struct with JSONL I/O and core functionality. This is appropriate as it's the main coordinator.
-
-**Quality Gates**:
-```bash
-cargo test --lib analytics
-cargo clippy --all-targets -- -D warnings
-```
-
-### 3. Phase 22.3: Extract `task_tracker` Submodules
-
-**Description**: Further split `src/loop/task_tracker/mod.rs` (3,314 lines).
-
-**Target Structure**:
-```
-src/loop/task_tracker/
-├── mod.rs           # Re-exports, TaskTracker struct (~500 lines)
-├── parsing.rs       # Already exists - keep as is
-├── persistence.rs   # Already exists - keep as is
-├── state.rs         # Already exists - keep as is
-├── selection.rs     # Task selection logic (~400 lines) [NEW]
-├── orphan.rs        # Orphan detection logic (~300 lines) [NEW]
-└── metrics.rs       # TaskMetrics, statistics (~300 lines) [NEW]
-```
-
-**Requirements**:
-- [ ] Extract task selection logic to `selection.rs`
-- [ ] Extract orphan detection to `orphan.rs`
-- [ ] Extract metrics/statistics to `metrics.rs`
-- [ ] Maintain API compatibility via re-exports
-- [ ] Move relevant tests to new submodules
-
-**Quality Gates**:
-```bash
-cargo test --lib loop::task_tracker
-cargo clippy --all-targets -- -D warnings
-```
-
-### 4. Phase 22.4: Extract `OutputParser` Trait
-
-**Description**: Consolidate the repeated parse_output pattern (182 occurrences) into a trait.
-
-**Requirements**:
-- [ ] Create `src/quality/parser.rs` with `OutputParser` trait
-- [ ] Define trait methods: `parse_json()`, `parse_text()`, `parse_lines()`
-- [ ] Implement `OutputParser` for each gate type (Rust, Python, TypeScript, Go)
-- [ ] Refactor existing parse_output functions to use trait
-- [ ] Add default implementations where patterns are identical
-- [ ] Ensure no code duplication remains
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_output_parser_trait_parse_json
-// - test_output_parser_trait_parse_text
-// - test_rust_gate_implements_output_parser
-// - test_python_gate_implements_output_parser
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib quality
-cargo clippy --all-targets -- -D warnings
-```
-
-### 5. Phase 22.5: Extract `checkpoint` Submodules
-
-**Description**: Split `src/checkpoint/mod.rs` (3,083 lines).
-
-**Target Structure**:
-```
-src/checkpoint/
-├── mod.rs           # Re-exports, Checkpoint struct (~400 lines)
-├── verification.rs  # Checkpoint verification (~500 lines) [NEW]
-├── diff.rs          # Diff generation and analysis (~500 lines) [NEW]
-├── storage.rs       # Checkpoint file I/O (~400 lines) [NEW]
-└── rollback.rs      # Rollback operations (~400 lines) [NEW]
-```
-
-**Requirements**:
-- [ ] Extract verification logic to `verification.rs`
-- [ ] Extract diff logic to `diff.rs`
-- [ ] Extract storage to `storage.rs`
-- [ ] Extract rollback to `rollback.rs`
-- [ ] Maintain API compatibility
-
-**Quality Gates**:
-```bash
-cargo test --lib checkpoint
-cargo clippy --all-targets -- -D warnings
-```
+| Sprint | Focus | Effort | Status |
+|--------|-------|--------|--------|
+| 23 | LLM Provider Abstraction | 2-3 days | **Current** |
+| 24 | Predictor Persistence & Diagnostics | 1-2 days | Pending |
+| 25 | Analytics Dashboard | 1-2 days | Pending |
+| 26 | Incremental Execution Mode | 2-3 days | Pending |
+
+**Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
+
+**Current Test Count**: 1,735 passing
 
 ---
 
@@ -348,32 +31,10 @@ cargo clippy --all-targets -- -D warnings
 - Provider-specific prompt formatting handled transparently
 - Cost tracking per provider
 
-### 1. Phase 23.1: LLM Client Trait Refinement
+**Already Complete**:
+- [x] Phase 23.1: LLM Client Trait Refinement (`src/llm/mod.rs`)
 
-**Description**: Refine the `LlmClient` trait for multi-provider support.
-
-**Requirements**:
-- [x] Create/update `src/llm/mod.rs` with refined `LlmClient` trait
-- [x] Add methods: `complete()`, `complete_with_retry()`, `available()`, `cost_per_token()`
-- [x] Add `ProviderCapabilities` struct (supports_streaming, max_context, etc.)
-- [x] Add `LlmResponse` struct with token counts, latency, cost
-- [x] Write comprehensive trait documentation
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_llm_client_trait_complete
-// - test_llm_response_includes_token_counts
-// - test_provider_capabilities_defaults
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib llm
-cargo clippy --all-targets -- -D warnings
-```
-
-### 2. Phase 23.2: Claude Provider (Refactor Existing)
+### Phase 23.2: Claude Provider (Refactor Existing)
 
 **Description**: Refactor existing Claude integration to implement the new trait.
 
@@ -384,21 +45,14 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Add rate limit detection and backoff
 - [ ] Support both `claude-sonnet-4-20250514` and `claude-opus-4-5-20251101`
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_claude_provider_implements_llm_client
 // - test_claude_rate_limit_detection
 // - test_claude_model_selection
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib llm::claude
-cargo clippy --all-targets -- -D warnings
-```
-
-### 3. Phase 23.3: Ollama Provider
+### Phase 23.3: Ollama Provider
 
 **Description**: Implement Ollama provider for local/free inference.
 
@@ -409,21 +63,14 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Handle connection errors gracefully (Ollama not running)
 - [ ] Implement streaming for long responses
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_ollama_provider_implements_llm_client
 // - test_ollama_availability_detection
 // - test_ollama_graceful_degradation_when_unavailable
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib llm::ollama
-cargo clippy --all-targets -- -D warnings
-```
-
-### 4. Phase 23.4: OpenAI Provider
+### Phase 23.4: OpenAI Provider
 
 **Description**: Implement OpenAI provider.
 
@@ -434,21 +81,14 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Implement proper error handling for API errors
 - [ ] Add rate limit detection and backoff
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_openai_provider_implements_llm_client
 // - test_openai_api_key_from_env
 // - test_openai_rate_limit_detection
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib llm::openai
-cargo clippy --all-targets -- -D warnings
-```
-
-### 5. Phase 23.5: Provider Router & Fallback
+### Phase 23.5: Provider Router & Fallback
 
 **Description**: Implement provider selection and automatic fallback.
 
@@ -460,23 +100,15 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Log provider switches: "Falling back from Claude to Ollama: rate limited"
 - [ ] Add `--no-fallback` flag to disable automatic fallback
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_provider_router_selects_requested_provider
 // - test_provider_router_auto_mode_tries_in_order
 // - test_provider_router_fallback_on_rate_limit
 // - test_provider_router_no_fallback_flag
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib llm::router
-cargo test --lib llm
-cargo clippy --all-targets -- -D warnings
-```
-
-### 6. Phase 23.6: Cost Tracking
+### Phase 23.6: Cost Tracking
 
 **Description**: Track LLM costs across providers.
 
@@ -487,19 +119,11 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Add `ralph stats` command to show cumulative costs
 - [ ] Persist cost data in `.ralph/costs.json`
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_cost_tracker_records_tokens
 // - test_cost_tracker_calculates_cost_per_provider
 // - test_cost_tracker_persistence
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib llm
-cargo test --lib analytics
-cargo clippy --all-targets -- -D warnings
 ```
 
 ---
@@ -513,34 +137,19 @@ cargo clippy --all-targets -- -D warnings
 - Diagnostic reports include predictor breakdown
 - Accuracy improves over time via adaptive weighting (optional)
 
-### 1. Phase 24.1: Predictor Stats Persistence
+**Already Complete**:
+- [x] Phase 24.1: Core persistence module (`src/stagnation/persistence.rs`)
 
-**Description**: Persist stagnation predictor accuracy statistics.
+### Phase 24.1: Predictor Stats Integration (Remaining)
+
+**Description**: Integrate predictor stats persistence with StagnationPredictor.
 
 **Requirements**:
-- [x] Create `src/stagnation/persistence.rs`
-- [x] Define `PredictorStats` struct: predictions made, accuracy by risk level, factor weights
-- [x] Implement save/load to `.ralph/predictor_stats.json`
-- [ ] Load stats in `StagnationPredictor::new()` (integration pending)
-- [ ] Save stats after each prediction verification (integration pending)
-- [ ] Add stats summary to `ralph status` command (integration pending)
+- [ ] Load stats in `StagnationPredictor::new()`
+- [ ] Save stats after each prediction verification
+- [ ] Add stats summary to `ralph status` command
 
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_predictor_stats_serialization
-// - test_predictor_stats_persistence_roundtrip
-// - test_predictor_loads_stats_on_init
-// - test_predictor_saves_stats_after_verification
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib stagnation
-cargo clippy --all-targets -- -D warnings
-```
-
-### 2. Phase 24.2: Enhanced Diagnostic Reports
+### Phase 24.2: Enhanced Diagnostic Reports
 
 **Description**: Include predictor breakdown in supervisor diagnostic reports.
 
@@ -551,21 +160,14 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Format predictor data in human-readable summary
 - [ ] Ensure diagnostic report is self-contained (no external lookups needed)
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_diagnostic_report_includes_predictor_summary
 // - test_diagnostic_report_includes_preventive_actions
 // - test_diagnostic_report_human_readable_format
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib supervisor
-cargo clippy --all-targets -- -D warnings
-```
-
-### 3. Phase 24.3: Adaptive Weight Tuning (Optional)
+### Phase 24.3: Adaptive Weight Tuning (Optional)
 
 **Description**: Slowly adjust predictor weights based on recorded accuracy.
 
@@ -576,21 +178,6 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Clamp weights to [0.1, 2.0] range to prevent runaway
 - [ ] Add `ralph predictor tune` command to manually trigger tuning
 - [ ] Log weight changes
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_adaptive_weights_increase_on_correct_prediction
-// - test_adaptive_weights_decrease_on_incorrect
-// - test_adaptive_weights_clamped_to_range
-// - test_adaptive_weights_disabled_by_default
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib stagnation
-cargo clippy --all-targets -- -D warnings
-```
 
 ---
 
@@ -603,32 +190,10 @@ cargo clippy --all-targets -- -D warnings
 - Dashboard shows: session timeline, quality trends, stagnation events, costs
 - Works offline (no external dependencies in HTML)
 
-### 1. Phase 25.1: Dashboard Data Aggregation
+**Already Complete**:
+- [x] Phase 25.1: Dashboard Data Aggregation (`src/analytics/dashboard/mod.rs`)
 
-**Description**: Aggregate analytics data into dashboard-ready format.
-
-**Requirements**:
-- [x] Create `src/analytics/dashboard/mod.rs`
-- [x] Define `DashboardData` struct: sessions, events, trends, summary
-- [x] Implement aggregation from JSONL event stream
-- [x] Support time range filtering: last N sessions, date range
-- [x] Calculate summary statistics: total iterations, success rate, avg session duration
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_dashboard_data_aggregation_from_events
-// - test_dashboard_data_time_filtering
-// - test_dashboard_data_summary_statistics
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib analytics::dashboard
-cargo clippy --all-targets -- -D warnings
-```
-
-### 2. Phase 25.2: HTML Template Engine
+### Phase 25.2: HTML Template Engine
 
 **Description**: Simple HTML template rendering for dashboard.
 
@@ -640,21 +205,14 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Include inline JavaScript for interactivity (collapsible sections, tooltips)
 - [ ] No external CDN dependencies (fully offline)
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_template_renders_valid_html
 // - test_template_substitutes_data
 // - test_template_has_no_external_dependencies
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib analytics::dashboard::template
-cargo clippy --all-targets -- -D warnings
-```
-
-### 3. Phase 25.3: Chart Generation
+### Phase 25.3: Chart Generation
 
 **Description**: Generate SVG charts for visual trends.
 
@@ -665,21 +223,14 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Implement pie chart SVG generator (time distribution by phase)
 - [ ] All charts as inline SVG (no external libraries)
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_line_chart_generates_valid_svg
 // - test_bar_chart_generates_valid_svg
 // - test_charts_handle_empty_data
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib analytics::dashboard::charts
-cargo clippy --all-targets -- -D warnings
-```
-
-### 4. Phase 25.4: CLI Command Integration
+### Phase 25.4: CLI Command Integration
 
 **Description**: Add `ralph analytics dashboard` command.
 
@@ -689,21 +240,6 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Generate and save HTML file
 - [ ] Print path to generated file
 - [ ] Optionally open in default browser
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_dashboard_command_creates_file
-// - test_dashboard_command_respects_output_path
-// - test_dashboard_command_filters_sessions
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib cli
-cargo test --test integration_dashboard
-cargo clippy --all-targets -- -D warnings
-```
 
 ---
 
@@ -717,33 +253,10 @@ cargo clippy --all-targets -- -D warnings
 - Task selection prioritizes tasks affecting changed files
 - 10x+ speedup on large repos with small changes
 
-### 1. Phase 26.1: Change Detection
+**Already Complete**:
+- [x] Phase 26.1: Change Detection (`src/changes/mod.rs`)
 
-**Description**: Detect changed files since a commit or in working tree.
-
-**Requirements**:
-- [x] Create `src/changes/mod.rs` with `ChangeDetector` struct
-- [x] Implement `changed_since(commit: &str) -> Result<Vec<PathBuf>>`
-- [x] Implement `changed_in_working_tree() -> Result<Vec<PathBuf>>`
-- [x] Support filtering by file extension / glob pattern
-- [x] Handle renamed files correctly
-
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_change_detector_finds_modified_files
-// - test_change_detector_finds_added_files
-// - test_change_detector_handles_renames
-// - test_change_detector_filters_by_extension
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib changes
-cargo clippy --all-targets -- -D warnings
-```
-
-### 2. Phase 26.2: Scoped Quality Gates
+### Phase 26.2: Scoped Quality Gates
 
 **Description**: Run quality gates on a subset of files.
 
@@ -753,21 +266,14 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Maintain existing behavior when `files` is None (process all)
 - [ ] Update all gate implementations (Rust, Python, TypeScript, Go)
 
-**Test-First Requirements**:
+**Test-First**:
 ```rust
-// Tests to write BEFORE implementation:
 // - test_rust_gate_scoped_to_files
 // - test_python_gate_scoped_to_files
 // - test_gate_processes_all_when_unscoped
 ```
 
-**Quality Gates**:
-```bash
-cargo test --lib quality::gates
-cargo clippy --all-targets -- -D warnings
-```
-
-### 3. Phase 26.3: Scoped Context Building
+### Phase 26.3: Scoped Context Building
 
 **Description**: Build context from changed files + CCG neighbors.
 
@@ -777,21 +283,7 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Use narsil-mcp `get_call_graph` to find related functions
 - [ ] Graceful degradation when narsil-mcp unavailable (just use changed files)
 
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_context_builder_scoped_includes_changed_files
-// - test_context_builder_scoped_includes_ccg_neighbors
-// - test_context_builder_scoped_degrades_without_narsil
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib context
-cargo clippy --all-targets -- -D warnings
-```
-
-### 4. Phase 26.4: Scoped Task Selection
+### Phase 26.4: Scoped Task Selection
 
 **Description**: Prioritize tasks that affect changed files.
 
@@ -801,20 +293,7 @@ cargo clippy --all-targets -- -D warnings
 - [ ] When running scoped: prioritize tasks whose affected files overlap with changed files
 - [ ] De-prioritize (but don't skip) unrelated tasks
 
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_task_selection_prioritizes_affected_tasks
-// - test_task_selection_includes_unrelated_tasks_at_lower_priority
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib loop::task_tracker
-cargo clippy --all-targets -- -D warnings
-```
-
-### 5. Phase 26.5: CLI Integration
+### Phase 26.5: CLI Integration
 
 **Description**: Add incremental execution flags to CLI.
 
@@ -825,26 +304,11 @@ cargo clippy --all-targets -- -D warnings
 - [ ] Flags are mutually exclusive (error if both specified)
 - [ ] Log scope at start: "Running in incremental mode: 5 files changed since abc123"
 
-**Test-First Requirements**:
-```rust
-// Tests to write BEFORE implementation:
-// - test_cli_changed_since_flag
-// - test_cli_files_flag
-// - test_cli_flags_mutually_exclusive
-```
-
-**Quality Gates**:
-```bash
-cargo test --lib cli
-cargo test --test integration_incremental
-cargo clippy --all-targets -- -D warnings
-```
-
 ---
 
 ## Global Quality Gates
 
-Before ANY commit in ANY sprint:
+Before ANY commit:
 
 ```bash
 # Must all pass
@@ -870,50 +334,7 @@ cargo deny check licenses
 6. **Commit messages**: Use conventional commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`).
 7. **No dead code**: Remove any commented-out code or unused functions.
 8. **No TODOs in committed code**: Either do it now or create a task for later.
-
----
-
-## Progress Tracking
-
-### Sprint 21: Session Persistence ✅
-- [x] Phase 21.1: Session State Domain Model
-- [x] Phase 21.2: Session Persistence Layer
-- [x] Phase 21.3: Signal Handler Integration
-- [x] Phase 21.4: LoopManager Integration
-- [x] Phase 21.5: Documentation & CLI Help
-
-### Sprint 22: File Decomposition
-- [x] Phase 22.1: Extract `config` Submodules (resolution.rs, validation.rs, git.rs done)
-- [x] Phase 22.2: Extract `analytics` Submodules (events.rs, session.rs, trends.rs, storage.rs, reporting.rs done)
-- [~] Phase 22.3: Extract `task_tracker` Submodules (metrics.rs done; selection/orphan logic tightly coupled to TaskTracker)
-- [x] Phase 22.4: Extract `OutputParser` Trait (parser.rs with trait and utilities; existing gates not refactored)
-- [x] Phase 22.5: Extract `checkpoint` Submodules (thresholds.rs, diff.rs, quality_metrics.rs done)
-
-### Sprint 23: LLM Provider Abstraction
-- [x] Phase 23.1: LLM Client Trait Refinement
-- [ ] Phase 23.2: Claude Provider
-- [ ] Phase 23.3: Ollama Provider
-- [ ] Phase 23.4: OpenAI Provider
-- [ ] Phase 23.5: Provider Router & Fallback
-- [ ] Phase 23.6: Cost Tracking
-
-### Sprint 24: Predictor Persistence & Diagnostics
-- [x] Phase 24.1: Predictor Stats Persistence (core module complete - integration pending)
-- [ ] Phase 24.2: Enhanced Diagnostic Reports
-- [ ] Phase 24.3: Adaptive Weight Tuning
-
-### Sprint 25: Analytics Dashboard
-- [x] Phase 25.1: Dashboard Data Aggregation
-- [ ] Phase 25.2: HTML Template Engine
-- [ ] Phase 25.3: Chart Generation
-- [ ] Phase 25.4: CLI Command Integration
-
-### Sprint 26: Incremental Execution
-- [x] Phase 26.1: Change Detection
-- [ ] Phase 26.2: Scoped Quality Gates
-- [ ] Phase 26.3: Scoped Context Building
-- [ ] Phase 26.4: Scoped Task Selection
-- [ ] Phase 26.5: CLI Integration
+9. **Use narsil**: Reindex before starting work, use for code discovery.
 
 ---
 
@@ -922,6 +343,6 @@ cargo deny check licenses
 This plan is complete when:
 1. All checkboxes are marked
 2. All quality gates pass
-3. `cargo test` shows 2,500+ tests passing (current: 2,195)
+3. `cargo test` shows 2,500+ tests passing
 4. Documentation is updated
 5. CHANGELOG.md reflects all changes
