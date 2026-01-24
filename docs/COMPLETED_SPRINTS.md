@@ -4,6 +4,58 @@
 
 ---
 
+## Sprint 25: Analytics Dashboard ✅
+
+**Completed**: 2026-01-24
+**Goal**: Generate human-readable HTML reports from analytics data.
+
+### Phase 25.1: Dashboard Data Aggregation ✅
+
+**Location**: `src/analytics/dashboard/mod.rs`
+
+**Completed**:
+- `DashboardData` struct: sessions, events, trends, summary
+- Aggregation from JSONL event stream
+- Time range filtering: last N sessions, date range
+- Summary statistics: total iterations, success rate, avg session duration
+
+### Phase 25.2: HTML Template Engine ✅
+
+**Location**: `src/analytics/dashboard/template.rs` (~390 lines)
+
+**Completed**:
+- `DashboardTemplate` struct with `render()` method
+- Inline CSS with dark theme and responsive design
+- Inline JavaScript for collapsible sections (Alt+E/C for expand/collapse)
+- Data substitution for all dashboard metrics
+- HTML escaping for XSS prevention
+- No external dependencies - fully offline capable
+- 11 tests
+
+### Phase 25.3: Chart Generation ✅
+
+**Location**: `src/analytics/dashboard/charts.rs` (~1,036 lines)
+
+**Completed**:
+- `LineChart`: Time-series data with grid lines, data point markers, axis labels
+- `BarChart`: Categorical data with value labels and alternating colors
+- `PieChart`: Proportional data with arc slices and legend with percentages
+- `ChartConfig` for configurable dimensions, colors, padding
+- Graceful empty data handling ("No data available" message)
+- XSS protection via XML character escaping
+- 22 tests
+
+### Phase 25.4: CLI Command Integration ✅
+
+**Completed**:
+- `ralph analytics dashboard` command
+- Options: `--output <path>`, `--sessions <n>`, `--open`, `--json`
+- Generate and save standalone HTML file
+- Opens in default browser with `--open` flag
+- 6 integration tests
+
+---
+
 ## Sprint 24: Predictor Persistence & Diagnostics ✅
 
 **Completed**: 2026-01-24

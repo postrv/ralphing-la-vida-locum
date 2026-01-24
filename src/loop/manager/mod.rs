@@ -56,6 +56,7 @@ use crate::supervisor::predictor::{
 use crate::supervisor::{Supervisor, SupervisorVerdict};
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
+use ralph::changes::ChangeScope;
 use ralph::checkpoint::{
     CheckpointManager, CheckpointManagerConfig, QualityMetrics, RegressionThresholds,
     RollbackManager,
@@ -66,7 +67,6 @@ use ralph::quality::gates::detect_available_gates;
 use ralph::quality::EnforcerConfig;
 use ralph::stagnation::StatsPersistence;
 use ralph::testing::{ClaudeProcess, FileSystem, GitOperations, QualityChecker};
-use ralph::changes::ChangeScope;
 use ralph::Analytics;
 use ralph::LanguageDetector;
 use std::path::PathBuf;

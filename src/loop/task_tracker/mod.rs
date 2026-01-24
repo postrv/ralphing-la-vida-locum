@@ -1227,7 +1227,9 @@ impl TaskTracker {
         // Log debug info about conservative matching for tracing
         #[cfg(debug_assertions)]
         for (id, task) in &self.tasks {
-            if task.affects_any_file(changed_files) && !task.has_explicit_affected_file_match(changed_files) {
+            if task.affects_any_file(changed_files)
+                && !task.has_explicit_affected_file_match(changed_files)
+            {
                 tracing::trace!(
                     "Task {} has conservative match (no explicit affected_files)",
                     id
@@ -3643,7 +3645,10 @@ mod tests {
 
         // Should fall back to normal priority (task 1 first by number)
         let selected = tracker.select_next_task_scoped(&scope);
-        assert!(selected.is_some(), "Should find a task even without matches");
+        assert!(
+            selected.is_some(),
+            "Should find a task even without matches"
+        );
 
         let selected_id = selected.unwrap();
         assert!(

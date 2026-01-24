@@ -756,8 +756,8 @@ mod tests {
         let config = NarsilConfig::new(".");
         let client = NarsilClient::new(config).unwrap();
 
-        let scope = ChangeScope::from_files(vec![PathBuf::from("src/main.rs")])
-            .with_commit_ref("HEAD~5");
+        let scope =
+            ChangeScope::from_files(vec![PathBuf::from("src/main.rs")]).with_commit_ref("HEAD~5");
 
         let builder = CodeIntelligenceBuilder::new(&client).for_scope(&scope);
 

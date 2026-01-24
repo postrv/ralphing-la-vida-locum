@@ -34,10 +34,8 @@ pub fn extract_file_paths(text: &str) -> Vec<PathBuf> {
     // Pattern matches common code file paths
     // Matches: word chars, slashes, dots, hyphens, underscores
     // Requires at least one slash and ends with a common extension
-    let file_pattern = Regex::new(
-        r#"(?:^|[\s`'"(])([a-zA-Z0-9_./\-]+\.[a-z]+)(?:$|[\s`'")\],:])"#,
-    )
-    .expect("Invalid regex pattern");
+    let file_pattern = Regex::new(r#"(?:^|[\s`'"(])([a-zA-Z0-9_./\-]+\.[a-z]+)(?:$|[\s`'")\],:])"#)
+        .expect("Invalid regex pattern");
 
     file_pattern
         .captures_iter(text)
@@ -278,8 +276,9 @@ impl TaskTracker {
             // Create new task with sprint and affected files if found
             let task = match (current_sprint, title_files.is_empty()) {
                 (Some(sprint), true) => Task::new_with_sprint(task_id.clone(), sprint),
-                (Some(sprint), false) => Task::new_with_sprint(task_id.clone(), sprint)
-                    .with_affected_files(title_files),
+                (Some(sprint), false) => {
+                    Task::new_with_sprint(task_id.clone(), sprint).with_affected_files(title_files)
+                }
                 (None, true) => Task::new(task_id.clone()),
                 (None, false) => Task::new(task_id.clone()).with_affected_files(title_files),
             };

@@ -265,11 +265,7 @@ Found {} errors and {} warnings.
         Some("ruff")
     }
 
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         match files {
             None => self.run(project_dir),
             Some([]) => Ok(Vec::new()),
@@ -675,11 +671,7 @@ Found {} type errors.
         Some("mypy")
     }
 
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         match files {
             None => self.run(project_dir),
             Some([]) => Ok(Vec::new()),
@@ -890,11 +882,7 @@ Found {} critical and {} high severity security issues.
         Some("bandit")
     }
 
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         match files {
             None => self.run(project_dir),
             Some([]) => Ok(Vec::new()),

@@ -17,69 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,942 passing
-
----
-
-## Sprint 25: Analytics Dashboard
-
-**Goal**: Generate human-readable HTML reports from analytics data.
-
-**Success Criteria**:
-- `ralph analytics dashboard` generates standalone HTML file
-- Dashboard shows: session timeline, quality trends, stagnation events, costs
-- Works offline (no external dependencies in HTML)
-
-**Already Complete**:
-- [x] Phase 25.1: Dashboard Data Aggregation (`src/analytics/dashboard/mod.rs`)
-
-### Phase 25.2: HTML Template Engine
-
-**Description**: Simple HTML template rendering for dashboard.
-
-**Requirements**:
-- [x] Create `src/analytics/dashboard/template.rs`
-- [x] Embed HTML template as const string (no external files)
-- [x] Use simple string substitution for data injection
-- [x] Include inline CSS (Tailwind-like utility classes)
-- [x] Include inline JavaScript for interactivity (collapsible sections, tooltips)
-- [x] No external CDN dependencies (fully offline)
-
-**Test-First**:
-```rust
-// - test_template_renders_valid_html
-// - test_template_substitutes_data
-// - test_template_has_no_external_dependencies
-```
-
-### Phase 25.3: Chart Generation
-
-**Description**: Generate SVG charts for visual trends.
-
-**Requirements**:
-- [x] Create `src/analytics/dashboard/charts.rs`
-- [x] Implement simple line chart SVG generator (iterations over time)
-- [x] Implement bar chart SVG generator (quality gate pass/fail)
-- [x] Implement pie chart SVG generator (time distribution by phase)
-- [x] All charts as inline SVG (no external libraries)
-
-**Test-First**:
-```rust
-// - test_line_chart_generates_valid_svg
-// - test_bar_chart_generates_valid_svg
-// - test_charts_handle_empty_data
-```
-
-### Phase 25.4: CLI Command Integration
-
-**Description**: Add `ralph analytics dashboard` command.
-
-**Requirements**:
-- [x] Add `dashboard` subcommand to `ralph analytics`
-- [x] Options: `--output <path>` (default: `.ralph/dashboard.html`), `--sessions <n>`, `--open` (open in browser)
-- [x] Generate and save HTML file
-- [x] Print path to generated file
-- [x] Optionally open in default browser
+**Current Test Count**: 1,918 passing
 
 ---
 
@@ -95,80 +33,9 @@
 
 **Already Complete**:
 - [x] Phase 26.1: Change Detection (`src/changes/mod.rs`)
-
-### Phase 26.2: Scoped Quality Gates
-
-**Description**: Run quality gates on a subset of files.
-
-**Requirements**:
-- [x] Add `files: Option<Vec<PathBuf>>` parameter to gate runners
-- [x] When `files` is Some, only process those files
-- [x] Maintain existing behavior when `files` is None (process all)
-- [x] Update all gate implementations (Rust, Python, TypeScript, Go)
-
-**Test-First**:
-```rust
-// - test_rust_gate_scoped_to_files ✓
-// - test_python_gate_scoped_to_files ✓
-// - test_gate_processes_all_when_unscoped ✓
-```
-
-### Phase 26.3: Scoped Context Building
-
-**Description**: Build context from changed files + CCG neighbors.
-
-**Requirements**:
-- [x] Add `scope: Option<ChangeScope>` to context builder
-- [x] When scoped: include changed files + their CCG neighbors (call graph)
-- [x] Use narsil-mcp `get_call_graph` to find related functions
-- [x] Graceful degradation when narsil-mcp unavailable (just use changed files)
-
-**Test-First**:
-```rust
-// - test_change_scope_new_empty ✓
-// - test_change_scope_with_files ✓
-// - test_change_scope_from_detector ✓
-// - test_builder_for_scope_exists ✓
-// - test_builder_for_scope_graceful_degradation ✓
-```
-
-### Phase 26.4: Scoped Task Selection
-
-**Description**: Prioritize tasks that affect changed files.
-
-**Requirements**:
-- [x] Add `affected_files: Option<Vec<PathBuf>>` to Task struct
-- [x] Parse affected files from task descriptions (if mentioned)
-- [x] When running scoped: prioritize tasks whose affected files overlap with changed files
-- [x] De-prioritize (but don't skip) unrelated tasks
-
-**Test-First**:
-```rust
-// - test_task_affected_files_default_is_none ✓
-// - test_task_with_affected_files ✓
-// - test_task_set_affected_files ✓
-// - test_task_affects_file_when_matching ✓
-// - test_task_affects_file_when_not_matching ✓
-// - test_task_affects_file_when_no_affected_files ✓
-// - test_task_affects_any_file_with_matches ✓
-// - test_task_affects_any_file_without_matches ✓
-// - test_task_affects_any_file_when_no_affected_files ✓
-// - test_task_has_explicit_affected_file_match ✓
-// - test_task_has_explicit_affected_file_match_returns_false_when_none ✓
-// - test_select_next_task_scoped_prioritizes_matching_tasks ✓
-// - test_select_next_task_scoped_falls_back_to_normal_selection ✓
-// - test_select_next_task_scoped_respects_in_progress_priority ✓
-// - test_select_next_task_scoped_with_empty_scope ✓
-// - test_select_next_task_scoped_handles_tasks_without_affected_files ✓
-// - test_extract_file_paths_from_simple_text ✓
-// - test_extract_file_paths_multiple_files ✓
-// - test_extract_file_paths_no_files ✓
-// - test_extract_file_paths_in_backticks ✓
-// - test_extract_file_paths_various_extensions ✓
-// - test_parse_affected_files_from_checkboxes ✓
-// - test_parse_affected_files_from_title ✓
-// - test_parse_affected_files_deduplicates ✓
-```
+- [x] Phase 26.2: Scoped Quality Gates (`run_scoped()` on all gates)
+- [x] Phase 26.3: Scoped Context Building (`ChangeScope`, CCG neighbors)
+- [x] Phase 26.4: Scoped Task Selection (`affected_files`, prioritization)
 
 ### Phase 26.5: CLI Integration
 

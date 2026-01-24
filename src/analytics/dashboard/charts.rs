@@ -367,8 +367,7 @@ impl BarChart {
             .enumerate()
             .map(|(i, point)| {
                 let x = padding as usize + gap + i * (bar_width + gap);
-                let bar_height =
-                    ((point.value / max_value) * chart_height as f64).round() as u32;
+                let bar_height = ((point.value / max_value) * chart_height as f64).round() as u32;
                 let y = padding + chart_height - bar_height;
                 let color = &colors[i % colors.len()];
 
@@ -505,7 +504,9 @@ impl PieChart {
         }
 
         // Color palette for slices
-        let colors = ["#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
+        let colors = [
+            "#3b82f6", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4",
+        ];
 
         let mut slices = Vec::new();
         let mut legends = Vec::new();
@@ -645,7 +646,10 @@ mod tests {
             "Must have SVG namespace"
         );
         assert!(svg.contains("viewBox"), "Must have viewBox attribute");
-        assert!(svg.contains("<path"), "Line chart must contain path element");
+        assert!(
+            svg.contains("<path"),
+            "Line chart must contain path element"
+        );
         assert!(svg.contains("line-chart"), "Must have line-chart class");
     }
 
@@ -664,7 +668,10 @@ mod tests {
 
         // Then: Should have circle markers for each point
         let circle_count = svg.matches("<circle").count();
-        assert_eq!(circle_count, 3, "Should have 3 circle markers for 3 data points");
+        assert_eq!(
+            circle_count, 3,
+            "Should have 3 circle markers for 3 data points"
+        );
     }
 
     #[test]
@@ -715,7 +722,10 @@ mod tests {
         // Then: Should not panic and produce valid SVG
         assert!(svg.contains("<svg"), "Must produce valid SVG");
         assert!(!svg.contains("NaN"), "Must not contain NaN values");
-        assert!(!svg.contains("Infinity"), "Must not contain Infinity values");
+        assert!(
+            !svg.contains("Infinity"),
+            "Must not contain Infinity values"
+        );
     }
 
     #[test]
@@ -727,10 +737,7 @@ mod tests {
             primary_color: "ff0000".to_string(),
             ..ChartConfig::default()
         };
-        let data = vec![
-            ChartDataPoint::new("A", 1.0),
-            ChartDataPoint::new("B", 2.0),
-        ];
+        let data = vec![ChartDataPoint::new("A", 1.0), ChartDataPoint::new("B", 2.0)];
         let chart = LineChart::new(data, config);
 
         // When: Rendering
@@ -765,7 +772,10 @@ mod tests {
             svg.contains("xmlns=\"http://www.w3.org/2000/svg\""),
             "Must have SVG namespace"
         );
-        assert!(svg.contains("<rect"), "Bar chart must contain rect elements");
+        assert!(
+            svg.contains("<rect"),
+            "Bar chart must contain rect elements"
+        );
         assert!(svg.contains("bar-chart"), "Must have bar-chart class");
     }
 
@@ -784,7 +794,10 @@ mod tests {
 
         // Then: Should have rect elements (1 background + 3 bars)
         let rect_count = svg.matches("<rect").count();
-        assert!(rect_count >= 4, "Should have at least 4 rects (1 bg + 3 bars)");
+        assert!(
+            rect_count >= 4,
+            "Should have at least 4 rects (1 bg + 3 bars)"
+        );
     }
 
     #[test]
@@ -879,7 +892,10 @@ mod tests {
             svg.contains("xmlns=\"http://www.w3.org/2000/svg\""),
             "Must have SVG namespace"
         );
-        assert!(svg.contains("<path"), "Pie chart must contain path elements for slices");
+        assert!(
+            svg.contains("<path"),
+            "Pie chart must contain path elements for slices"
+        );
         assert!(svg.contains("pie-chart"), "Must have pie-chart class");
     }
 
@@ -954,10 +970,7 @@ mod tests {
     #[test]
     fn test_pie_chart_handles_all_zero_values() {
         // Given: Data with all zeros
-        let data = vec![
-            ChartDataPoint::new("A", 0.0),
-            ChartDataPoint::new("B", 0.0),
-        ];
+        let data = vec![ChartDataPoint::new("A", 0.0), ChartDataPoint::new("B", 0.0)];
         let chart = PieChart::new(data, ChartConfig::default());
 
         // When: Rendering
@@ -995,7 +1008,10 @@ mod tests {
 
         // Then: Label should be formatted date, value should be set
         assert!(!point.label.is_empty());
-        assert!(point.label.contains('/'), "Label should be formatted as date");
+        assert!(
+            point.label.contains('/'),
+            "Label should be formatted as date"
+        );
         assert!((point.value - 100.0).abs() < f64::EPSILON);
     }
 

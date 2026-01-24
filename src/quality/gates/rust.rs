@@ -588,11 +588,7 @@ Found {} forbidden annotations.
         )
     }
 
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         let files_to_scan = match files {
             None => self.find_rust_files(project_dir)?,
             Some([]) => return Ok(Vec::new()),
@@ -930,11 +926,7 @@ Found {} TODO/FIXME comments.
         )
     }
 
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         let files_to_scan = match files {
             None => self.find_rust_files(project_dir)?,
             Some([]) => return Ok(Vec::new()),
@@ -1359,11 +1351,7 @@ fn func_b() {}
         std::fs::create_dir_all(&src_dir).unwrap();
 
         // Create multiple files with issues
-        std::fs::write(
-            src_dir.join("a.rs"),
-            "#[allow(dead_code)]\nfn a() {}",
-        )
-        .unwrap();
+        std::fs::write(src_dir.join("a.rs"), "#[allow(dead_code)]\nfn a() {}").unwrap();
         std::fs::write(
             src_dir.join("b.rs"),
             "#[allow(unused_variables)]\nfn b() {}",

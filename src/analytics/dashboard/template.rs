@@ -547,10 +547,7 @@ mod tests {
             html.contains("<style>") || html.contains("<style "),
             "HTML must contain inline style tag"
         );
-        assert!(
-            html.contains("</style>"),
-            "HTML must close style tag"
-        );
+        assert!(html.contains("</style>"), "HTML must close style tag");
         // Should have actual CSS content
         assert!(
             html.contains("font-family") || html.contains("color:") || html.contains("margin"),
@@ -572,13 +569,12 @@ mod tests {
             html.contains("<script>") || html.contains("<script "),
             "HTML must contain inline script tag"
         );
-        assert!(
-            html.contains("</script>"),
-            "HTML must close script tag"
-        );
+        assert!(html.contains("</script>"), "HTML must close script tag");
         // Should have actual JS content for interactivity
         assert!(
-            html.contains("function") || html.contains("addEventListener") || html.contains("onclick"),
+            html.contains("function")
+                || html.contains("addEventListener")
+                || html.contains("onclick"),
             "Script tag should contain JavaScript code"
         );
     }
@@ -609,10 +605,7 @@ mod tests {
             html.contains("15"),
             "HTML should contain tasks completed (15)"
         );
-        assert!(
-            html.contains("95"),
-            "HTML should contain gates passed (95)"
-        );
+        assert!(html.contains("95"), "HTML should contain gates passed (95)");
     }
 
     #[test]
@@ -642,10 +635,7 @@ mod tests {
             !html.contains("cloudflare.com"),
             "HTML must not reference Cloudflare"
         );
-        assert!(
-            !html.contains("unpkg.com"),
-            "HTML must not reference unpkg"
-        );
+        assert!(!html.contains("unpkg.com"), "HTML must not reference unpkg");
         assert!(
             !html.contains("jsdelivr.net"),
             "HTML must not reference jsDelivr"
@@ -694,8 +684,11 @@ mod tests {
         // Then: Output should have interactive collapsible elements
         // Look for common collapse patterns
         assert!(
-            html.contains("toggle") || html.contains("collapse") || html.contains("expand")
-                || html.contains("data-collapsed") || html.contains("aria-expanded"),
+            html.contains("toggle")
+                || html.contains("collapse")
+                || html.contains("expand")
+                || html.contains("data-collapsed")
+                || html.contains("aria-expanded"),
             "HTML should have collapsible section markers"
         );
     }
@@ -752,7 +745,9 @@ mod tests {
 
         // Then: Output should include when the dashboard was generated
         assert!(
-            html.contains("Generated") || html.contains("generated") || html.contains("Last updated"),
+            html.contains("Generated")
+                || html.contains("generated")
+                || html.contains("Last updated"),
             "HTML should show when dashboard was generated"
         );
     }

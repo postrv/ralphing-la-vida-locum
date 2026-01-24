@@ -434,11 +434,7 @@ pub trait QualityGate: Send + Sync {
     /// let changed_files = vec![PathBuf::from("src/main.rs")];
     /// let scoped_issues = gate.run_scoped(project, Some(&changed_files))?;
     /// ```
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         match files {
             None => self.run(project_dir),
             Some([]) => Ok(Vec::new()),

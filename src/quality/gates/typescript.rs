@@ -192,11 +192,7 @@ Found {} errors and {} warnings.
         Some("npx")
     }
 
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         match files {
             None => self.run(project_dir),
             Some([]) => Ok(Vec::new()),
@@ -653,11 +649,7 @@ Found {} type errors.
         Some("npx")
     }
 
-    fn run_scoped(
-        &self,
-        project_dir: &Path,
-        files: Option<&[PathBuf]>,
-    ) -> Result<Vec<GateIssue>> {
+    fn run_scoped(&self, project_dir: &Path, files: Option<&[PathBuf]>) -> Result<Vec<GateIssue>> {
         match files {
             None => self.run(project_dir),
             Some([]) => Ok(Vec::new()),

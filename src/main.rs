@@ -1233,7 +1233,9 @@ async fn main() -> anyhow::Result<()> {
                     json,
                     open,
                 } => {
-                    use ralph::analytics::dashboard::{DashboardData, DashboardTemplate, TimeRange};
+                    use ralph::analytics::dashboard::{
+                        DashboardData, DashboardTemplate, TimeRange,
+                    };
 
                     // Determine time range filter
                     let time_range = match sessions {
@@ -1253,9 +1255,8 @@ async fn main() -> anyhow::Result<()> {
                         let html = template.render();
 
                         // Determine output path (default: .ralph/dashboard.html)
-                        let output_path = output.unwrap_or_else(|| {
-                            project_path.join(".ralph/dashboard.html")
-                        });
+                        let output_path =
+                            output.unwrap_or_else(|| project_path.join(".ralph/dashboard.html"));
 
                         // Create parent directory if it doesn't exist
                         if let Some(parent) = output_path.parent() {
@@ -2230,16 +2231,12 @@ fn format_verification_report_markdown(report: &ralph::VerificationReport) -> St
 fn open_in_browser(path: &std::path::Path) -> anyhow::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(path)
-            .spawn()?;
+        std::process::Command::new("open").arg(path).spawn()?;
     }
 
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .spawn()?;
+        std::process::Command::new("xdg-open").arg(path).spawn()?;
     }
 
     #[cfg(target_os = "windows")]
