@@ -33,6 +33,7 @@
 pub mod claude;
 pub mod ollama;
 pub mod openai;
+pub mod router;
 
 pub use claude::{
     ClaudeApiError, ClaudeModel, ClaudeProvider, ParseClaudeModelError, RateLimitTracker,
@@ -41,6 +42,7 @@ pub use ollama::{OllamaApiError, OllamaModel, OllamaProvider};
 pub use openai::{
     OpenAiApiError, OpenAiModel, OpenAiProvider, OpenAiRateLimitTracker, ParseOpenAiModelError,
 };
+pub use router::{FallbackConfig, ProviderRouter, ProviderRouterBuilder, ProviderSelection};
 
 use anyhow::Result;
 use async_trait::async_trait;

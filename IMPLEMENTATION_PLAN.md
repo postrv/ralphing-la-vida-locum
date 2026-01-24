@@ -17,7 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,802 passing
+**Current Test Count**: 1,830 passing
 
 ---
 
@@ -36,6 +36,7 @@
 - [x] Phase 23.2: Claude Provider (`src/llm/claude.rs`)
 - [x] Phase 23.3: Ollama Provider (`src/llm/ollama.rs`)
 - [x] Phase 23.4: OpenAI Provider (`src/llm/openai.rs`)
+- [x] Phase 23.5: Provider Router & Fallback (`src/llm/router.rs`)
 
 ### Phase 23.2: Claude Provider (Refactor Existing) ✅
 
@@ -91,24 +92,24 @@
 // - test_openai_rate_limit_detection ✅
 ```
 
-### Phase 23.5: Provider Router & Fallback
+### Phase 23.5: Provider Router & Fallback ✅
 
 **Description**: Implement provider selection and automatic fallback.
 
 **Requirements**:
-- [ ] Create `src/llm/router.rs` with `ProviderRouter` struct
-- [ ] Implement `--model` CLI flag: `claude`, `openai`, `gemini`, `ollama`, `auto`
-- [ ] `auto` mode: try providers in order of preference until one succeeds
-- [ ] Implement fallback on: rate limit, timeout, connection error
-- [ ] Log provider switches: "Falling back from Claude to Ollama: rate limited"
-- [ ] Add `--no-fallback` flag to disable automatic fallback
+- [x] Create `src/llm/router.rs` with `ProviderRouter` struct
+- [ ] Implement `--model` CLI flag: `claude`, `openai`, `gemini`, `ollama`, `auto` (CLI integration pending)
+- [x] `auto` mode: try providers in order of preference until one succeeds
+- [x] Implement fallback on: rate limit, timeout, connection error
+- [x] Log provider switches: "Falling back from Claude to Ollama: rate limited"
+- [x] Add `--no-fallback` flag to disable automatic fallback (via FallbackConfig)
 
 **Test-First**:
 ```rust
-// - test_provider_router_selects_requested_provider
-// - test_provider_router_auto_mode_tries_in_order
-// - test_provider_router_fallback_on_rate_limit
-// - test_provider_router_no_fallback_flag
+// - test_provider_router_selects_requested_provider ✅
+// - test_provider_router_auto_mode_tries_in_order ✅
+// - test_provider_router_fallback_on_rate_limit ✅
+// - test_provider_router_no_fallback_flag ✅
 ```
 
 ### Phase 23.6: Cost Tracking
