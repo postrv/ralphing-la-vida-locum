@@ -1063,10 +1063,7 @@ impl ConfigLoader {
                     }
                 }
             }
-            (
-                serde_json::Value::Array(parent_arr),
-                serde_json::Value::Array(child_arr),
-            ) => {
+            (serde_json::Value::Array(parent_arr), serde_json::Value::Array(child_arr)) => {
                 match self.array_merge_strategy {
                     ArrayMergeStrategy::Replace => {
                         *parent_arr = child_arr;
@@ -1120,14 +1117,21 @@ pub enum SharedConfigError {
     /// Config validation failed.
     ValidationError { path: PathBuf, error: String },
     /// IO error reading config.
-    IoError { path: PathBuf, error: std::io::Error },
+    IoError {
+        path: PathBuf,
+        error: std::io::Error,
+    },
 }
 
 impl std::fmt::Display for SharedConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotFound { path } => {
-                write!(f, "Config file not found: {} does not exist", path.display())
+                write!(
+                    f,
+                    "Config file not found: {} does not exist",
+                    path.display()
+                )
             }
             Self::UrlNotSupported { url } => {
                 write!(
@@ -1396,7 +1400,11 @@ impl ValidationReport {
     /// Returns the exit code for the validation (0 = valid, 1 = invalid).
     #[must_use]
     pub fn exit_code(&self) -> i32 {
-        if self.is_valid() { 0 } else { 1 }
+        if self.is_valid() {
+            0
+        } else {
+            1
+        }
     }
 
     /// Generate a human-readable summary of the validation result.
@@ -1576,7 +1584,9 @@ impl ConfigValidator {
                     }
                 }
                 Err(e) => {
-                    report.errors.push(format!("Cannot read settings.json: {}", e));
+                    report
+                        .errors
+                        .push(format!("Cannot read settings.json: {}", e));
                     return Ok(report);
                 }
             }
@@ -1599,7 +1609,9 @@ impl ConfigValidator {
                     report.inheritance_chain = chain;
                 }
                 Err(e) => {
-                    report.errors.push(format!("Inheritance chain error: {}", e));
+                    report
+                        .errors
+                        .push(format!("Inheritance chain error: {}", e));
                 }
             }
 
@@ -1609,11 +1621,15 @@ impl ConfigValidator {
                 Ok(config) => {
                     // Validate the loaded config
                     if let Err(e) = config.predictor_weights.validate() {
-                        report.errors.push(format!("Predictor weights validation error: {}", e));
+                        report
+                            .errors
+                            .push(format!("Predictor weights validation error: {}", e));
                     }
 
                     if let Err(e) = config.llm.validate() {
-                        report.errors.push(format!("LLM config validation error: {}", e));
+                        report
+                            .errors
+                            .push(format!("LLM config validation error: {}", e));
                     }
                 }
                 Err(e) => {
@@ -1622,16 +1638,14 @@ impl ConfigValidator {
             }
         } else {
             // No settings.json - warn and use defaults
-            report.warnings.push(
-                "settings.json not found - using defaults".to_string()
-            );
+            report
+                .warnings
+                .push("settings.json not found - using defaults".to_string());
 
             // Still set up inheritance chain for the missing file
-            report.inheritance_chain.add_source(
-                ConfigLevel::Project,
-                settings_path,
-                false,
-            );
+            report
+                .inheritance_chain
+                .add_source(ConfigLevel::Project, settings_path, false);
         }
 
         // Check mcp.json if it exists
@@ -1660,9 +1674,9 @@ impl ConfigValidator {
         if claude_md_path.exists() {
             report.files_checked.push(claude_md_path);
         } else {
-            report.warnings.push(
-                "CLAUDE.md not found - project instructions may be missing".to_string()
-            );
+            report
+                .warnings
+                .push("CLAUDE.md not found - project instructions may be missing".to_string());
         }
 
         // Add system/user config paths to inheritance chain if they exist
@@ -2393,8 +2407,7 @@ mod tests {
         .unwrap();
 
         // Load with inheritance
-        let loader = ConfigLoader::new()
-            .with_user_config_path(user_config_dir.join("config.json"));
+        let loader = ConfigLoader::new().with_user_config_path(user_config_dir.join("config.json"));
         let config = loader.load(&project_dir).unwrap();
 
         // Project value should be used (file_churn from project)
@@ -2537,11 +2550,17 @@ mod tests {
 
         // Arrays should be merged
         assert!(
-            config.permissions.allow.contains(&"Bash(git *)".to_string()),
+            config
+                .permissions
+                .allow
+                .contains(&"Bash(git *)".to_string()),
             "User's git permission should be in merged array"
         );
         assert!(
-            config.permissions.allow.contains(&"Bash(cargo *)".to_string()),
+            config
+                .permissions
+                .allow
+                .contains(&"Bash(cargo *)".to_string()),
             "Project's cargo permission should be in merged array"
         );
         assert_eq!(
@@ -2581,11 +2600,17 @@ mod tests {
 
         // Project arrays should replace user arrays
         assert!(
-            !config.permissions.allow.contains(&"Bash(git *)".to_string()),
+            !config
+                .permissions
+                .allow
+                .contains(&"Bash(git *)".to_string()),
             "User's git permission should NOT be present with Replace strategy"
         );
         assert!(
-            config.permissions.allow.contains(&"Bash(cargo *)".to_string()),
+            config
+                .permissions
+                .allow
+                .contains(&"Bash(cargo *)".to_string()),
             "Project's cargo permission should be present"
         );
         assert_eq!(
@@ -2803,7 +2828,9 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("URL") || err_msg.contains("not supported") || err_msg.contains("cloud"),
+            err_msg.contains("URL")
+                || err_msg.contains("not supported")
+                || err_msg.contains("cloud"),
             "Should indicate URL extends is not yet supported: {}",
             err_msg
         );
@@ -2829,7 +2856,9 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(
-            err_msg.contains("nonexistent") || err_msg.contains("not found") || err_msg.contains("does not exist"),
+            err_msg.contains("nonexistent")
+                || err_msg.contains("not found")
+                || err_msg.contains("does not exist"),
             "Error should mention the missing file path: {}",
             err_msg
         );
@@ -2925,18 +2954,10 @@ mod tests {
         // Create config A that extends config B
         let config_dir = project_dir.join("config");
         std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join("a.json"),
-            r#"{"extends": "config/b.json"}"#,
-        )
-        .unwrap();
+        std::fs::write(config_dir.join("a.json"), r#"{"extends": "config/b.json"}"#).unwrap();
 
         // Create config B that extends config A (circular)
-        std::fs::write(
-            config_dir.join("b.json"),
-            r#"{"extends": "config/a.json"}"#,
-        )
-        .unwrap();
+        std::fs::write(config_dir.join("b.json"), r#"{"extends": "config/a.json"}"#).unwrap();
 
         // Create project config that extends config A
         std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
@@ -3053,7 +3074,10 @@ mod tests {
         let report = result.unwrap();
         assert!(!report.is_valid());
         assert!(!report.errors.is_empty());
-        assert!(report.errors.iter().any(|e| e.contains("syntax") || e.contains("parse")));
+        assert!(report
+            .errors
+            .iter()
+            .any(|e| e.contains("syntax") || e.contains("parse")));
     }
 
     #[test]
@@ -3138,7 +3162,10 @@ mod tests {
         assert!(result.is_ok());
         let report = result.unwrap();
         assert!(!report.is_valid());
-        assert!(report.errors.iter().any(|e| e.contains("nonexistent") || e.contains("not found")));
+        assert!(report
+            .errors
+            .iter()
+            .any(|e| e.contains("nonexistent") || e.contains("not found")));
     }
 
     #[test]
@@ -3148,11 +3175,7 @@ mod tests {
 
         // Create an empty config (missing typical fields)
         std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
-        std::fs::write(
-            project_dir.join(".claude/settings.json"),
-            r#"{}"#,
-        )
-        .unwrap();
+        std::fs::write(project_dir.join(".claude/settings.json"), r#"{}"#).unwrap();
 
         let validator = ConfigValidator::new(project_dir);
         let result = validator.validate();
@@ -3260,11 +3283,7 @@ mod tests {
         .unwrap();
 
         // Create invalid mcp.json
-        std::fs::write(
-            project_dir.join(".claude/mcp.json"),
-            r#"{"invalid json"#,
-        )
-        .unwrap();
+        std::fs::write(project_dir.join(".claude/mcp.json"), r#"{"invalid json"#).unwrap();
 
         let validator = ConfigValidator::new(project_dir);
         let result = validator.validate().unwrap();
@@ -3306,7 +3325,10 @@ mod tests {
         let report = result.unwrap();
         // No config files is valid (uses defaults)
         assert!(report.is_valid());
-        assert!(report.warnings.iter().any(|w| w.contains("settings") || w.contains("defaults")));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|w| w.contains("settings") || w.contains("defaults")));
     }
 
     #[test]
@@ -3317,16 +3339,8 @@ mod tests {
         // Create circular extends
         let config_dir = project_dir.join("config");
         std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join("a.json"),
-            r#"{"extends": "config/b.json"}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            config_dir.join("b.json"),
-            r#"{"extends": "config/a.json"}"#,
-        )
-        .unwrap();
+        std::fs::write(config_dir.join("a.json"), r#"{"extends": "config/b.json"}"#).unwrap();
+        std::fs::write(config_dir.join("b.json"), r#"{"extends": "config/a.json"}"#).unwrap();
 
         // Create project config
         std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
@@ -3340,6 +3354,9 @@ mod tests {
         let result = validator.validate().unwrap();
 
         assert!(!result.is_valid());
-        assert!(result.errors.iter().any(|e| e.to_lowercase().contains("circular")));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_lowercase().contains("circular")));
     }
 }

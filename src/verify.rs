@@ -407,16 +407,25 @@ impl VerificationReport {
 
     /// Get findings by severity.
     #[must_use]
-    pub fn findings_by_severity(&self, severity: VerificationSeverity) -> Vec<&VerificationFinding> {
-        self.findings.iter().filter(|f| f.severity == severity).collect()
+    pub fn findings_by_severity(
+        &self,
+        severity: VerificationSeverity,
+    ) -> Vec<&VerificationFinding> {
+        self.findings
+            .iter()
+            .filter(|f| f.severity == severity)
+            .collect()
     }
 
     /// Check if there are any blocking findings.
     #[must_use]
     pub fn has_blocking_findings(&self) -> bool {
-        self.findings
-            .iter()
-            .any(|f| matches!(f.severity, VerificationSeverity::Error | VerificationSeverity::Critical))
+        self.findings.iter().any(|f| {
+            matches!(
+                f.severity,
+                VerificationSeverity::Error | VerificationSeverity::Critical
+            )
+        })
     }
 
     /// Serialize to JSON.
@@ -425,8 +434,9 @@ impl VerificationReport {
     ///
     /// Returns an error if serialization fails.
     pub fn to_json(&self) -> Result<String> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| crate::error::RalphError::Internal(format!("JSON serialization failed: {}", e)))
+        serde_json::to_string_pretty(self).map_err(|e| {
+            crate::error::RalphError::Internal(format!("JSON serialization failed: {}", e))
+        })
     }
 }
 
@@ -490,7 +500,12 @@ pub trait CcgVerifier: Send + Sync {
     /// # Errors
     ///
     /// Returns an error if verification fails.
-    fn verify_between(&self, path: &str, before_ref: &str, after_ref: &str) -> Result<VerificationReport>;
+    fn verify_between(
+        &self,
+        path: &str,
+        before_ref: &str,
+        after_ref: &str,
+    ) -> Result<VerificationReport>;
 
     /// Check if the verifier is using mock mode.
     #[must_use]
@@ -572,7 +587,11 @@ impl MockCcgVerifier {
             "timestamp": Utc::now().to_rfc3339(),
         });
 
-        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+        let _ = writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&log_entry).unwrap_or_default()
+        );
     }
 
     /// Generate mock quality deltas.
@@ -634,7 +653,12 @@ impl CcgVerifier for MockCcgVerifier {
         Ok(report)
     }
 
-    fn verify_between(&self, path: &str, before_ref: &str, after_ref: &str) -> Result<VerificationReport> {
+    fn verify_between(
+        &self,
+        path: &str,
+        before_ref: &str,
+        after_ref: &str,
+    ) -> Result<VerificationReport> {
         self.log_mock_operation(
             "verify_between",
             &format!("path={}, before={}, after={}", path, before_ref, after_ref),
@@ -949,7 +973,10 @@ mod tests {
         assert_eq!(restored.mock_mode, config.mock_mode);
         assert_eq!(restored.log_file, config.log_file);
         assert_eq!(restored.narsil_binary, config.narsil_binary);
-        assert!((restored.min_improvement_threshold - config.min_improvement_threshold).abs() < f64::EPSILON);
+        assert!(
+            (restored.min_improvement_threshold - config.min_improvement_threshold).abs()
+                < f64::EPSILON
+        );
     }
 
     #[test]
@@ -962,13 +989,11 @@ mod tests {
 
     #[test]
     fn test_improvement_score_clamped() {
-        let report = VerificationReport::new("Test", true)
-            .with_improvement_score(1.5); // Above max
+        let report = VerificationReport::new("Test", true).with_improvement_score(1.5); // Above max
 
         assert_eq!(report.improvement_score, 1.0);
 
-        let report = VerificationReport::new("Test", true)
-            .with_improvement_score(-0.5); // Below min
+        let report = VerificationReport::new("Test", true).with_improvement_score(-0.5); // Below min
 
         assert_eq!(report.improvement_score, 0.0);
     }
@@ -976,9 +1001,21 @@ mod tests {
     #[test]
     fn test_findings_by_severity() {
         let report = VerificationReport::new("Test", true)
-            .with_finding(VerificationFinding::new(VerificationSeverity::Info, "a", "info"))
-            .with_finding(VerificationFinding::new(VerificationSeverity::Warning, "b", "warn"))
-            .with_finding(VerificationFinding::new(VerificationSeverity::Info, "c", "info2"));
+            .with_finding(VerificationFinding::new(
+                VerificationSeverity::Info,
+                "a",
+                "info",
+            ))
+            .with_finding(VerificationFinding::new(
+                VerificationSeverity::Warning,
+                "b",
+                "warn",
+            ))
+            .with_finding(VerificationFinding::new(
+                VerificationSeverity::Info,
+                "c",
+                "info2",
+            ));
 
         let info_findings = report.findings_by_severity(VerificationSeverity::Info);
         assert_eq!(info_findings.len(), 2);

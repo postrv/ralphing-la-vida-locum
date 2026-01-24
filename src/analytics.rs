@@ -1038,7 +1038,11 @@ impl StructuredEvent {
     /// );
     /// ```
     #[must_use]
-    pub fn new(session_id: impl Into<String>, event_type: EventType, data: serde_json::Value) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        event_type: EventType,
+        data: serde_json::Value,
+    ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
             session_id: session_id.into(),
@@ -1181,12 +1185,12 @@ impl EventFilter {
     #[must_use]
     pub fn matches(&self, event: &StructuredEvent) -> bool {
         // Check event type filter
-        let type_matches = self.event_types.is_empty()
-            || self.event_types.contains(&event.event_type);
+        let type_matches =
+            self.event_types.is_empty() || self.event_types.contains(&event.event_type);
 
         // Check session ID filter
-        let session_matches = self.session_id.is_none()
-            || self.session_id.as_ref() == Some(&event.session_id);
+        let session_matches =
+            self.session_id.is_none() || self.session_id.as_ref() == Some(&event.session_id);
 
         type_matches && session_matches
     }
@@ -1416,7 +1420,10 @@ impl SessionReport {
         }
 
         md.push_str(&format!("**Iterations:** {}\n\n", self.iterations));
-        md.push_str(&format!("**Tasks Completed:** {}\n\n", self.tasks_completed));
+        md.push_str(&format!(
+            "**Tasks Completed:** {}\n\n",
+            self.tasks_completed
+        ));
         md.push_str(&format!("**Stagnations:** {}\n\n", self.stagnations));
         md.push_str(&format!("**Errors:** {}\n\n", self.errors));
 
@@ -1428,7 +1435,10 @@ impl SessionReport {
 
         // Quality Gates section
         md.push_str("## Quality Gates\n\n");
-        md.push_str(&format!("**Total Runs:** {}\n\n", self.gate_stats.total_runs));
+        md.push_str(&format!(
+            "**Total Runs:** {}\n\n",
+            self.gate_stats.total_runs
+        ));
         md.push_str(&format!("**Passed:** {}\n\n", self.gate_stats.passed));
         md.push_str(&format!("**Failed:** {}\n\n", self.gate_stats.failed));
         md.push_str(&format!(
@@ -1440,7 +1450,10 @@ impl SessionReport {
         md.push_str("## Performance\n\n");
 
         if let Some(accuracy) = self.predictor_accuracy {
-            md.push_str(&format!("**Predictor Accuracy:** {:.1}%\n\n", accuracy * 100.0));
+            md.push_str(&format!(
+                "**Predictor Accuracy:** {:.1}%\n\n",
+                accuracy * 100.0
+            ));
         } else {
             md.push_str("**Predictor Accuracy:** N/A\n\n");
         }
@@ -1676,10 +1689,7 @@ impl Analytics {
                         report = report.with_predictor_accuracy(accuracy);
                     }
                     // Extract tasks completed from session end event
-                    if let Some(tasks) = event
-                        .data
-                        .get("tasks_completed")
-                        .and_then(|v| v.as_u64())
+                    if let Some(tasks) = event.data.get("tasks_completed").and_then(|v| v.as_u64())
                     {
                         report = report.with_tasks_completed(tasks as usize);
                     }
@@ -1687,10 +1697,7 @@ impl Analytics {
                 EventType::Iteration => {
                     report.iterations += 1;
                     // Check for stagnation in iteration data
-                    if let Some(stagnation) = event
-                        .data
-                        .get("stagnation")
-                        .and_then(|v| v.as_u64())
+                    if let Some(stagnation) = event.data.get("stagnation").and_then(|v| v.as_u64())
                     {
                         if stagnation > 0 {
                             report.stagnations += 1;
@@ -3031,11 +3038,8 @@ mod tests {
 
     #[test]
     fn test_structured_event_has_event_type() {
-        let event = StructuredEvent::new(
-            "test-session",
-            EventType::GateResult,
-            serde_json::json!({}),
-        );
+        let event =
+            StructuredEvent::new("test-session", EventType::GateResult, serde_json::json!({}));
 
         assert_eq!(event.event_type, EventType::GateResult);
     }
@@ -3178,10 +3182,7 @@ mod tests {
         let restored: PredictorDecisionEventData = serde_json::from_str(&json).unwrap();
 
         assert_eq!(restored.risk_score, 75.0);
-        assert_eq!(
-            restored.action_recommended,
-            Some("checkpoint".to_string())
-        );
+        assert_eq!(restored.action_recommended, Some("checkpoint".to_string()));
     }
 
     // ========================================================================
@@ -3211,9 +3212,7 @@ mod tests {
         let events = analytics.read_structured_events_filtered(&filter).unwrap();
 
         assert_eq!(events.len(), 2);
-        assert!(events
-            .iter()
-            .all(|e| e.event_type == EventType::Iteration));
+        assert!(events.iter().all(|e| e.event_type == EventType::Iteration));
     }
 
     #[test]
@@ -3228,7 +3227,11 @@ mod tests {
             .log_structured_event("session1", EventType::GateResult, serde_json::json!({}))
             .unwrap();
         analytics
-            .log_structured_event("session1", EventType::PredictorDecision, serde_json::json!({}))
+            .log_structured_event(
+                "session1",
+                EventType::PredictorDecision,
+                serde_json::json!({}),
+            )
             .unwrap();
         analytics
             .log_structured_event("session1", EventType::SessionEnd, serde_json::json!({}))
@@ -3316,8 +3319,7 @@ mod tests {
 
     #[test]
     fn test_session_report_includes_iteration_count() {
-        let report = SessionReport::new("test-session")
-            .with_iterations(10);
+        let report = SessionReport::new("test-session").with_iterations(10);
 
         assert_eq!(report.session_id, "test-session");
         assert_eq!(report.iterations, 10);
@@ -3325,20 +3327,18 @@ mod tests {
 
     #[test]
     fn test_session_report_includes_tasks_completed() {
-        let report = SessionReport::new("test-session")
-            .with_tasks_completed(5);
+        let report = SessionReport::new("test-session").with_tasks_completed(5);
 
         assert_eq!(report.tasks_completed, 5);
     }
 
     #[test]
     fn test_session_report_includes_gate_pass_fail_rates() {
-        let report = SessionReport::new("test-session")
-            .with_gate_stats(GateStats {
-                total_runs: 20,
-                passed: 18,
-                failed: 2,
-            });
+        let report = SessionReport::new("test-session").with_gate_stats(GateStats {
+            total_runs: 20,
+            passed: 18,
+            failed: 2,
+        });
 
         assert_eq!(report.gate_stats.total_runs, 20);
         assert_eq!(report.gate_stats.passed, 18);
@@ -3348,8 +3348,7 @@ mod tests {
 
     #[test]
     fn test_session_report_includes_predictor_accuracy() {
-        let report = SessionReport::new("test-session")
-            .with_predictor_accuracy(0.85);
+        let report = SessionReport::new("test-session").with_predictor_accuracy(0.85);
 
         assert_eq!(report.predictor_accuracy, Some(0.85));
     }
@@ -3546,11 +3545,7 @@ mod tests {
 
         // Log session with task completions
         analytics
-            .log_structured_event(
-                "session1",
-                EventType::SessionStart,
-                serde_json::json!({}),
-            )
+            .log_structured_event("session1", EventType::SessionStart, serde_json::json!({}))
             .unwrap();
 
         // Log task completions as custom events
@@ -3645,8 +3640,7 @@ mod tests {
 
     #[test]
     fn test_session_report_export_to_format() {
-        let report = SessionReport::new("test-session")
-            .with_iterations(5);
+        let report = SessionReport::new("test-session").with_iterations(5);
 
         let json_output = report.export(ReportFormat::Json).unwrap();
         assert!(json_output.contains("\"session_id\""));

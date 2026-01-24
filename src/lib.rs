@@ -96,8 +96,8 @@ pub use analytics::{
     AggregateStats, Analytics, AnalyticsEvent, AnalyticsUploadConfig, AnalyticsUploader,
     EventFilter, EventType, GateIssueEventData, GateResultEventData, GateStats,
     PredictorAccuracyStats, PredictorDecisionEventData, PrivacySettings, QualityMetricsSnapshot,
-    QualityTrend, ReportFormat, SessionReport, SessionSummary, StubAnalyticsUploader,
-    StructuredEvent, TrendData, TrendDirection, TrendMetric, TrendPoint, SCHEMA_VERSION,
+    QualityTrend, ReportFormat, SessionReport, SessionSummary, StructuredEvent,
+    StubAnalyticsUploader, TrendData, TrendDirection, TrendMetric, TrendPoint, SCHEMA_VERSION,
 };
 
 // Re-export audit types
@@ -108,8 +108,8 @@ pub use audit::{
 
 // Re-export campaign types
 pub use campaign::{
-    Campaign, CampaignApi, CampaignConfig, CampaignStatus, CampaignUpdate, CloudCampaignApi,
-    CloudOperationResult, LocalCampaignApi, create_campaign_api,
+    create_campaign_api, Campaign, CampaignApi, CampaignConfig, CampaignStatus, CampaignUpdate,
+    CloudCampaignApi, CloudOperationResult, LocalCampaignApi,
 };
 
 // Re-export LLM types
@@ -125,8 +125,8 @@ pub use bootstrap::templates::{TemplateKind, TemplateRegistry};
 
 // Re-export verify types
 pub use verify::{
-    CcgVerifier, MockCcgVerifier, QualityDelta, VerificationConfig, VerificationFinding,
-    VerificationReport, VerificationSeverity, create_verifier,
+    create_verifier, CcgVerifier, MockCcgVerifier, QualityDelta, VerificationConfig,
+    VerificationFinding, VerificationReport, VerificationSeverity,
 };
 
 // TestFixture is only available in test builds

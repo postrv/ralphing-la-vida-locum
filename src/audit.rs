@@ -484,10 +484,7 @@ impl AuditLogger {
                 return Ok(VerificationResult::invalid(
                     i as u64,
                     entry.sequence,
-                    format!(
-                        "Sequence mismatch: expected {}, got {}",
-                        i, entry.sequence
-                    ),
+                    format!("Sequence mismatch: expected {}, got {}", i, entry.sequence),
                 ));
             }
 
@@ -1078,7 +1075,12 @@ mod tests {
         let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
 
         logger
-            .log_commit("session-1", "abc123", "feat: first commit", "dev@example.com")
+            .log_commit(
+                "session-1",
+                "abc123",
+                "feat: first commit",
+                "dev@example.com",
+            )
             .unwrap();
         logger
             .log_commit("session-1", "def456", "fix: bug fix", "dev@example.com")
@@ -1376,12 +1378,18 @@ mod tests {
 
     #[test]
     fn test_audit_event_type_display() {
-        assert_eq!(AuditEventType::CommandExecution.to_string(), "command_execution");
+        assert_eq!(
+            AuditEventType::CommandExecution.to_string(),
+            "command_execution"
+        );
         assert_eq!(AuditEventType::GateResult.to_string(), "gate_result");
         assert_eq!(AuditEventType::Commit.to_string(), "commit");
         assert_eq!(AuditEventType::SessionStart.to_string(), "session_start");
         assert_eq!(AuditEventType::SessionEnd.to_string(), "session_end");
-        assert_eq!(AuditEventType::CheckpointCreated.to_string(), "checkpoint_created");
+        assert_eq!(
+            AuditEventType::CheckpointCreated.to_string(),
+            "checkpoint_created"
+        );
         assert_eq!(AuditEventType::Rollback.to_string(), "rollback");
         assert_eq!(AuditEventType::ConfigChange.to_string(), "config_change");
     }
@@ -1410,15 +1418,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
 
-        logger
-            .log_command("session-1", "cmd1", 0, None)
-            .unwrap();
-        logger
-            .log_command("session-2", "cmd2", 0, None)
-            .unwrap();
-        logger
-            .log_command("session-1", "cmd3", 0, None)
-            .unwrap();
+        logger.log_command("session-1", "cmd1", 0, None).unwrap();
+        logger.log_command("session-2", "cmd2", 0, None).unwrap();
+        logger.log_command("session-1", "cmd3", 0, None).unwrap();
 
         let session1_entries = logger.get_entries_by_session("session-1").unwrap();
         assert_eq!(session1_entries.len(), 2);
@@ -1434,14 +1436,10 @@ mod tests {
 
         assert_eq!(logger.entry_count().unwrap(), 0);
 
-        logger
-            .log_command("session-1", "cmd1", 0, None)
-            .unwrap();
+        logger.log_command("session-1", "cmd1", 0, None).unwrap();
         assert_eq!(logger.entry_count().unwrap(), 1);
 
-        logger
-            .log_command("session-1", "cmd2", 0, None)
-            .unwrap();
+        logger.log_command("session-1", "cmd2", 0, None).unwrap();
         assert_eq!(logger.entry_count().unwrap(), 2);
     }
 
@@ -1450,12 +1448,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
 
-        logger
-            .log_command("session-1", "cmd1", 0, None)
-            .unwrap();
-        logger
-            .log_command("session-1", "cmd2", 0, None)
-            .unwrap();
+        logger.log_command("session-1", "cmd1", 0, None).unwrap();
+        logger.log_command("session-1", "cmd2", 0, None).unwrap();
 
         assert_eq!(logger.entry_count().unwrap(), 2);
 
@@ -1632,7 +1626,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(entries.len(), 2);
-        assert!(entries.iter().all(|e| e.event_type == AuditEventType::GateResult));
+        assert!(entries
+            .iter()
+            .all(|e| e.event_type == AuditEventType::GateResult));
     }
 
     #[test]
@@ -1660,7 +1656,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(entries.len(), 3);
-        assert!(entries.iter().all(|e| e.event_type == AuditEventType::CommandExecution));
+        assert!(entries
+            .iter()
+            .all(|e| e.event_type == AuditEventType::CommandExecution));
     }
 
     #[test]
@@ -1740,9 +1738,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
 
-        logger
-            .log_command("session-1", "cmd1", 0, None)
-            .unwrap();
+        logger.log_command("session-1", "cmd1", 0, None).unwrap();
         logger
             .log_gate_result("session-1", "gate1", true, None)
             .unwrap();
@@ -1766,9 +1762,15 @@ mod tests {
         let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
 
         // Create a valid log with multiple entries
-        logger.log_command("session-1", "cargo build", 0, None).unwrap();
-        logger.log_command("session-1", "cargo test", 0, None).unwrap();
-        logger.log_gate_result("session-1", "clippy", true, None).unwrap();
+        logger
+            .log_command("session-1", "cargo build", 0, None)
+            .unwrap();
+        logger
+            .log_command("session-1", "cargo test", 0, None)
+            .unwrap();
+        logger
+            .log_gate_result("session-1", "clippy", true, None)
+            .unwrap();
 
         let result = logger.verify().unwrap();
 
@@ -1816,9 +1818,15 @@ mod tests {
         let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
 
         // Create a valid log
-        logger.log_command("session-1", "cargo build", 0, None).unwrap();
-        logger.log_gate_result("session-1", "clippy", true, None).unwrap();
-        logger.log_commit("session-1", "abc123", "test commit", "dev@example.com").unwrap();
+        logger
+            .log_command("session-1", "cargo build", 0, None)
+            .unwrap();
+        logger
+            .log_gate_result("session-1", "clippy", true, None)
+            .unwrap();
+        logger
+            .log_commit("session-1", "abc123", "test commit", "dev@example.com")
+            .unwrap();
 
         let result = logger.verify().unwrap();
 
@@ -1831,7 +1839,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
 
-        logger.log_command("session-1", "cargo test", 0, None).unwrap();
+        logger
+            .log_command("session-1", "cargo test", 0, None)
+            .unwrap();
 
         // Tamper with the log by modifying the file directly
         let file_path = temp_dir.path().join(".ralph/audit.jsonl");
@@ -1845,7 +1855,10 @@ mod tests {
         let result = logger.verify().unwrap();
 
         assert!(!result.is_valid);
-        assert!(result.error_description.unwrap().contains("hash verification failed"));
+        assert!(result
+            .error_description
+            .unwrap()
+            .contains("hash verification failed"));
     }
 
     #[test]

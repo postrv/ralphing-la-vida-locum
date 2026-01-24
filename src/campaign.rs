@@ -379,26 +379,29 @@ impl CampaignApi for LocalCampaignApi {
             metadata: HashMap::new(),
         };
 
-        let mut campaigns = self.campaigns.write().map_err(|e| {
-            crate::error::RalphError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let mut campaigns = self
+            .campaigns
+            .write()
+            .map_err(|e| crate::error::RalphError::Internal(format!("Lock poisoned: {}", e)))?;
 
         campaigns.insert(campaign.id.clone(), campaign.clone());
         Ok(campaign)
     }
 
     fn get_campaign(&self, id: &str) -> Result<Option<Campaign>> {
-        let campaigns = self.campaigns.read().map_err(|e| {
-            crate::error::RalphError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let campaigns = self
+            .campaigns
+            .read()
+            .map_err(|e| crate::error::RalphError::Internal(format!("Lock poisoned: {}", e)))?;
 
         Ok(campaigns.get(id).cloned())
     }
 
     fn update_campaign(&self, id: &str, updates: CampaignUpdate) -> Result<Campaign> {
-        let mut campaigns = self.campaigns.write().map_err(|e| {
-            crate::error::RalphError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let mut campaigns = self
+            .campaigns
+            .write()
+            .map_err(|e| crate::error::RalphError::Internal(format!("Lock poisoned: {}", e)))?;
 
         let campaign = campaigns.get_mut(id).ok_or_else(|| {
             crate::error::RalphError::NotFound(format!("Campaign not found: {}", id))
@@ -422,9 +425,10 @@ impl CampaignApi for LocalCampaignApi {
     }
 
     fn delete_campaign(&self, id: &str) -> Result<()> {
-        let mut campaigns = self.campaigns.write().map_err(|e| {
-            crate::error::RalphError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let mut campaigns = self
+            .campaigns
+            .write()
+            .map_err(|e| crate::error::RalphError::Internal(format!("Lock poisoned: {}", e)))?;
 
         if campaigns.remove(id).is_none() {
             return Err(crate::error::RalphError::NotFound(format!(
@@ -437,9 +441,10 @@ impl CampaignApi for LocalCampaignApi {
     }
 
     fn list_campaigns(&self) -> Result<Vec<Campaign>> {
-        let campaigns = self.campaigns.read().map_err(|e| {
-            crate::error::RalphError::Internal(format!("Lock poisoned: {}", e))
-        })?;
+        let campaigns = self
+            .campaigns
+            .read()
+            .map_err(|e| crate::error::RalphError::Internal(format!("Lock poisoned: {}", e)))?;
 
         Ok(campaigns.values().cloned().collect())
     }
@@ -537,7 +542,11 @@ impl CloudCampaignApi {
             "timestamp": Utc::now().to_rfc3339(),
         });
 
-        let _ = writeln!(file, "{}", serde_json::to_string(&log_entry).unwrap_or_default());
+        let _ = writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&log_entry).unwrap_or_default()
+        );
     }
 }
 
@@ -737,7 +746,9 @@ mod tests {
         assert!(!api.is_cloud_enabled());
 
         // Should be able to create campaigns locally
-        let campaign = api.create_campaign("Local Campaign", Some("A local test")).unwrap();
+        let campaign = api
+            .create_campaign("Local Campaign", Some("A local test"))
+            .unwrap();
         assert_eq!(campaign.name, "Local Campaign");
         assert_eq!(campaign.description, Some("A local test".to_string()));
         assert_eq!(campaign.status, CampaignStatus::Pending);

@@ -1147,17 +1147,9 @@ async fn main() -> anyhow::Result<()> {
                         // Final status
                         println!();
                         if report.is_valid() {
-                            println!(
-                                "   {} {}",
-                                "OK".green().bold(),
-                                report.summary()
-                            );
+                            println!("   {} {}", "OK".green().bold(), report.summary());
                         } else {
-                            eprintln!(
-                                "   {} {}",
-                                "Failed:".red().bold(),
-                                report.summary()
-                            );
+                            eprintln!("   {} {}", "Failed:".red().bold(), report.summary());
                         }
                     }
 
@@ -1536,19 +1528,10 @@ async fn main() -> anyhow::Result<()> {
                         println!("{}", "─".repeat(60));
 
                         if verify_result.is_valid {
-                            println!(
-                                "   {} Hash chain integrity verified",
-                                "✓".green().bold()
-                            );
-                            println!(
-                                "   Entries verified: {}",
-                                verify_result.entries_verified
-                            );
+                            println!("   {} Hash chain integrity verified", "✓".green().bold());
+                            println!("   Entries verified: {}", verify_result.entries_verified);
                         } else {
-                            println!(
-                                "   {} Hash chain integrity check failed",
-                                "✗".red().bold()
-                            );
+                            println!("   {} Hash chain integrity check failed", "✗".red().bold());
                             println!(
                                 "   Entries verified before corruption: {}",
                                 verify_result.first_invalid_entry.unwrap_or(0)
@@ -1563,10 +1546,7 @@ async fn main() -> anyhow::Result<()> {
                             println!();
                             println!("{}", "─".repeat(60));
                             if r.repaired {
-                                println!(
-                                    "   {} Audit log repaired",
-                                    "✓".green().bold()
-                                );
+                                println!("   {} Audit log repaired", "✓".green().bold());
                                 println!("   Entries removed: {}", r.entries_removed);
                                 println!("   Valid entries kept: {}", r.valid_entries_kept);
                                 if let Some(ref backup) = r.backup_path {
@@ -1653,28 +1633,42 @@ fn format_audit_details(data: &serde_json::Value, event_type: &ralph::AuditEvent
             let command = data.get("command").and_then(|v| v.as_str()).unwrap_or("?");
             let exit_code = data.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(-1);
             let status = if exit_code == 0 { "✓" } else { "✗" };
-            format!("{} {} (exit: {})", status, truncate_str(command, 50), exit_code)
+            format!(
+                "{} {} (exit: {})",
+                status,
+                truncate_str(command, 50),
+                exit_code
+            )
         }
         ralph::AuditEventType::GateResult => {
-            let gate_name = data.get("gate_name").and_then(|v| v.as_str()).unwrap_or("?");
-            let passed = data.get("passed").and_then(|v| v.as_bool()).unwrap_or(false);
+            let gate_name = data
+                .get("gate_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let passed = data
+                .get("passed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let status = if passed { "✓ passed" } else { "✗ failed" };
             format!("{}: {}", gate_name, status)
         }
         ralph::AuditEventType::Commit => {
-            let hash = data.get("commit_hash").and_then(|v| v.as_str()).unwrap_or("?");
+            let hash = data
+                .get("commit_hash")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let message = data.get("message").and_then(|v| v.as_str()).unwrap_or("");
-            format!("{} - {}", &hash[..7.min(hash.len())], truncate_str(message, 40))
+            format!(
+                "{} - {}",
+                &hash[..7.min(hash.len())],
+                truncate_str(message, 40)
+            )
         }
         ralph::AuditEventType::SessionStart | ralph::AuditEventType::SessionEnd => {
             "session boundary".to_string()
         }
-        ralph::AuditEventType::CheckpointCreated => {
-            "checkpoint created".to_string()
-        }
-        ralph::AuditEventType::Rollback => {
-            "rollback performed".to_string()
-        }
+        ralph::AuditEventType::CheckpointCreated => "checkpoint created".to_string(),
+        ralph::AuditEventType::Rollback => "rollback performed".to_string(),
         ralph::AuditEventType::ConfigChange => {
             let setting = data.get("setting").and_then(|v| v.as_str()).unwrap_or("?");
             format!("changed: {}", setting)
