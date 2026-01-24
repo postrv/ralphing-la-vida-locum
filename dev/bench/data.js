@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769280765988,
+  "lastUpdate": 1769280945328,
   "repoUrl": "https://github.com/postrv/ralphing-la-vida-locum",
   "entries": {
     "Ralph Performance Benchmarks": [
@@ -644,6 +644,135 @@ window.BENCHMARK_DATA = {
           {
             "name": "context_building/typical_context",
             "value": 852.6536977714364,
+            "unit": "ns"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "committer": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "distinct": true,
+          "id": "2b6bfd0e577328b9aceb010f98befd7127f8578e",
+          "message": "style: Apply rustfmt formatting\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+          "timestamp": "2026-01-24T18:49:58Z",
+          "tree_id": "60b2be09e26120f73d172fcbf85f0fd42a764441",
+          "url": "https://github.com/postrv/ralphing-la-vida-locum/commit/2b6bfd0e577328b9aceb010f98befd7127f8578e"
+        },
+        "date": 1769280945044,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 242488.55229314367,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 218506.72639944113,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 232988.87930025064,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 1478369.787995019,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 370424.34320789017,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 742275.9931766667,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/polyglot_project",
+            "value": 430637.46701804665,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/single_language",
+            "value": 259539.55719539206,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 747745.9135093332,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 381750.194617046,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 91918.5421038151,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 860068.275461821,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 568702.134466996,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 429977.192256229,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 322787.20580400113,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/plan",
+            "value": 10805.263884654141,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/build",
+            "value": 27112.15488368981,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/debug",
+            "value": 13213.06494268494,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/full_context",
+            "value": 3587.790279391849,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/minimal_context",
+            "value": 543.474697268052,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/typical_context",
+            "value": 770.8716000318589,
             "unit": "ns"
           }
         ]
