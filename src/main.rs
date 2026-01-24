@@ -99,6 +99,11 @@ enum Commands {
         /// Start fresh, ignoring any existing session state.
         #[arg(long)]
         fresh: bool,
+
+        /// Disable session persistence on shutdown.
+        /// Useful for testing or when session recovery is not needed.
+        #[arg(long)]
+        no_persist: bool,
     },
 
     /// Build context for LLM analysis
@@ -489,6 +494,7 @@ async fn main() -> anyhow::Result<()> {
             gate_timeout,
             incremental_gates,
             fresh,
+            no_persist,
         } => {
             // Session persistence (Phase 21.2 prep for Phase 21.4 integration)
             let ralph_dir = project_path.join(".ralph");
@@ -570,12 +576,29 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
-            let mut loop_config = LoopManagerConfig::new(project_path, config)
+            let mut loop_config = LoopManagerConfig::new(project_path.clone(), config)
                 .with_mode(mode)
                 .with_max_iterations(max_iterations)
                 .with_stagnation_threshold(stagnation_threshold)
                 .with_doc_sync_interval(doc_sync_interval)
                 .with_verbose(cli.verbose);
+
+            // Configure signal handler for graceful shutdown (Phase 21.3)
+            let signal_config = session::signals::SignalHandlerConfig {
+                persist: !no_persist,
+            };
+            let signal_handler = session::signals::SignalHandler::new(signal_config)
+                .with_persistence(session_persistence.clone(), current_session);
+
+            if no_persist {
+                tracing::info!("Session persistence disabled (--no-persist flag)");
+            } else {
+                tracing::debug!(
+                    "Signal handler configured: persist_enabled={}, has_persistence={}",
+                    signal_handler.persist_enabled(),
+                    signal_handler.has_persistence()
+                );
+            }
 
             // Configure quality gates
             // Always create config to apply parallel gates and incremental settings
@@ -591,7 +614,28 @@ async fn main() -> anyhow::Result<()> {
 
             let mut manager = LoopManager::new(loop_config)?;
 
-            manager.run().await?;
+            // Run the loop with signal handling for graceful shutdown (Phase 21.3)
+            // Use tokio::select! to race between the loop and shutdown signals
+            tokio::select! {
+                result = manager.run() => {
+                    // Loop completed normally
+                    result?;
+                    // Save final session state on normal completion
+                    let final_result = signal_handler.shutdown().await;
+                    tracing::debug!("Loop completed, shutdown result: {:?}", final_result);
+                }
+                result = signal_handler.wait_for_shutdown() => {
+                    // Signal received - state was already saved in wait_for_shutdown
+                    match result {
+                        Ok(shutdown_result) => {
+                            tracing::info!("Graceful shutdown completed: {:?}", shutdown_result);
+                        }
+                        Err(e) => {
+                            tracing::error!("Error during graceful shutdown: {}", e);
+                        }
+                    }
+                }
+            }
         }
 
         Commands::Context {

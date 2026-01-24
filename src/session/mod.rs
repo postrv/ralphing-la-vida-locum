@@ -27,8 +27,16 @@
 //! - Atomic writes prevent corruption on crash
 //! - File locking prevents concurrent Ralph instances
 //! - Corrupted files are handled gracefully (deleted with warning)
+//!
+//! # Signal Handling
+//!
+//! The [`signals`] module provides graceful shutdown:
+//! - Registers handlers for SIGTERM/SIGINT (Unix) or CTRL_C (Windows)
+//! - Saves session state before exit
+//! - Never panics on errors (logs and continues)
 
 pub mod persistence;
+pub mod signals;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
