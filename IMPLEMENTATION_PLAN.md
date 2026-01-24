@@ -21,6 +21,10 @@
 
 ---
 
+**Current Focus: Sprint 21** (Session Persistence & Resume)
+
+---
+
 ## Sprint 21: Session Persistence & Resume
 
 **Goal**: Enable Ralph to survive crashes/restarts without losing loop state.
@@ -607,11 +611,11 @@ cargo clippy --all-targets -- -D warnings
 **Description**: Aggregate analytics data into dashboard-ready format.
 
 **Requirements**:
-- [ ] Create `src/analytics/dashboard/mod.rs`
-- [ ] Define `DashboardData` struct: sessions, events, trends, summary
-- [ ] Implement aggregation from JSONL event stream
-- [ ] Support time range filtering: last N sessions, date range
-- [ ] Calculate summary statistics: total iterations, success rate, avg session duration
+- [x] Create `src/analytics/dashboard/mod.rs`
+- [x] Define `DashboardData` struct: sessions, events, trends, summary
+- [x] Implement aggregation from JSONL event stream
+- [x] Support time range filtering: last N sessions, date range
+- [x] Calculate summary statistics: total iterations, success rate, avg session duration
 
 **Test-First Requirements**:
 ```rust
@@ -902,7 +906,7 @@ cargo deny check licenses
 - [ ] Phase 24.3: Adaptive Weight Tuning
 
 ### Sprint 25: Analytics Dashboard
-- [ ] Phase 25.1: Dashboard Data Aggregation
+- [x] Phase 25.1: Dashboard Data Aggregation
 - [ ] Phase 25.2: HTML Template Engine
 - [ ] Phase 25.3: Chart Generation
 - [ ] Phase 25.4: CLI Command Integration

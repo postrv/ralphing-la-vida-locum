@@ -3,6 +3,8 @@
 //! This module handles session tracking, event logging, and
 //! performance analytics in JSONL format.
 
+pub mod dashboard;
+
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use colored::Colorize;

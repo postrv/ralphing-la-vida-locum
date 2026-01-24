@@ -101,6 +101,9 @@ pub use analytics::{
     StubAnalyticsUploader, TrendData, TrendDirection, TrendMetric, TrendPoint, SCHEMA_VERSION,
 };
 
+// Re-export dashboard types (Phase 25.1)
+pub use analytics::dashboard::{DashboardData, DashboardSummary, TimeRange};
+
 // Re-export audit types
 pub use audit::{
     AuditEntry, AuditEventType, AuditLogger, AuditQuery, AuditQueryResult, AuditReader,
