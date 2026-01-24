@@ -194,14 +194,14 @@ src/config/
 ```
 
 **Requirements**:
-- [ ] Create `src/config/` directory structure
-- [ ] Move `SharedConfigResolver` and related types to `resolution.rs`
-- [ ] Move `ConfigValidator` and validation logic to `validation.rs`
+- [x] Create `src/config/` directory structure
+- [x] Move `SharedConfigResolver` and related types to `resolution.rs`
+- [x] Move `ConfigValidator` and validation logic to `validation.rs`
 - [ ] Move git config detection to `git.rs`
 - [ ] Move template path resolution to `templates.rs`
-- [ ] Keep `SharedConfig` struct in `mod.rs` with re-exports
-- [ ] Ensure all `pub use` statements maintain API compatibility
-- [ ] Move tests to appropriate submodules
+- [x] Keep `SharedConfig` struct in `mod.rs` with re-exports
+- [x] Ensure all `pub use` statements maintain API compatibility
+- [x] Move tests to appropriate submodules
 
 **Test-First Requirements**:
 ```rust
@@ -886,7 +886,7 @@ cargo deny check licenses
 - [x] Phase 21.5: Documentation & CLI Help
 
 ### Sprint 22: File Decomposition
-- [ ] Phase 22.1: Extract `config` Submodules
+- [~] Phase 22.1: Extract `config` Submodules (resolution.rs + validation.rs done, git.rs + templates.rs pending)
 - [ ] Phase 22.2: Extract `analytics` Submodules
 - [ ] Phase 22.3: Extract `task_tracker` Submodules
 - [ ] Phase 22.4: Extract `OutputParser` Trait
