@@ -17,6 +17,35 @@ Ralph carries that spirit forward. It's about working efficiently so you can spe
 
 **Claude Code Automation Suite** - Autonomous coding with bombproof reliability.
 
+## What's New in v2.0
+
+Ralph v2.0 brings enterprise-grade features and polyglot support:
+
+| Feature | Description |
+|---------|-------------|
+| **Polyglot Quality Gates** | Language-specific gates for Rust, Python, TypeScript, Go, Ruby, Java |
+| **Weighted Gate Scoring** | Configurable weights for gate results with per-language thresholds |
+| **Stagnation Predictor** | Multi-factor risk scoring with preventive actions and accuracy tracking |
+| **Configuration Inheritance** | System → User → Project config hierarchy with deep merge |
+| **Audit Logging** | Tamper-evident JSONL logs with SHA-256 hash chaining |
+| **Session Analytics** | Structured events, session reports, quality trend visualization |
+| **Plugin Architecture** | Custom gates via `~/.ralph/plugins/` with manifest-based loading |
+| **LLM Abstraction** | Provider-agnostic client supporting Claude, OpenAI, Gemini, Ollama |
+| **Parallel Gate Execution** | Concurrent gate runs with per-gate timeouts |
+| **Incremental Gates** | Run only gates relevant to changed files |
+| **Benchmark Suite** | Criterion benchmarks with CI regression detection |
+
+### CLI Commands Added
+
+```bash
+ralph detect                    # Detect project languages
+ralph config validate           # Validate configuration files
+ralph audit show                # View audit log entries
+ralph audit verify              # Verify audit log integrity
+ralph verify --mock             # Run CCG-diff verification (mock)
+ralph checkpoint diff           # Compare checkpoints
+```
+
 Ralph is a Rust CLI tool that orchestrates Claude Code for autonomous software development. It provides project bootstrapping, context building, quality gate enforcement, and an intelligent execution loop that runs Claude Code against an implementation plan until tasks are complete.
 
 ## Key Features
@@ -240,15 +269,40 @@ ralph --project . config validate
 
 ## Quality Gates
 
-Ralph enforces strict quality gates before any commit:
+Ralph enforces strict quality gates before any commit, with language-specific gates auto-detected:
 
-| Gate | Checks | Failure Action |
-|------|--------|----------------|
-| **ClippyGate** | Zero warnings with `-D warnings` | List all warnings with locations |
-| **TestGate** | All tests pass | List failing tests with output |
-| **NoAllowGate** | No `#[allow(...)]` annotations | List violating files:lines |
-| **NoTodoGate** | No TODO/FIXME in new code | List comments to resolve |
-| **SecurityGate** | No hardcoded secrets | List detected patterns |
+### Rust
+| Gate | Checks |
+|------|--------|
+| **ClippyGate** | Zero warnings with `-D warnings` |
+| **CargoTestGate** | All tests pass |
+| **NoAllowGate** | No `#[allow(...)]` annotations |
+| **NoTodoGate** | No TODO/FIXME in new code |
+| **SecurityGate** | No hardcoded secrets |
+
+### Python
+| Gate | Checks |
+|------|--------|
+| **RuffGate** | Linting and formatting |
+| **PytestGate** | All tests pass |
+| **MypyGate** | Type checking |
+| **BanditGate** | Security scanning |
+
+### TypeScript/JavaScript
+| Gate | Checks |
+|------|--------|
+| **EslintGate** | Linting rules |
+| **JestGate** / **VitestGate** | All tests pass |
+| **TscGate** | Type checking |
+| **NpmAuditGate** | Dependency vulnerabilities |
+
+### Go
+| Gate | Checks |
+|------|--------|
+| **GoVetGate** | Static analysis |
+| **GolangciLintGate** | Comprehensive linting |
+| **GoTestGate** | All tests pass |
+| **GovulncheckGate** | Vulnerability scanning |
 
 ```rust
 let enforcer = QualityGateEnforcer::standard(".");
