@@ -5,8 +5,80 @@
 
 use anyhow::{Context, Result};
 use regex::Regex;
+use std::path::PathBuf;
 
 use super::{Task, TaskId, TaskTracker};
+
+// ============================================================================
+// Affected File Parsing (Phase 26.4)
+// ============================================================================
+
+/// Extract file paths mentioned in a line of text.
+///
+/// Looks for common file path patterns like:
+/// - `src/main.rs`
+/// - `lib/module/file.py`
+/// - `path/to/file.tsx`
+///
+/// The function is conservative and only matches patterns that look like
+/// actual file paths with extensions.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let files = extract_file_paths("Update src/main.rs and lib/utils.py");
+/// assert_eq!(files.len(), 2);
+/// ```
+#[must_use]
+pub fn extract_file_paths(text: &str) -> Vec<PathBuf> {
+    // Pattern matches common code file paths
+    // Matches: word chars, slashes, dots, hyphens, underscores
+    // Requires at least one slash and ends with a common extension
+    let file_pattern = Regex::new(
+        r#"(?:^|[\s`'"(])([a-zA-Z0-9_./\-]+\.[a-z]+)(?:$|[\s`'")\],:])"#,
+    )
+    .expect("Invalid regex pattern");
+
+    file_pattern
+        .captures_iter(text)
+        .filter_map(|cap| cap.get(1))
+        .filter(|m| m.as_str().contains('/')) // Must have at least one path separator
+        .map(|m| PathBuf::from(m.as_str()))
+        .collect()
+}
+
+/// Parse affected files from task checkboxes and content.
+///
+/// Extracts file paths from:
+/// 1. Checkbox text (e.g., "- [ ] Modify src/main.rs")
+/// 2. Task title (e.g., "### 1. Update src/auth/mod.rs")
+///
+/// # Arguments
+///
+/// * `task_title` - The task title text
+/// * `checkboxes` - The checkbox items for this task
+///
+/// # Returns
+///
+/// A vector of unique file paths mentioned in the task
+#[must_use]
+pub fn parse_affected_files(task_title: &str, checkboxes: &[(String, bool)]) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+
+    // Extract from task title
+    files.extend(extract_file_paths(task_title));
+
+    // Extract from each checkbox
+    for (checkbox_text, _) in checkboxes {
+        files.extend(extract_file_paths(checkbox_text));
+    }
+
+    // Remove duplicates while preserving order
+    let mut seen = std::collections::HashSet::new();
+    files.retain(|f| seen.insert(f.clone()));
+
+    files
+}
 
 // ============================================================================
 // Plan Structure Hashing
@@ -168,6 +240,8 @@ impl TaskTracker {
     }
 
     /// Update checkboxes for a task without losing other state.
+    ///
+    /// Also extracts and sets affected files from the task title and checkboxes.
     pub(crate) fn update_task_checkboxes(
         &mut self,
         task_id: &TaskId,
@@ -175,6 +249,12 @@ impl TaskTracker {
     ) {
         if let Some(task) = self.tasks.get_mut(task_id) {
             task.checkboxes = checkboxes.to_vec();
+
+            // Extract affected files from task title and checkboxes (Phase 26.4)
+            let affected_files = parse_affected_files(task_id.title(), checkboxes);
+            if !affected_files.is_empty() {
+                task.set_affected_files(affected_files);
+            }
         }
     }
 
@@ -183,6 +263,8 @@ impl TaskTracker {
     /// If the task doesn't exist, creates it with the given sprint.
     /// If the task exists but has no sprint set, updates it with the given sprint.
     /// If the task exists and already has a sprint, preserves the existing sprint.
+    ///
+    /// Also extracts affected files from the task title during creation.
     pub fn insert_or_update_task(&mut self, task_id: TaskId, current_sprint: Option<u32>) {
         if let Some(task) = self.tasks.get_mut(&task_id) {
             // Update sprint if not already set
@@ -190,10 +272,16 @@ impl TaskTracker {
                 task.sprint = current_sprint;
             }
         } else {
-            // Create new task with sprint
-            let task = match current_sprint {
-                Some(sprint) => Task::new_with_sprint(task_id.clone(), sprint),
-                None => Task::new(task_id.clone()),
+            // Extract initial affected files from task title
+            let title_files = extract_file_paths(task_id.title());
+
+            // Create new task with sprint and affected files if found
+            let task = match (current_sprint, title_files.is_empty()) {
+                (Some(sprint), true) => Task::new_with_sprint(task_id.clone(), sprint),
+                (Some(sprint), false) => Task::new_with_sprint(task_id.clone(), sprint)
+                    .with_affected_files(title_files),
+                (None, true) => Task::new(task_id.clone()),
+                (None, false) => Task::new(task_id.clone()).with_affected_files(title_files),
             };
             self.tasks.insert(task_id, task);
         }
@@ -743,5 +831,76 @@ Some overview text.
 
         let task = tracker.get_task(&task_id).unwrap();
         assert_eq!(task.sprint(), Some(8));
+    }
+
+    // ========================================================================
+    // File Path Extraction Tests (Phase 26.4)
+    // ========================================================================
+
+    #[test]
+    fn test_extract_file_paths_from_simple_text() {
+        let files = extract_file_paths("Update src/main.rs for new feature");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0], std::path::PathBuf::from("src/main.rs"));
+    }
+
+    #[test]
+    fn test_extract_file_paths_multiple_files() {
+        let files = extract_file_paths("Modify src/lib.rs and src/utils/helper.rs");
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0], std::path::PathBuf::from("src/lib.rs"));
+        assert_eq!(files[1], std::path::PathBuf::from("src/utils/helper.rs"));
+    }
+
+    #[test]
+    fn test_extract_file_paths_no_files() {
+        let files = extract_file_paths("Update the configuration settings");
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_extract_file_paths_in_backticks() {
+        let files = extract_file_paths("Modify `src/config.rs` file");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0], std::path::PathBuf::from("src/config.rs"));
+    }
+
+    #[test]
+    fn test_extract_file_paths_various_extensions() {
+        let text = "Update src/main.py, lib/utils.js, and pkg/handler.go";
+        let files = extract_file_paths(text);
+        assert_eq!(files.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_affected_files_from_checkboxes() {
+        let checkboxes = vec![
+            ("Modify src/main.rs".to_string(), false),
+            ("Update tests".to_string(), false),
+            ("Fix src/lib.rs".to_string(), true),
+        ];
+        let files = parse_affected_files("Task title", &checkboxes);
+        assert_eq!(files.len(), 2);
+        assert!(files.contains(&std::path::PathBuf::from("src/main.rs")));
+        assert!(files.contains(&std::path::PathBuf::from("src/lib.rs")));
+    }
+
+    #[test]
+    fn test_parse_affected_files_from_title() {
+        let checkboxes: Vec<(String, bool)> = vec![];
+        let files = parse_affected_files("Update src/config.rs", &checkboxes);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0], std::path::PathBuf::from("src/config.rs"));
+    }
+
+    #[test]
+    fn test_parse_affected_files_deduplicates() {
+        let checkboxes = vec![
+            ("Modify src/main.rs".to_string(), false),
+            ("Also update src/main.rs".to_string(), false),
+        ];
+        let files = parse_affected_files("Task for src/main.rs", &checkboxes);
+        // Should only have one entry despite being mentioned 3 times
+        assert_eq!(files.len(), 1);
     }
 }

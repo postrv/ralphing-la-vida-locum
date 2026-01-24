@@ -17,7 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,918 passing
+**Current Test Count**: 1,942 passing
 
 ---
 
@@ -137,21 +137,49 @@
 **Description**: Prioritize tasks that affect changed files.
 
 **Requirements**:
-- [ ] Add `affected_files: Option<Vec<PathBuf>>` to Task struct
-- [ ] Parse affected files from task descriptions (if mentioned)
-- [ ] When running scoped: prioritize tasks whose affected files overlap with changed files
-- [ ] De-prioritize (but don't skip) unrelated tasks
+- [x] Add `affected_files: Option<Vec<PathBuf>>` to Task struct
+- [x] Parse affected files from task descriptions (if mentioned)
+- [x] When running scoped: prioritize tasks whose affected files overlap with changed files
+- [x] De-prioritize (but don't skip) unrelated tasks
+
+**Test-First**:
+```rust
+// - test_task_affected_files_default_is_none ✓
+// - test_task_with_affected_files ✓
+// - test_task_set_affected_files ✓
+// - test_task_affects_file_when_matching ✓
+// - test_task_affects_file_when_not_matching ✓
+// - test_task_affects_file_when_no_affected_files ✓
+// - test_task_affects_any_file_with_matches ✓
+// - test_task_affects_any_file_without_matches ✓
+// - test_task_affects_any_file_when_no_affected_files ✓
+// - test_task_has_explicit_affected_file_match ✓
+// - test_task_has_explicit_affected_file_match_returns_false_when_none ✓
+// - test_select_next_task_scoped_prioritizes_matching_tasks ✓
+// - test_select_next_task_scoped_falls_back_to_normal_selection ✓
+// - test_select_next_task_scoped_respects_in_progress_priority ✓
+// - test_select_next_task_scoped_with_empty_scope ✓
+// - test_select_next_task_scoped_handles_tasks_without_affected_files ✓
+// - test_extract_file_paths_from_simple_text ✓
+// - test_extract_file_paths_multiple_files ✓
+// - test_extract_file_paths_no_files ✓
+// - test_extract_file_paths_in_backticks ✓
+// - test_extract_file_paths_various_extensions ✓
+// - test_parse_affected_files_from_checkboxes ✓
+// - test_parse_affected_files_from_title ✓
+// - test_parse_affected_files_deduplicates ✓
+```
 
 ### Phase 26.5: CLI Integration
 
 **Description**: Add incremental execution flags to CLI.
 
 **Requirements**:
-- [ ] Add `--changed-since <commit>` flag to `ralph loop`
+- [x] Add `--changed-since <commit>` flag to `ralph loop`
 - [ ] Add `--files <glob>` flag to `ralph loop`
 - [ ] Add `--changed` flag as shorthand for `--changed-since HEAD~1`
 - [ ] Flags are mutually exclusive (error if both specified)
-- [ ] Log scope at start: "Running in incremental mode: 5 files changed since abc123"
+- [x] Log scope at start: "Running in incremental mode: 5 files changed since abc123"
 
 ---
 

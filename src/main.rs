@@ -110,6 +110,11 @@ enum Commands {
         /// Useful for testing or when session recovery is not needed.
         #[arg(long)]
         no_persist: bool,
+
+        /// Run in incremental mode, processing only files changed since the given commit.
+        /// Example: --changed-since HEAD~1 or --changed-since abc1234
+        #[arg(long, value_name = "COMMIT")]
+        changed_since: Option<String>,
     },
 
     /// Build context for LLM analysis
@@ -544,6 +549,7 @@ async fn main() -> anyhow::Result<()> {
             resume,
             fresh,
             no_persist,
+            changed_since,
         } => {
             // Session persistence (Phase 21.4)
             let ralph_dir = project_path.join(".ralph");
@@ -615,6 +621,31 @@ async fn main() -> anyhow::Result<()> {
                 .with_verbose(cli.verbose)
                 .with_session_persistence(session_persistence.clone())
                 .with_resume(should_resume);
+
+            // Handle --changed-since flag for incremental execution (Phase 26.4)
+            if let Some(ref commit) = changed_since {
+                let detector = ralph::changes::ChangeDetector::new(&project_path);
+                match ralph::changes::ChangeScope::from_detector_since(&detector, commit) {
+                    Ok(scope) => {
+                        let file_count = scope.changed_files().len();
+                        tracing::info!(
+                            "Running in incremental mode: {} files changed since {}",
+                            file_count,
+                            commit
+                        );
+                        loop_config = loop_config.with_change_scope(scope);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to detect changes since '{}': {}",
+                            "Error:".red().bold(),
+                            commit,
+                            e
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
 
             // Configure signal handler for graceful shutdown (Phase 21.3)
             // Create a placeholder session state - the actual state will be saved by LoopManager

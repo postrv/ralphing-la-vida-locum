@@ -69,6 +69,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
+use std::path::PathBuf;
 
 // ============================================================================
 // Task Identifier
@@ -355,6 +356,12 @@ pub struct Task {
     /// Whether this task is orphaned (not in current plan)
     #[serde(default)]
     pub orphaned: bool,
+    /// Files this task is expected to affect (for scoped task selection).
+    ///
+    /// When set, the task is only prioritized if the changed files overlap.
+    /// When None, the task is considered to potentially affect any file.
+    #[serde(default)]
+    pub affected_files: Option<Vec<PathBuf>>,
 }
 
 impl Task {
@@ -370,6 +377,7 @@ impl Task {
             checkboxes: Vec::new(),
             sprint: None,
             orphaned: false,
+            affected_files: None,
         }
     }
 
@@ -385,6 +393,90 @@ impl Task {
             checkboxes: Vec::new(),
             sprint: Some(sprint),
             orphaned: false,
+            affected_files: None,
+        }
+    }
+
+    /// Builder method to set affected files for scoped task selection.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::r#loop::task_tracker::{Task, TaskId};
+    /// use std::path::PathBuf;
+    ///
+    /// let task_id = TaskId::parse("### 1. Update auth").unwrap();
+    /// let task = Task::new(task_id)
+    ///     .with_affected_files(vec![PathBuf::from("src/auth/mod.rs")]);
+    /// ```
+    #[must_use]
+    pub fn with_affected_files(mut self, files: Vec<PathBuf>) -> Self {
+        self.affected_files = Some(files);
+        self
+    }
+
+    /// Set the affected files for this task.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::r#loop::task_tracker::{Task, TaskId};
+    /// use std::path::PathBuf;
+    ///
+    /// let task_id = TaskId::parse("### 1. Update auth").unwrap();
+    /// let mut task = Task::new(task_id);
+    /// task.set_affected_files(vec![PathBuf::from("src/auth/mod.rs")]);
+    /// ```
+    pub fn set_affected_files(&mut self, files: Vec<PathBuf>) {
+        self.affected_files = Some(files);
+    }
+
+    /// Check if this task affects a given file.
+    ///
+    /// If `affected_files` is `None`, the task is considered to potentially
+    /// affect any file (conservative approach).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::r#loop::task_tracker::{Task, TaskId};
+    /// use std::path::PathBuf;
+    ///
+    /// let task_id = TaskId::parse("### 1. Update auth").unwrap();
+    /// let task = Task::new(task_id)
+    ///     .with_affected_files(vec![PathBuf::from("src/auth/mod.rs")]);
+    ///
+    /// assert!(task.affects_file(&PathBuf::from("src/auth/mod.rs")));
+    /// assert!(!task.affects_file(&PathBuf::from("src/other.rs")));
+    /// ```
+    #[must_use]
+    pub fn affects_file(&self, file: &PathBuf) -> bool {
+        // Delegate to affects_any_file with a single-element slice
+        self.affects_any_file(std::slice::from_ref(file))
+    }
+
+    /// Check if this task affects any of the given files.
+    ///
+    /// Returns true if:
+    /// - `affected_files` is `None` (conservative approach), or
+    /// - Any of the given files are in `affected_files`
+    #[must_use]
+    pub fn affects_any_file(&self, files: &[PathBuf]) -> bool {
+        match &self.affected_files {
+            Some(affected) => files.iter().any(|f| affected.contains(f)),
+            None => true, // Conservative: no affected_files means potentially affects all
+        }
+    }
+
+    /// Check if this task has explicit affected files that match the given files.
+    ///
+    /// Unlike `affects_any_file`, this returns false if `affected_files` is `None`.
+    /// Use this for prioritization where explicit matches should rank higher.
+    #[must_use]
+    pub fn has_explicit_affected_file_match(&self, files: &[PathBuf]) -> bool {
+        match &self.affected_files {
+            Some(affected) => files.iter().any(|f| affected.contains(f)),
+            None => false, // No explicit affected_files means no explicit match
         }
     }
 
@@ -1071,6 +1163,140 @@ impl TaskTracker {
         None
     }
 
+    /// Select the next task to work on with scoped prioritization.
+    ///
+    /// When a `ChangeScope` is provided, tasks that affect the changed files
+    /// are prioritized over tasks that don't. This enables incremental execution
+    /// where Ralph focuses on tasks relevant to recent changes.
+    ///
+    /// Priority order:
+    /// 1. Current task if still workable, not orphaned, and in current sprint
+    /// 2. In-progress tasks from current sprint that affect changed files
+    /// 3. Not-started tasks from current sprint that affect changed files
+    /// 4. In-progress tasks from current sprint (fallback)
+    /// 5. Not-started tasks from current sprint (fallback)
+    ///
+    /// # Arguments
+    ///
+    /// * `scope` - The change scope defining which files have changed
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::r#loop::task_tracker::{TaskTracker, TaskTrackerConfig, TaskId};
+    /// use ralph::changes::ChangeScope;
+    /// use std::path::PathBuf;
+    ///
+    /// let mut tracker = TaskTracker::new(TaskTrackerConfig::default());
+    /// tracker.parse_plan("### 1. Update auth\n### 2. Update db").unwrap();
+    ///
+    /// let scope = ChangeScope::from_files(vec![PathBuf::from("src/db/mod.rs")]);
+    /// let next = tracker.select_next_task_scoped(&scope);
+    /// ```
+    #[must_use]
+    pub fn select_next_task_scoped(&self, scope: &ralph::changes::ChangeScope) -> Option<&TaskId> {
+        let changed_files = scope.changed_files();
+
+        // Priority 1: Current task if still workable and not orphaned
+        if let Some(ref current_id) = self.current_task {
+            if let Some(task) = self.tasks.get(current_id) {
+                if task.is_workable() && !task.is_orphaned() && self.is_task_in_current_sprint(task)
+                {
+                    return Some(current_id);
+                }
+            }
+        }
+
+        // If no changed files, fall back to normal selection
+        if changed_files.is_empty() {
+            return self.select_next_task();
+        }
+
+        // Priority 2: In-progress tasks with EXPLICIT affected_files that match changed files
+        let mut in_progress_explicit: Vec<&TaskId> = self
+            .tasks
+            .iter()
+            .filter(|(_, t)| {
+                t.state == TaskState::InProgress
+                    && !t.is_orphaned()
+                    && self.is_task_in_current_sprint(t)
+                    && t.has_explicit_affected_file_match(changed_files)
+            })
+            .map(|(id, _)| id)
+            .collect();
+        // Log debug info about conservative matching for tracing
+        #[cfg(debug_assertions)]
+        for (id, task) in &self.tasks {
+            if task.affects_any_file(changed_files) && !task.has_explicit_affected_file_match(changed_files) {
+                tracing::trace!(
+                    "Task {} has conservative match (no explicit affected_files)",
+                    id
+                );
+            }
+            // Check single file match for completeness
+            if let Some(first_file) = changed_files.first() {
+                if task.affects_file(first_file) {
+                    tracing::trace!("Task {} affects file {:?}", id, first_file);
+                }
+            }
+        }
+        in_progress_explicit.sort_by_key(|id| (id.number(), id.subsection().unwrap_or("")));
+        if let Some(id) = in_progress_explicit.first() {
+            return Some(id);
+        }
+
+        // Priority 3: Not-started tasks with EXPLICIT affected_files that match changed files
+        let mut not_started_explicit: Vec<&TaskId> = self
+            .tasks
+            .iter()
+            .filter(|(_, t)| {
+                t.state == TaskState::NotStarted
+                    && !t.is_orphaned()
+                    && self.is_task_in_current_sprint(t)
+                    && t.has_explicit_affected_file_match(changed_files)
+            })
+            .map(|(id, _)| id)
+            .collect();
+        not_started_explicit.sort_by_key(|id| (id.number(), id.subsection().unwrap_or("")));
+        if let Some(id) = not_started_explicit.first() {
+            return Some(id);
+        }
+
+        // Priority 4: Fall back to in-progress tasks (no explicit match requirement)
+        let mut in_progress: Vec<&TaskId> = self
+            .tasks
+            .iter()
+            .filter(|(_, t)| {
+                t.state == TaskState::InProgress
+                    && !t.is_orphaned()
+                    && self.is_task_in_current_sprint(t)
+            })
+            .map(|(id, _)| id)
+            .collect();
+        in_progress.sort_by_key(|id| (id.number(), id.subsection().unwrap_or("")));
+        if let Some(id) = in_progress.first() {
+            return Some(id);
+        }
+
+        // Priority 5: Fall back to not-started tasks (no explicit match requirement)
+        let mut not_started: Vec<&TaskId> = self
+            .tasks
+            .iter()
+            .filter(|(_, t)| {
+                t.state == TaskState::NotStarted
+                    && !t.is_orphaned()
+                    && self.is_task_in_current_sprint(t)
+            })
+            .map(|(id, _)| id)
+            .collect();
+        not_started.sort_by_key(|id| (id.number(), id.subsection().unwrap_or("")));
+        if let Some(id) = not_started.first() {
+            return Some(id);
+        }
+
+        None
+    }
+
     /// Check if a task belongs to the current sprint or has no sprint assigned.
     fn is_task_in_current_sprint(&self, task: &Task) -> bool {
         match (self.focused_sprint, task.sprint) {
@@ -1267,6 +1493,44 @@ impl TaskTracker {
     #[must_use]
     pub fn next_task(&self) -> Option<TaskId> {
         self.select_next_task().cloned()
+    }
+
+    /// Get the next workable task ID with optional scoped prioritization.
+    ///
+    /// When `scope` is provided and has changed files, tasks that explicitly
+    /// affect those files are prioritized. This enables incremental execution
+    /// where Ralph focuses on tasks relevant to recent changes.
+    ///
+    /// # Arguments
+    ///
+    /// * `scope` - Optional change scope for scoped prioritization
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::r#loop::task_tracker::{TaskTracker, TaskTrackerConfig, TaskId};
+    /// use ralph::changes::ChangeScope;
+    /// use std::path::PathBuf;
+    ///
+    /// let mut tracker = TaskTracker::new(TaskTrackerConfig::default());
+    /// tracker.parse_plan("### 1. Task A\n### 2. Task B").unwrap();
+    ///
+    /// // Without scope - normal selection
+    /// let next = tracker.next_task_with_scope(None);
+    ///
+    /// // With scope - scoped prioritization
+    /// let scope = ChangeScope::from_files(vec![PathBuf::from("src/main.rs")]);
+    /// let next = tracker.next_task_with_scope(Some(&scope));
+    /// ```
+    #[must_use]
+    pub fn next_task_with_scope(
+        &self,
+        scope: Option<&ralph::changes::ChangeScope>,
+    ) -> Option<TaskId> {
+        match scope {
+            Some(s) if s.has_changes() => self.select_next_task_scoped(s).cloned(),
+            _ => self.select_next_task().cloned(),
+        }
     }
 
     /// Check if all workable tasks are done.
@@ -3136,6 +3400,356 @@ mod tests {
         assert!(
             selected_id.title().contains("New Task"),
             "Should select New Task, not the orphaned Old Task"
+        );
+    }
+
+    // ========================================================================
+    // Phase 26.4: Scoped Task Selection Tests (TDD - Written First)
+    // ========================================================================
+
+    #[test]
+    fn test_task_affected_files_default_is_none() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let task = Task::new(task_id);
+
+        assert!(
+            task.affected_files.is_none(),
+            "New task should have no affected files by default"
+        );
+    }
+
+    #[test]
+    fn test_task_with_affected_files() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let files = vec![
+            std::path::PathBuf::from("src/main.rs"),
+            std::path::PathBuf::from("src/lib.rs"),
+        ];
+        let task = Task::new(task_id).with_affected_files(files.clone());
+
+        assert_eq!(
+            task.affected_files,
+            Some(files),
+            "Task should have the specified affected files"
+        );
+    }
+
+    #[test]
+    fn test_task_set_affected_files() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let mut task = Task::new(task_id);
+
+        let files = vec![std::path::PathBuf::from("src/main.rs")];
+        task.set_affected_files(files.clone());
+
+        assert_eq!(
+            task.affected_files,
+            Some(files),
+            "set_affected_files should update the affected files"
+        );
+    }
+
+    #[test]
+    fn test_task_affects_file_when_matching() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let files = vec![
+            std::path::PathBuf::from("src/main.rs"),
+            std::path::PathBuf::from("src/lib.rs"),
+        ];
+        let task = Task::new(task_id).with_affected_files(files);
+
+        assert!(
+            task.affects_file(&std::path::PathBuf::from("src/main.rs")),
+            "Task should affect a file in its affected_files list"
+        );
+    }
+
+    #[test]
+    fn test_task_affects_file_when_not_matching() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let files = vec![std::path::PathBuf::from("src/main.rs")];
+        let task = Task::new(task_id).with_affected_files(files);
+
+        assert!(
+            !task.affects_file(&std::path::PathBuf::from("src/other.rs")),
+            "Task should not affect a file not in its affected_files list"
+        );
+    }
+
+    #[test]
+    fn test_task_affects_file_when_no_affected_files() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let task = Task::new(task_id);
+
+        // When no affected_files specified, task is considered to potentially affect all files
+        assert!(
+            task.affects_file(&std::path::PathBuf::from("src/any.rs")),
+            "Task with no affected_files should match any file (conservative)"
+        );
+    }
+
+    #[test]
+    fn test_task_affects_any_file_with_matches() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let files = vec![
+            std::path::PathBuf::from("src/main.rs"),
+            std::path::PathBuf::from("src/lib.rs"),
+        ];
+        let task = Task::new(task_id).with_affected_files(files);
+
+        let check_files = vec![
+            std::path::PathBuf::from("src/lib.rs"),
+            std::path::PathBuf::from("src/other.rs"),
+        ];
+
+        assert!(
+            task.affects_any_file(&check_files),
+            "Task should affect any file when at least one matches"
+        );
+    }
+
+    #[test]
+    fn test_task_affects_any_file_without_matches() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let files = vec![std::path::PathBuf::from("src/main.rs")];
+        let task = Task::new(task_id).with_affected_files(files);
+
+        let check_files = vec![
+            std::path::PathBuf::from("src/other.rs"),
+            std::path::PathBuf::from("src/another.rs"),
+        ];
+
+        assert!(
+            !task.affects_any_file(&check_files),
+            "Task should not affect any file when none match"
+        );
+    }
+
+    #[test]
+    fn test_task_affects_any_file_when_no_affected_files() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let task = Task::new(task_id);
+
+        let check_files = vec![std::path::PathBuf::from("src/any.rs")];
+
+        // Conservative: no affected_files means potentially affects all
+        assert!(
+            task.affects_any_file(&check_files),
+            "Task with no affected_files should match any files (conservative)"
+        );
+    }
+
+    #[test]
+    fn test_task_has_explicit_affected_file_match() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let files = vec![std::path::PathBuf::from("src/main.rs")];
+        let task = Task::new(task_id).with_affected_files(files);
+
+        let check_files = vec![std::path::PathBuf::from("src/main.rs")];
+        assert!(
+            task.has_explicit_affected_file_match(&check_files),
+            "Task with explicit affected_files should match"
+        );
+    }
+
+    #[test]
+    fn test_task_has_explicit_affected_file_match_returns_false_when_none() {
+        let task_id = TaskId::parse("### 1. Test Task").unwrap();
+        let task = Task::new(task_id); // No affected_files set
+
+        let check_files = vec![std::path::PathBuf::from("src/any.rs")];
+
+        // Unlike affects_any_file, this should return false when affected_files is None
+        assert!(
+            !task.has_explicit_affected_file_match(&check_files),
+            "Task without affected_files should NOT have explicit match"
+        );
+    }
+
+    #[test]
+    fn test_select_next_task_scoped_prioritizes_matching_tasks() {
+        use ralph::changes::ChangeScope;
+
+        let plan = r#"
+## Current Sprint
+### 1. Update auth module
+- [ ] Item
+
+### 2. Update database module
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // Set affected files for tasks
+        let task1_id = TaskId::parse("### 1. Update auth module").unwrap();
+        let task2_id = TaskId::parse("### 2. Update database module").unwrap();
+
+        tracker
+            .get_task_mut(&task1_id)
+            .unwrap()
+            .set_affected_files(vec![std::path::PathBuf::from("src/auth/mod.rs")]);
+        tracker
+            .get_task_mut(&task2_id)
+            .unwrap()
+            .set_affected_files(vec![std::path::PathBuf::from("src/db/mod.rs")]);
+
+        // Create a scope with only db files changed
+        let scope = ChangeScope::from_files(vec![std::path::PathBuf::from("src/db/mod.rs")]);
+
+        // Task 2 should be prioritized because it affects changed files
+        let selected = tracker.select_next_task_scoped(&scope);
+        assert!(selected.is_some(), "Should find a task");
+
+        let selected_id = selected.unwrap();
+        assert!(
+            selected_id.title().contains("database"),
+            "Should prioritize task affecting changed files"
+        );
+    }
+
+    #[test]
+    fn test_select_next_task_scoped_falls_back_to_normal_selection() {
+        use ralph::changes::ChangeScope;
+
+        let plan = r#"
+## Current Sprint
+### 1. First task
+- [ ] Item
+
+### 2. Second task
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // Set affected files for tasks that don't match the scope
+        let task1_id = TaskId::parse("### 1. First task").unwrap();
+        let task2_id = TaskId::parse("### 2. Second task").unwrap();
+
+        tracker
+            .get_task_mut(&task1_id)
+            .unwrap()
+            .set_affected_files(vec![std::path::PathBuf::from("src/a.rs")]);
+        tracker
+            .get_task_mut(&task2_id)
+            .unwrap()
+            .set_affected_files(vec![std::path::PathBuf::from("src/b.rs")]);
+
+        // Scope has files not matching any task
+        let scope = ChangeScope::from_files(vec![std::path::PathBuf::from("src/other.rs")]);
+
+        // Should fall back to normal priority (task 1 first by number)
+        let selected = tracker.select_next_task_scoped(&scope);
+        assert!(selected.is_some(), "Should find a task even without matches");
+
+        let selected_id = selected.unwrap();
+        assert!(
+            selected_id.title().contains("First"),
+            "Should fall back to normal order when no match"
+        );
+    }
+
+    #[test]
+    fn test_select_next_task_scoped_respects_in_progress_priority() {
+        use ralph::changes::ChangeScope;
+
+        let plan = r#"
+## Current Sprint
+### 1. First task
+- [ ] Item
+
+### 2. Second task
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // Start task 1 (make it in-progress)
+        let task1_id = TaskId::parse("### 1. First task").unwrap();
+        let task2_id = TaskId::parse("### 2. Second task").unwrap();
+        tracker.start_task(&task1_id).unwrap();
+
+        // Task 2 affects changed files, but Task 1 is in-progress
+        tracker
+            .get_task_mut(&task1_id)
+            .unwrap()
+            .set_affected_files(vec![std::path::PathBuf::from("src/a.rs")]);
+        tracker
+            .get_task_mut(&task2_id)
+            .unwrap()
+            .set_affected_files(vec![std::path::PathBuf::from("src/changed.rs")]);
+
+        let scope = ChangeScope::from_files(vec![std::path::PathBuf::from("src/changed.rs")]);
+
+        // In-progress task should still be prioritized (current task continuation)
+        let selected = tracker.select_next_task_scoped(&scope);
+        assert!(selected.is_some());
+
+        let selected_id = selected.unwrap();
+        assert!(
+            selected_id.title().contains("First"),
+            "In-progress task should be prioritized over scoped matches"
+        );
+    }
+
+    #[test]
+    fn test_select_next_task_scoped_with_empty_scope() {
+        use ralph::changes::ChangeScope;
+
+        let plan = r#"
+## Current Sprint
+### 1. Task One
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let scope = ChangeScope::new(); // Empty scope
+
+        // Should fall back to normal selection
+        let selected = tracker.select_next_task_scoped(&scope);
+        assert!(selected.is_some(), "Should find a task with empty scope");
+    }
+
+    #[test]
+    fn test_select_next_task_scoped_handles_tasks_without_affected_files() {
+        use ralph::changes::ChangeScope;
+
+        let plan = r#"
+## Current Sprint
+### 1. Task without affected files
+- [ ] Item
+
+### 2. Task with affected files
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // Only set affected_files for task 2
+        let task2_id = TaskId::parse("### 2. Task with affected files").unwrap();
+        tracker
+            .get_task_mut(&task2_id)
+            .unwrap()
+            .set_affected_files(vec![std::path::PathBuf::from("src/specific.rs")]);
+
+        // Scope matches task 2's affected files
+        let scope = ChangeScope::from_files(vec![std::path::PathBuf::from("src/specific.rs")]);
+
+        // Task 2 should be prioritized because it explicitly affects the changed file
+        let selected = tracker.select_next_task_scoped(&scope);
+        assert!(selected.is_some());
+
+        let selected_id = selected.unwrap();
+        assert!(
+            selected_id.title().contains("with affected"),
+            "Should prioritize task with explicit affected_files match"
         );
     }
 }

@@ -66,6 +66,7 @@ use ralph::quality::gates::detect_available_gates;
 use ralph::quality::EnforcerConfig;
 use ralph::stagnation::StatsPersistence;
 use ralph::testing::{ClaudeProcess, FileSystem, GitOperations, QualityChecker};
+use ralph::changes::ChangeScope;
 use ralph::Analytics;
 use ralph::LanguageDetector;
 use std::path::PathBuf;
@@ -518,6 +519,11 @@ pub struct LoopManagerConfig {
     /// Minimum interval between session saves (debouncing).
     /// Defaults to 30 seconds.
     pub save_interval: Duration,
+    /// Optional change scope for incremental execution (Phase 26.4).
+    ///
+    /// When set, task selection will prioritize tasks that affect
+    /// the files in the scope.
+    pub change_scope: Option<ChangeScope>,
 }
 
 /// Default save interval for session persistence (30 seconds).
@@ -539,6 +545,7 @@ impl LoopManagerConfig {
             session_persistence: None,
             resume: true,
             save_interval: Duration::from_secs(DEFAULT_SAVE_INTERVAL_SECS),
+            change_scope: None,
         }
     }
 
@@ -659,6 +666,31 @@ impl LoopManagerConfig {
         self.save_interval = interval;
         self
     }
+
+    /// Set the change scope for incremental execution.
+    ///
+    /// When set, task selection will prioritize tasks that affect
+    /// the files in the scope.
+    ///
+    /// # Arguments
+    ///
+    /// * `scope` - The change scope defining which files have changed
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::changes::ChangeScope;
+    /// use std::path::PathBuf;
+    ///
+    /// let scope = ChangeScope::from_files(vec![PathBuf::from("src/main.rs")]);
+    /// let config = LoopManagerConfig::new(PathBuf::from("."), ProjectConfig::default())
+    ///     .with_change_scope(scope);
+    /// ```
+    #[must_use]
+    pub fn with_change_scope(mut self, scope: ChangeScope) -> Self {
+        self.change_scope = Some(scope);
+        self
+    }
 }
 
 /// The main loop manager.
@@ -697,6 +729,8 @@ pub struct LoopManager {
     pub(crate) last_save_time: Option<Instant>,
     /// Minimum interval between session saves.
     pub(crate) save_interval: Duration,
+    /// Optional change scope for incremental execution (Phase 26.4).
+    pub(crate) change_scope: Option<ChangeScope>,
 }
 
 impl LoopManager {
@@ -910,6 +944,7 @@ impl LoopManager {
             session_persistence: cfg.session_persistence,
             last_save_time: None,
             save_interval: cfg.save_interval,
+            change_scope: cfg.change_scope,
         })
     }
 
@@ -1073,7 +1108,10 @@ impl LoopManager {
             self.print_iteration_header();
 
             // Select the next task to work on (clone to release borrow)
-            let current_task_id = self.task_tracker.select_next_task().cloned();
+            // Use scoped selection if change_scope is set (Phase 26.4)
+            let current_task_id = self
+                .task_tracker
+                .next_task_with_scope(self.change_scope.as_ref());
             if let Some(ref task_id) = current_task_id {
                 // Set as current task for tracking
                 if let Err(e) = self.task_tracker.set_current(task_id) {
