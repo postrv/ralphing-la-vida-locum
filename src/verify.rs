@@ -703,10 +703,8 @@ impl CcgVerifier for MockCcgVerifier {
 /// ```
 #[must_use]
 pub fn create_verifier(config: VerificationConfig) -> Box<dyn CcgVerifier> {
-    // TODO: When narsil-mcp integration is complete, check for availability
-    // and return a real verifier when possible.
-    //
-    // For now, always return mock verifier.
+    // Note: Always returns MockCcgVerifier until narsil-mcp integration is complete.
+    // Future versions will check narsil-mcp availability and return a real verifier.
     Box::new(MockCcgVerifier::new(config))
 }
 

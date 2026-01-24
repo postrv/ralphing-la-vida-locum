@@ -216,13 +216,53 @@ Added configuration inheritance for team-wide defaults, shared gate configuratio
 
 ---
 
+## Phase 5: Cloud & CLI (Sprints 18-19)
+
+### Sprint 18: Cloud Foundation (Stubs) ✅
+
+**Completed 2026-01-24**
+
+Added opt-in analytics upload stub, cloud campaign API stub, and CCG-Diff verification stub for future cloud features.
+
+**Phases completed:**
+
+#### 18.1: Remote Analytics Upload Stub
+- `PrivacySettings` for data anonymization control
+- `AnalyticsUploadConfig` with opt-in flag (disabled by default)
+- `AnalyticsUploader` trait for upload implementations
+- `StubAnalyticsUploader` logs to file instead of uploading
+- Privacy-aware data handling (session ID hashing, data exclusion)
+- 8 comprehensive tests
+
+#### 18.2: Remote Campaign API Stub
+- `CampaignApi` trait with CRUD operations
+- `LocalCampaignApi` for in-memory local campaigns
+- `CloudCampaignApi` stub returning "coming soon" for all methods
+- `CampaignConfig` with `cloud_enabled` flag (default: false)
+- `Campaign` data struct with metadata support
+- 20 comprehensive tests
+
+#### 18.3: CCG-Diff Verification Stub
+- `CcgVerifier` trait with `verify_changes` and `verify_between` methods
+- `MockCcgVerifier` returning simulated "quality improved" results
+- `VerificationReport` with JSON schema documented in docstrings
+- `QualityDelta` for before/after metric comparison
+- `VerificationFinding` with severity levels
+- narsil-mcp integration hooks documented
+- 17 comprehensive tests
+
+**Deferred to CLI Sprint:**
+- `ralph verify --mock` command
+
+---
+
 ## Summary Statistics
 
 | Metric | Value |
 |--------|-------|
-| Sprints Completed | 11 (7-17) |
-| Phases Completed | 30 |
-| Completion Date | 2026-01-23 |
+| Sprints Completed | 12 (7-18) |
+| Phases Completed | 33 |
+| Completion Date | 2026-01-24 |
 
 ## Key Artifacts Added
 
@@ -234,6 +274,8 @@ Added configuration inheritance for team-wide defaults, shared gate configuratio
 - `src/analytics.rs` - Structured event logging, session reports, trend visualization
 - `src/config.rs` - Configuration inheritance, shared configs with extends
 - `src/audit.rs` - Tamper-evident audit logging with hash chaining
+- `src/campaign.rs` - Cloud campaign API stub
+- `src/verify.rs` - CCG-Diff verification stub
 - `benches/` - Criterion benchmark suite
 - `.github/workflows/benchmarks.yml` - CI benchmark workflow
 - `docs/` - Quickstart guides and examples
