@@ -442,32 +442,6 @@ impl Task {
     /// use ralph::r#loop::task_tracker::{Task, TaskId};
     /// use std::path::PathBuf;
     ///
-    /// let task_id = TaskId::parse("### 1. Update auth").unwrap();
-    /// let task = Task::new(task_id)
-    ///     .with_affected_files(vec![PathBuf::from("src/auth/mod.rs")]);
-    ///
-    /// assert!(task.affects_file(&PathBuf::from("src/auth/mod.rs")));
-    /// assert!(!task.affects_file(&PathBuf::from("src/other.rs")));
-    /// ```
-    #[must_use]
-    pub fn affects_file(&self, file: &PathBuf) -> bool {
-        // Delegate to affects_any_file with a single-element slice
-        self.affects_any_file(std::slice::from_ref(file))
-    }
-
-    /// Check if this task affects any of the given files.
-    ///
-    /// Returns true if:
-    /// - `affected_files` is `None` (conservative approach), or
-    /// - Any of the given files are in `affected_files`
-    #[must_use]
-    pub fn affects_any_file(&self, files: &[PathBuf]) -> bool {
-        match &self.affected_files {
-            Some(affected) => files.iter().any(|f| affected.contains(f)),
-            None => true, // Conservative: no affected_files means potentially affects all
-        }
-    }
-
     /// Check if this task has explicit affected files that match the given files.
     ///
     /// Unlike `affects_any_file`, this returns false if `affected_files` is `None`.
@@ -1224,24 +1198,6 @@ impl TaskTracker {
             })
             .map(|(id, _)| id)
             .collect();
-        // Log debug info about conservative matching for tracing
-        #[cfg(debug_assertions)]
-        for (id, task) in &self.tasks {
-            if task.affects_any_file(changed_files)
-                && !task.has_explicit_affected_file_match(changed_files)
-            {
-                tracing::trace!(
-                    "Task {} has conservative match (no explicit affected_files)",
-                    id
-                );
-            }
-            // Check single file match for completeness
-            if let Some(first_file) = changed_files.first() {
-                if task.affects_file(first_file) {
-                    tracing::trace!("Task {} affects file {:?}", id, first_file);
-                }
-            }
-        }
         in_progress_explicit.sort_by_key(|id| (id.number(), id.subsection().unwrap_or("")));
         if let Some(id) = in_progress_explicit.first() {
             return Some(id);
@@ -3448,96 +3404,6 @@ mod tests {
             task.affected_files,
             Some(files),
             "set_affected_files should update the affected files"
-        );
-    }
-
-    #[test]
-    fn test_task_affects_file_when_matching() {
-        let task_id = TaskId::parse("### 1. Test Task").unwrap();
-        let files = vec![
-            std::path::PathBuf::from("src/main.rs"),
-            std::path::PathBuf::from("src/lib.rs"),
-        ];
-        let task = Task::new(task_id).with_affected_files(files);
-
-        assert!(
-            task.affects_file(&std::path::PathBuf::from("src/main.rs")),
-            "Task should affect a file in its affected_files list"
-        );
-    }
-
-    #[test]
-    fn test_task_affects_file_when_not_matching() {
-        let task_id = TaskId::parse("### 1. Test Task").unwrap();
-        let files = vec![std::path::PathBuf::from("src/main.rs")];
-        let task = Task::new(task_id).with_affected_files(files);
-
-        assert!(
-            !task.affects_file(&std::path::PathBuf::from("src/other.rs")),
-            "Task should not affect a file not in its affected_files list"
-        );
-    }
-
-    #[test]
-    fn test_task_affects_file_when_no_affected_files() {
-        let task_id = TaskId::parse("### 1. Test Task").unwrap();
-        let task = Task::new(task_id);
-
-        // When no affected_files specified, task is considered to potentially affect all files
-        assert!(
-            task.affects_file(&std::path::PathBuf::from("src/any.rs")),
-            "Task with no affected_files should match any file (conservative)"
-        );
-    }
-
-    #[test]
-    fn test_task_affects_any_file_with_matches() {
-        let task_id = TaskId::parse("### 1. Test Task").unwrap();
-        let files = vec![
-            std::path::PathBuf::from("src/main.rs"),
-            std::path::PathBuf::from("src/lib.rs"),
-        ];
-        let task = Task::new(task_id).with_affected_files(files);
-
-        let check_files = vec![
-            std::path::PathBuf::from("src/lib.rs"),
-            std::path::PathBuf::from("src/other.rs"),
-        ];
-
-        assert!(
-            task.affects_any_file(&check_files),
-            "Task should affect any file when at least one matches"
-        );
-    }
-
-    #[test]
-    fn test_task_affects_any_file_without_matches() {
-        let task_id = TaskId::parse("### 1. Test Task").unwrap();
-        let files = vec![std::path::PathBuf::from("src/main.rs")];
-        let task = Task::new(task_id).with_affected_files(files);
-
-        let check_files = vec![
-            std::path::PathBuf::from("src/other.rs"),
-            std::path::PathBuf::from("src/another.rs"),
-        ];
-
-        assert!(
-            !task.affects_any_file(&check_files),
-            "Task should not affect any file when none match"
-        );
-    }
-
-    #[test]
-    fn test_task_affects_any_file_when_no_affected_files() {
-        let task_id = TaskId::parse("### 1. Test Task").unwrap();
-        let task = Task::new(task_id);
-
-        let check_files = vec![std::path::PathBuf::from("src/any.rs")];
-
-        // Conservative: no affected_files means potentially affects all
-        assert!(
-            task.affects_any_file(&check_files),
-            "Task with no affected_files should match any files (conservative)"
         );
     }
 
