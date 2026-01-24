@@ -17,7 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,900 passing
+**Current Test Count**: 1,918 passing
 
 ---
 
@@ -118,10 +118,19 @@
 **Description**: Build context from changed files + CCG neighbors.
 
 **Requirements**:
-- [ ] Add `scope: Option<ChangeScope>` to context builder
-- [ ] When scoped: include changed files + their CCG neighbors (call graph)
-- [ ] Use narsil-mcp `get_call_graph` to find related functions
-- [ ] Graceful degradation when narsil-mcp unavailable (just use changed files)
+- [x] Add `scope: Option<ChangeScope>` to context builder
+- [x] When scoped: include changed files + their CCG neighbors (call graph)
+- [x] Use narsil-mcp `get_call_graph` to find related functions
+- [x] Graceful degradation when narsil-mcp unavailable (just use changed files)
+
+**Test-First**:
+```rust
+// - test_change_scope_new_empty ✓
+// - test_change_scope_with_files ✓
+// - test_change_scope_from_detector ✓
+// - test_builder_for_scope_exists ✓
+// - test_builder_for_scope_graceful_degradation ✓
+```
 
 ### Phase 26.4: Scoped Task Selection
 

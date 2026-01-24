@@ -136,7 +136,7 @@ pub use verify::{
 };
 
 // Re-export changes types
-pub use changes::ChangeDetector;
+pub use changes::{ChangeDetector, ChangeScope};
 
 // Re-export stagnation types
 pub use stagnation::{

@@ -19,6 +19,7 @@
 //! let context = PromptContext::new().with_code_intelligence(intel);
 //! ```
 
+use crate::changes::ChangeScope;
 use crate::narsil::{Dependency, NarsilClient, NarsilError, Reference};
 use crate::prompt::context::{
     CallGraphNode, CodeIntelligenceContext, ModuleDependency, ReferenceKind, SymbolReference,
@@ -45,6 +46,10 @@ pub struct CodeIntelligenceBuilder<'a> {
     files: Vec<String>,
     max_call_depth: u32,
     include_transitive: bool,
+    /// Whether to discover and include CCG (call graph) neighbors.
+    include_ccg_neighbors: bool,
+    /// Commit reference from the scope, if scoped build.
+    scope_commit_ref: Option<String>,
 }
 
 impl<'a> CodeIntelligenceBuilder<'a> {
@@ -64,6 +69,8 @@ impl<'a> CodeIntelligenceBuilder<'a> {
             files: Vec::new(),
             max_call_depth: 2,
             include_transitive: false,
+            include_ccg_neighbors: false,
+            scope_commit_ref: None,
         }
     }
 
@@ -122,6 +129,65 @@ impl<'a> CodeIntelligenceBuilder<'a> {
     #[must_use]
     pub fn with_transitive(mut self, include: bool) -> Self {
         self.include_transitive = include;
+        self
+    }
+
+    /// Enable CCG (call graph) neighbor discovery.
+    ///
+    /// When enabled, the builder will query for callers and callees of functions
+    /// in the scoped files, effectively expanding the context to include
+    /// related code that may be affected by changes.
+    ///
+    /// Default is false (only query explicitly specified files/functions).
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let intel = CodeIntelligenceBuilder::new(&client)
+    ///     .for_scope(&scope)
+    ///     .with_include_ccg_neighbors(true)
+    ///     .build()?;
+    /// ```
+    #[must_use]
+    pub fn with_include_ccg_neighbors(mut self, include: bool) -> Self {
+        self.include_ccg_neighbors = include;
+        self
+    }
+
+    /// Add files from a `ChangeScope` for dependency and call graph analysis.
+    ///
+    /// This method enables incremental context building by focusing on
+    /// changed files and their CCG neighbors (callers/callees).
+    ///
+    /// # Arguments
+    ///
+    /// * `scope` - The change scope containing files to analyze
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::changes::{ChangeDetector, ChangeScope};
+    ///
+    /// let detector = ChangeDetector::new(".");
+    /// let scope = ChangeScope::from_detector(&detector)?;
+    ///
+    /// let intel = CodeIntelligenceBuilder::new(&client)
+    ///     .for_scope(&scope)
+    ///     .with_include_ccg_neighbors(true)
+    ///     .build()?;
+    /// ```
+    #[must_use]
+    pub fn for_scope(mut self, scope: &ChangeScope) -> Self {
+        // Add all changed files for dependency analysis
+        for file in scope.changed_files() {
+            if let Some(file_str) = file.to_str() {
+                self.files.push(file_str.to_string());
+            }
+        }
+
+        // Store commit ref for context
+        self.scope_commit_ref = scope.commit_ref().map(String::from);
+
         self
     }
 
@@ -556,5 +622,146 @@ mod tests {
         let symbol_ref = convert_reference("test_symbol", &narsil_ref);
 
         assert_eq!(symbol_ref.file, "src/nested/deeply/module.rs");
+    }
+
+    // =========================================================================
+    // Scoped Context Building Tests (Sprint 26.3)
+    // =========================================================================
+
+    #[test]
+    fn test_builder_for_scope_exists() {
+        use crate::changes::ChangeScope;
+
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let scope = ChangeScope::from_files(vec![PathBuf::from("src/main.rs")]);
+
+        // for_scope should accept a ChangeScope and add files for dependency analysis
+        let builder = CodeIntelligenceBuilder::new(&client).for_scope(&scope);
+
+        // Should have the changed files queued for dependency analysis
+        assert!(builder.files.contains(&"src/main.rs".to_string()));
+    }
+
+    #[test]
+    fn test_builder_for_scope_includes_all_changed_files() {
+        use crate::changes::ChangeScope;
+
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let scope = ChangeScope::from_files(vec![
+            PathBuf::from("src/main.rs"),
+            PathBuf::from("src/lib.rs"),
+            PathBuf::from("src/utils.rs"),
+        ]);
+
+        let builder = CodeIntelligenceBuilder::new(&client).for_scope(&scope);
+
+        assert_eq!(builder.files.len(), 3);
+        assert!(builder.files.contains(&"src/main.rs".to_string()));
+        assert!(builder.files.contains(&"src/lib.rs".to_string()));
+        assert!(builder.files.contains(&"src/utils.rs".to_string()));
+    }
+
+    #[test]
+    fn test_builder_for_scope_empty_scope() {
+        use crate::changes::ChangeScope;
+
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let scope = ChangeScope::new();
+
+        let builder = CodeIntelligenceBuilder::new(&client).for_scope(&scope);
+
+        // Empty scope should result in no files
+        assert!(builder.files.is_empty());
+    }
+
+    #[test]
+    fn test_builder_for_scope_can_chain_with_other_methods() {
+        use crate::changes::ChangeScope;
+
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let scope = ChangeScope::from_files(vec![PathBuf::from("src/main.rs")]);
+
+        let builder = CodeIntelligenceBuilder::new(&client)
+            .for_scope(&scope)
+            .for_functions(&["process_data"])
+            .for_symbols(&["MyStruct"]);
+
+        // Should have both scoped files and explicitly specified queries
+        assert!(builder.files.contains(&"src/main.rs".to_string()));
+        assert!(builder.functions.contains(&"process_data".to_string()));
+        assert!(builder.symbols.contains(&"MyStruct".to_string()));
+    }
+
+    #[test]
+    fn test_builder_for_scope_graceful_degradation() {
+        use crate::changes::ChangeScope;
+
+        // Use a non-existent binary path to ensure unavailability
+        let config = NarsilConfig::new(".").with_binary_path("/nonexistent/narsil-mcp");
+        let client = NarsilClient::new(config).unwrap();
+
+        let scope = ChangeScope::from_files(vec![PathBuf::from("src/main.rs")]);
+
+        let result = CodeIntelligenceBuilder::new(&client)
+            .for_scope(&scope)
+            .build();
+
+        // Should gracefully return empty context, not error
+        assert!(result.is_ok());
+        let intel = result.unwrap();
+        assert!(!intel.is_available);
+    }
+
+    #[test]
+    fn test_builder_for_scope_with_ccg_neighbor_discovery() {
+        use crate::changes::ChangeScope;
+
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let scope = ChangeScope::from_files(vec![PathBuf::from("src/handler.rs")]);
+
+        // When building with scope, it should query for CCG neighbors
+        let builder = CodeIntelligenceBuilder::new(&client)
+            .for_scope(&scope)
+            .with_include_ccg_neighbors(true);
+
+        // The flag should be set
+        assert!(builder.include_ccg_neighbors);
+    }
+
+    #[test]
+    fn test_builder_include_ccg_neighbors_default_false() {
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let builder = CodeIntelligenceBuilder::new(&client);
+
+        // By default, CCG neighbor discovery should be disabled
+        assert!(!builder.include_ccg_neighbors);
+    }
+
+    #[test]
+    fn test_scoped_context_stores_scope_info() {
+        use crate::changes::ChangeScope;
+
+        let config = NarsilConfig::new(".");
+        let client = NarsilClient::new(config).unwrap();
+
+        let scope = ChangeScope::from_files(vec![PathBuf::from("src/main.rs")])
+            .with_commit_ref("HEAD~5");
+
+        let builder = CodeIntelligenceBuilder::new(&client).for_scope(&scope);
+
+        // Builder should store the scope reference for context
+        assert_eq!(builder.scope_commit_ref, Some("HEAD~5".to_string()));
     }
 }

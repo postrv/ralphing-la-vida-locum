@@ -21,8 +21,246 @@
 
 use crate::error::{RalphError, Result};
 use globset::Glob;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Represents a scope of changed files for incremental execution.
+///
+/// `ChangeScope` captures which files have changed (either in the working tree
+/// or since a specific commit) and provides methods for filtering and querying
+/// these changes. It's designed to work with quality gates and context builders
+/// to enable incremental execution on large codebases.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::changes::{ChangeDetector, ChangeScope};
+///
+/// // Create scope from working tree changes
+/// let detector = ChangeDetector::new(".");
+/// let scope = ChangeScope::from_detector(&detector)?;
+///
+/// // Or create from specific files
+/// let scope = ChangeScope::from_files(vec![
+///     PathBuf::from("src/main.rs"),
+///     PathBuf::from("src/lib.rs"),
+/// ]);
+///
+/// // Filter to only Rust files
+/// let rust_scope = scope.filter_by_extensions(&["rs"]);
+///
+/// // Use with quality gates or context building
+/// if scope.has_changes() {
+///     println!("Changed {} files", scope.changed_files().len());
+/// }
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct ChangeScope {
+    /// Files that are in scope (changed or explicitly specified).
+    files: Vec<PathBuf>,
+    /// The commit reference this scope was computed from, if any.
+    commit_ref: Option<String>,
+}
+
+impl ChangeScope {
+    /// Create a new empty change scope.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let scope = ChangeScope::new();
+    /// assert!(!scope.has_changes());
+    /// ```
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a scope from a list of file paths.
+    ///
+    /// # Arguments
+    ///
+    /// * `files` - Files to include in the scope
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let scope = ChangeScope::from_files(vec![
+    ///     PathBuf::from("src/main.rs"),
+    ///     PathBuf::from("src/lib.rs"),
+    /// ]);
+    /// ```
+    #[must_use]
+    pub fn from_files(files: Vec<PathBuf>) -> Self {
+        Self {
+            files,
+            commit_ref: None,
+        }
+    }
+
+    /// Create a scope from a `ChangeDetector` by detecting working tree changes.
+    ///
+    /// # Arguments
+    ///
+    /// * `detector` - The change detector to use
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if git operations fail.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let detector = ChangeDetector::new(".");
+    /// let scope = ChangeScope::from_detector(&detector)?;
+    /// ```
+    pub fn from_detector(detector: &ChangeDetector) -> Result<Self> {
+        let files = detector.changed_in_working_tree()?;
+        Ok(Self {
+            files,
+            commit_ref: None,
+        })
+    }
+
+    /// Create a scope from changes since a specific commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `detector` - The change detector to use
+    /// * `commit` - Git commit reference (e.g., "HEAD~5", "abc123")
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the commit reference is invalid or git operations fail.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let detector = ChangeDetector::new(".");
+    /// let scope = ChangeScope::from_detector_since(&detector, "HEAD~3")?;
+    /// ```
+    pub fn from_detector_since(detector: &ChangeDetector, commit: &str) -> Result<Self> {
+        let files = detector.changed_since(commit)?;
+        Ok(Self {
+            files,
+            commit_ref: Some(commit.to_string()),
+        })
+    }
+
+    /// Set the commit reference for this scope.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let scope = ChangeScope::new().with_commit_ref("HEAD~5");
+    /// ```
+    #[must_use]
+    pub fn with_commit_ref(mut self, commit: impl Into<String>) -> Self {
+        self.commit_ref = Some(commit.into());
+        self
+    }
+
+    /// Get the list of changed files.
+    #[must_use]
+    pub fn changed_files(&self) -> &[PathBuf] {
+        &self.files
+    }
+
+    /// Get the commit reference, if this scope was computed from a commit.
+    #[must_use]
+    pub fn commit_ref(&self) -> Option<&str> {
+        self.commit_ref.as_deref()
+    }
+
+    /// Check if there are any changes in this scope.
+    #[must_use]
+    pub fn has_changes(&self) -> bool {
+        !self.files.is_empty()
+    }
+
+    /// Check if a specific file is in this scope.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The file path to check
+    #[must_use]
+    pub fn is_file_in_scope(&self, path: &Path) -> bool {
+        self.files.iter().any(|f| f == path)
+    }
+
+    /// Filter the scope to only include files with specific extensions.
+    ///
+    /// Extensions should be provided without the leading dot (e.g., "rs" not ".rs").
+    ///
+    /// # Arguments
+    ///
+    /// * `extensions` - Extensions to filter by
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let rust_scope = scope.filter_by_extensions(&["rs"]);
+    /// ```
+    #[must_use]
+    pub fn filter_by_extensions(&self, extensions: &[&str]) -> Self {
+        let filtered: Vec<PathBuf> = self
+            .files
+            .iter()
+            .filter(|path| {
+                if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_string_lossy();
+                    extensions.iter().any(|e| e.eq_ignore_ascii_case(&ext_str))
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect();
+
+        Self {
+            files: filtered,
+            commit_ref: self.commit_ref.clone(),
+        }
+    }
+
+    /// Merge this scope with another, combining their changed files.
+    ///
+    /// Duplicate files are deduplicated.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - The scope to merge with
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let merged = scope1.merge(&scope2);
+    /// ```
+    #[must_use]
+    pub fn merge(&self, other: &Self) -> Self {
+        let mut seen: HashSet<PathBuf> = HashSet::new();
+        let mut merged = Vec::new();
+
+        for file in &self.files {
+            if seen.insert(file.clone()) {
+                merged.push(file.clone());
+            }
+        }
+
+        for file in &other.files {
+            if seen.insert(file.clone()) {
+                merged.push(file.clone());
+            }
+        }
+
+        Self {
+            files: merged,
+            // Keep our commit ref if we have one, otherwise use other's
+            commit_ref: self.commit_ref.clone().or_else(|| other.commit_ref.clone()),
+        }
+    }
+}
 
 /// Detects changed files in a git repository.
 ///
@@ -688,5 +926,136 @@ mod tests {
         assert!(changes.contains(&PathBuf::from("code.rs")));
         assert!(changes.contains(&PathBuf::from("config.toml")));
         assert!(!changes.contains(&PathBuf::from("readme.md")));
+    }
+
+    // =========================================================================
+    // ChangeScope Tests (Sprint 26.3)
+    // =========================================================================
+
+    #[test]
+    fn test_change_scope_new_empty() {
+        let scope = ChangeScope::new();
+        assert!(scope.changed_files().is_empty());
+        assert!(scope.commit_ref().is_none());
+        assert!(!scope.has_changes());
+    }
+
+    #[test]
+    fn test_change_scope_with_files() {
+        let files = vec![PathBuf::from("src/main.rs"), PathBuf::from("src/lib.rs")];
+        let scope = ChangeScope::from_files(files.clone());
+
+        assert_eq!(scope.changed_files().len(), 2);
+        assert!(scope.has_changes());
+        assert!(scope.commit_ref().is_none());
+    }
+
+    #[test]
+    fn test_change_scope_with_commit_ref() {
+        let scope = ChangeScope::new().with_commit_ref("HEAD~5");
+        assert_eq!(scope.commit_ref(), Some("HEAD~5"));
+    }
+
+    #[test]
+    fn test_change_scope_from_detector() {
+        let fixture = TestFixture::with_git_repo();
+
+        // Add a new file
+        fixture.write_file("new_file.rs", "fn new() {}").unwrap();
+
+        let detector = ChangeDetector::new(fixture.path());
+        let scope = ChangeScope::from_detector(&detector).unwrap();
+
+        assert!(scope.has_changes());
+        assert!(
+            scope
+                .changed_files()
+                .contains(&PathBuf::from("new_file.rs")),
+            "Scope should contain the changed file"
+        );
+    }
+
+    #[test]
+    fn test_change_scope_from_detector_with_commit() {
+        let fixture = TestFixture::with_git_repo();
+        let old_hash = fixture.get_commit_hash();
+
+        // Make changes after the commit
+        fixture
+            .write_file("after_commit.rs", "fn after() {}")
+            .unwrap();
+        fixture.make_commit("Add after_commit.rs");
+
+        let detector = ChangeDetector::new(fixture.path());
+        let scope = ChangeScope::from_detector_since(&detector, &old_hash).unwrap();
+
+        assert!(scope.has_changes());
+        assert_eq!(scope.commit_ref(), Some(old_hash.as_str()));
+        assert!(scope
+            .changed_files()
+            .contains(&PathBuf::from("after_commit.rs")));
+    }
+
+    #[test]
+    fn test_change_scope_filter_by_extension() {
+        let files = vec![
+            PathBuf::from("src/main.rs"),
+            PathBuf::from("Cargo.toml"),
+            PathBuf::from("README.md"),
+        ];
+        let scope = ChangeScope::from_files(files);
+        let rust_only = scope.filter_by_extensions(&["rs"]);
+
+        assert_eq!(rust_only.changed_files().len(), 1);
+        assert!(rust_only
+            .changed_files()
+            .contains(&PathBuf::from("src/main.rs")));
+    }
+
+    #[test]
+    fn test_change_scope_extract_function_names() {
+        // Changed files should allow extracting function names for CCG lookup
+        let files = vec![PathBuf::from("src/handler.rs")];
+        let scope = ChangeScope::from_files(files);
+
+        // This would be used by the intelligence builder to query call graphs
+        let files_for_query: Vec<&str> = scope
+            .changed_files()
+            .iter()
+            .filter_map(|p| p.to_str())
+            .collect();
+
+        assert_eq!(files_for_query, vec!["src/handler.rs"]);
+    }
+
+    #[test]
+    fn test_change_scope_merge() {
+        let scope1 = ChangeScope::from_files(vec![PathBuf::from("a.rs")]);
+        let scope2 = ChangeScope::from_files(vec![PathBuf::from("b.rs")]);
+        let merged = scope1.merge(&scope2);
+
+        assert_eq!(merged.changed_files().len(), 2);
+        assert!(merged.changed_files().contains(&PathBuf::from("a.rs")));
+        assert!(merged.changed_files().contains(&PathBuf::from("b.rs")));
+    }
+
+    #[test]
+    fn test_change_scope_merge_deduplicates() {
+        let scope1 = ChangeScope::from_files(vec![PathBuf::from("a.rs"), PathBuf::from("b.rs")]);
+        let scope2 = ChangeScope::from_files(vec![PathBuf::from("b.rs"), PathBuf::from("c.rs")]);
+        let merged = scope1.merge(&scope2);
+
+        assert_eq!(merged.changed_files().len(), 3);
+    }
+
+    #[test]
+    fn test_change_scope_is_file_in_scope() {
+        let scope = ChangeScope::from_files(vec![
+            PathBuf::from("src/main.rs"),
+            PathBuf::from("src/lib.rs"),
+        ]);
+
+        assert!(scope.is_file_in_scope(&PathBuf::from("src/main.rs")));
+        assert!(!scope.is_file_in_scope(&PathBuf::from("src/other.rs")));
     }
 }
