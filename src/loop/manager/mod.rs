@@ -47,6 +47,7 @@ use super::progress::ProgressTracker;
 use super::retry::{IntelligentRetry, RetryConfig, RetryHistory};
 use super::state::{LoopMode, LoopState};
 use super::task_tracker::{TaskState, TaskTracker, TaskTrackerConfig, TaskTransition};
+use crate::session::{PredictorSnapshot, SessionState, SupervisorSnapshot};
 use crate::supervisor::predictor::{
     InterventionThresholds, PredictorConfig, PreventiveAction, RiskSignals, RiskWeights,
     StagnationPredictor, WeightPreset,
@@ -1938,6 +1939,24 @@ impl LoopManager {
             }),
         )?;
 
+        // Create session state snapshot for future persistence support (Phase 21.2+)
+        let mut session_snapshot = self.session_state();
+        session_snapshot.touch(); // Update saved_at timestamp
+
+        // Log session state for debugging (Phase 21.2 will persist this)
+        debug!(
+            "Session state snapshot: version={}, session_id={}, empty={}, compatible={}",
+            session_snapshot.version(),
+            session_snapshot.session_id(),
+            session_snapshot.is_empty(),
+            session_snapshot.is_version_compatible()
+        );
+        debug!(
+            "Session timestamps: created={}, saved={}",
+            session_snapshot.created_at(),
+            session_snapshot.saved_at()
+        );
+
         println!(
             "\n{} Session complete. Analytics: .ralph/analytics.jsonl",
             "Done:".green().bold()
@@ -2256,6 +2275,29 @@ impl LoopManager {
     #[must_use]
     pub fn progress_tracker(&self) -> &ProgressTracker {
         &self.progress_tracker
+    }
+
+    /// Create a session state snapshot for persistence.
+    ///
+    /// Captures the current loop state, task tracker, and metadata
+    /// into a serializable `SessionState` for crash recovery.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let state = manager.session_state();
+    /// let json = serde_json::to_string(&state)?;
+    /// // Save to .ralph/session.json
+    /// ```
+    #[must_use]
+    pub fn session_state(&self) -> SessionState {
+        let mut session = SessionState::new();
+        session.set_loop_state(self.state.clone());
+        session.set_task_tracker(self.task_tracker.clone());
+        // Initialize with empty snapshots - Phase 21.4 will populate with actual state
+        session.set_supervisor(SupervisorSnapshot::new());
+        session.set_predictor(PredictorSnapshot::new());
+        session
     }
 }
 

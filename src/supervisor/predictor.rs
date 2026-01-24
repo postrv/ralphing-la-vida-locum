@@ -124,7 +124,7 @@ impl std::fmt::Display for RiskLevel {
 /// Weights for each risk factor.
 ///
 /// Weights should sum to 1.0 for normalized scoring.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RiskWeights {
     /// Weight for iterations since last commit (default: 0.25).
     pub commit_gap: f64,
@@ -340,7 +340,7 @@ impl std::str::FromStr for WeightPreset {
 }
 
 /// Thresholds for intervention decisions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct InterventionThresholds {
     /// Score below which risk is considered low (default: 30).
     pub low_max: f64,
@@ -387,7 +387,7 @@ impl InterventionThresholds {
 }
 
 /// Configuration for the stagnation predictor.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PredictorConfig {
     /// Weights for risk factors.
     pub weights: RiskWeights,

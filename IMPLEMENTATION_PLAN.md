@@ -36,11 +36,11 @@
 **Description**: Define the unified session state structure that captures all recoverable state.
 
 **Requirements**:
-- [ ] Create `src/session/mod.rs` module with `SessionState` struct
-- [ ] `SessionState` must include: `LoopState`, `TaskTracker` snapshot, `Supervisor` state, `StagnationPredictor` history, session metadata (version, timestamp, pid)
-- [ ] Implement `Serialize`/`Deserialize` for `SessionState`
-- [ ] Add version field for forward compatibility (reject incompatible versions gracefully)
-- [ ] Write unit tests for serialization round-trip
+- [x] Create `src/session/mod.rs` module with `SessionState` struct
+- [x] `SessionState` must include: `LoopState`, `TaskTracker` snapshot, `Supervisor` state, `StagnationPredictor` history, session metadata (version, timestamp, pid)
+- [x] Implement `Serialize`/`Deserialize` for `SessionState`
+- [x] Add version field for forward compatibility (reject incompatible versions gracefully)
+- [x] Write unit tests for serialization round-trip
 
 **Test-First Requirements**:
 ```rust
@@ -875,7 +875,7 @@ cargo deny check licenses
 ## Progress Tracking
 
 ### Sprint 21: Session Persistence
-- [ ] Phase 21.1: Session State Domain Model
+- [x] Phase 21.1: Session State Domain Model
 - [ ] Phase 21.2: Session Persistence Layer
 - [ ] Phase 21.3: Signal Handler Integration
 - [ ] Phase 21.4: LoopManager Integration

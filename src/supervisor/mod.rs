@@ -57,7 +57,7 @@ impl std::fmt::Display for SupervisorVerdict {
 }
 
 /// Health indicators for the loop
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HealthMetrics {
     /// Iterations since last commit
     pub iterations_since_commit: u32,

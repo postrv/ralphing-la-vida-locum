@@ -11,6 +11,7 @@ mod archive;
 mod context;
 mod hooks;
 mod r#loop;
+mod session;
 mod supervisor;
 
 use crate::archive::ArchiveManager;
