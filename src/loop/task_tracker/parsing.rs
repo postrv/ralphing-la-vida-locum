@@ -249,6 +249,96 @@ impl TaskTracker {
         }
         self.modified_at = chrono::Utc::now();
     }
+
+    /// Validate task tracker state against the current plan on startup.
+    ///
+    /// This method should be called at the beginning of a new session to ensure
+    /// the persisted task tracker state is consistent with the current plan.
+    ///
+    /// It performs the following operations:
+    /// 1. Marks any tasks not in the plan as orphaned
+    /// 2. Clears `current_task` if it points to an orphaned task
+    ///
+    /// This prevents Ralph from getting stuck on stale/removed tasks after
+    /// the plan changes between sessions.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::r#loop::task_tracker::{TaskTracker, TaskTrackerConfig};
+    ///
+    /// let mut tracker = TaskTracker::new(TaskTrackerConfig::default());
+    /// let plan = "### 1. Task One\n- [ ] Item";
+    /// tracker.validate_on_startup(plan);
+    /// ```
+    pub fn validate_on_startup(&mut self, plan: &str) {
+        // First, mark any orphaned tasks
+        self.mark_orphaned_tasks(plan);
+
+        // Then, clear current_task if it's orphaned
+        let _ = self.clear_current_task_if_orphaned();
+    }
+
+    /// Clear the current task if it is marked as orphaned.
+    ///
+    /// Returns `true` if the current task was cleared, `false` otherwise.
+    ///
+    /// This is useful when the plan changes and the previously-selected task
+    /// no longer exists.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ralph::r#loop::task_tracker::{TaskTracker, TaskTrackerConfig};
+    ///
+    /// let mut tracker = TaskTracker::new(TaskTrackerConfig::default());
+    /// // ... parse plan, set current, mark orphaned ...
+    /// let was_cleared = tracker.clear_current_task_if_orphaned();
+    /// ```
+    #[must_use]
+    pub fn clear_current_task_if_orphaned(&mut self) -> bool {
+        let should_clear = self
+            .current_task
+            .as_ref()
+            .and_then(|id| self.tasks.get(id))
+            .is_some_and(|task| task.is_orphaned());
+
+        if should_clear {
+            self.current_task = None;
+            self.modified_at = chrono::Utc::now();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if a task exists in the given plan content.
+    ///
+    /// This method checks if the task's title appears as a valid task header
+    /// in the plan content. It's useful for defensive validation to ensure
+    /// a task is still present before working on it.
+    ///
+    /// Note: This method is primarily for testing defensive task selection
+    /// behavior. In production, the orphan flag system handles this via
+    /// `validate_on_startup()` and `mark_orphaned_tasks()`.
+    #[cfg(test)]
+    #[must_use]
+    pub fn task_exists_in_plan(&self, task_id: &TaskId, plan: &str) -> bool {
+        let header_re = Regex::new(r"^###\s+(\d+[a-z]?)\.\s+(.+)$").unwrap();
+
+        plan.lines().any(|line| {
+            let trimmed = line.trim();
+            if header_re.is_match(trimmed) {
+                if let Ok(parsed_id) = TaskId::parse(trimmed) {
+                    parsed_id.title() == task_id.title()
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        })
+    }
 }
 
 // ============================================================================

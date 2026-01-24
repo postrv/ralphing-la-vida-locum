@@ -33,6 +33,26 @@
 //!     │                      ▼
 //!     └──────────────────> Complete
 //! ```
+//!
+//! # Startup Validation & Orphan Detection
+//!
+//! The task tracker persists state to `.ralph/task_tracker.json` between sessions.
+//! When the plan changes while Ralph isn't running, stale tasks can cause issues.
+//!
+//! To prevent Ralph from getting stuck on orphaned tasks:
+//!
+//! 1. **Startup Validation**: `validate_on_startup(plan)` is called before the
+//!    first loop iteration. It marks any tasks not in the current plan as orphaned
+//!    and clears `current_task` if it points to an orphaned task.
+//!
+//! 2. **Orphan Skipping**: `select_next_task()` automatically skips tasks marked
+//!    as orphaned, ensuring Ralph only works on tasks that exist in the current plan.
+//!
+//! 3. **Mid-Session Detection**: `check_for_orphaned_tasks()` runs whenever
+//!    progress is detected, catching plan changes during a session.
+//!
+//! This defensive system ensures Ralph gracefully handles plan changes without
+//! requiring manual intervention (like deleting task_tracker.json).
 
 mod parsing;
 mod persistence;
@@ -3055,5 +3075,234 @@ mod tests {
         if let Some(id) = selected {
             assert_eq!(id.subsection(), Some("7a"));
         }
+    }
+
+    // ========================================================================
+    // Startup Validation Tests (Sprint 20)
+    // ========================================================================
+
+    #[test]
+    fn test_validate_on_startup_marks_orphaned_tasks() {
+        // Simulate session 1: Parse plan v1 with two tasks
+        let plan_v1 = r#"
+## Current Sprint
+### 1. Task One
+- [ ] Item
+
+### 2. Task Two
+- [ ] Item
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        // Set Task Two as current
+        let task_two = TaskId::parse("### 2. Task Two").unwrap();
+        tracker.set_current(&task_two).unwrap();
+        assert!(tracker.current_task.is_some());
+
+        // Simulate session 2: Plan changed, Task Two removed
+        let plan_v2 = r#"
+## Current Sprint
+### 1. Task One
+- [ ] Item
+
+### 3. Task Three
+- [ ] Item
+"#;
+
+        // Call validate_on_startup with the new plan
+        tracker.validate_on_startup(plan_v2);
+
+        // Task Two should now be orphaned
+        let task = tracker.get_task(&task_two).unwrap();
+        assert!(task.is_orphaned(), "Task Two should be marked as orphaned");
+
+        // current_task should be cleared because it was orphaned
+        assert!(
+            tracker.current_task.is_none(),
+            "current_task should be cleared when orphaned"
+        );
+    }
+
+    #[test]
+    fn test_validate_on_startup_keeps_valid_current_task() {
+        let plan = r#"
+## Current Sprint
+### 1. Task One
+- [ ] Item
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let task_one = TaskId::parse("### 1. Task One").unwrap();
+        tracker.set_current(&task_one).unwrap();
+
+        // Validate with same plan - current task should remain
+        tracker.validate_on_startup(plan);
+
+        assert!(
+            tracker.current_task.is_some(),
+            "current_task should remain when not orphaned"
+        );
+        assert_eq!(tracker.current_task.as_ref().unwrap(), &task_one);
+    }
+
+    #[test]
+    fn test_clear_current_task_if_orphaned() {
+        let plan_v1 = r#"
+## Current Sprint
+### 1. Old Task
+- [ ] Item
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        let old_task = TaskId::parse("### 1. Old Task").unwrap();
+        tracker.set_current(&old_task).unwrap();
+
+        // Mark the task as orphaned
+        let plan_v2 = r#"
+## Current Sprint
+### 2. New Task
+- [ ] Item
+"#;
+        tracker.mark_orphaned_tasks(plan_v2);
+
+        // Clear current task if orphaned
+        let was_cleared = tracker.clear_current_task_if_orphaned();
+
+        assert!(was_cleared, "Should return true when current task was orphaned and cleared");
+        assert!(tracker.current_task.is_none());
+    }
+
+    #[test]
+    fn test_clear_current_task_if_orphaned_noop_when_valid() {
+        let plan = r#"
+## Current Sprint
+### 1. Valid Task
+- [ ] Item
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        let task = TaskId::parse("### 1. Valid Task").unwrap();
+        tracker.set_current(&task).unwrap();
+
+        // Task is not orphaned
+        let was_cleared = tracker.clear_current_task_if_orphaned();
+
+        assert!(!was_cleared, "Should return false when current task is not orphaned");
+        assert!(tracker.current_task.is_some());
+    }
+
+    #[test]
+    fn test_clear_current_task_if_orphaned_noop_when_no_current() {
+        let plan = r#"
+## Current Sprint
+### 1. Task
+- [ ] Item
+"#;
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan).unwrap();
+
+        // No current task set
+        let was_cleared = tracker.clear_current_task_if_orphaned();
+
+        assert!(!was_cleared, "Should return false when no current task");
+    }
+
+    // ========================================================================
+    // Defensive Task Selection Tests (Sprint 20, Phase 20.2)
+    // ========================================================================
+
+    #[test]
+    fn test_task_exists_in_plan_returns_true_for_present_task() {
+        let plan = r#"
+## Current Sprint
+### 1. Task One
+- [ ] Item
+
+### 2. Task Two
+- [ ] Item
+"#;
+        let task_id = TaskId::parse("### 1. Task One").unwrap();
+        let tracker = TaskTracker::default();
+
+        assert!(
+            tracker.task_exists_in_plan(&task_id, plan),
+            "Task One should exist in the plan"
+        );
+    }
+
+    #[test]
+    fn test_task_exists_in_plan_returns_false_for_absent_task() {
+        let plan = r#"
+## Current Sprint
+### 1. Task One
+- [ ] Item
+"#;
+        let task_id = TaskId::parse("### 2. Missing Task").unwrap();
+        let tracker = TaskTracker::default();
+
+        assert!(
+            !tracker.task_exists_in_plan(&task_id, plan),
+            "Missing Task should not exist in the plan"
+        );
+    }
+
+    #[test]
+    fn test_task_exists_in_plan_handles_sprint_subsection_format() {
+        let plan = r#"
+## Sprint 7: Quality Gates
+### 7a. QualityGate Trait
+- [ ] Item
+"#;
+        let task_id = TaskId::parse("### 7a. QualityGate Trait").unwrap();
+        let tracker = TaskTracker::default();
+
+        assert!(
+            tracker.task_exists_in_plan(&task_id, plan),
+            "Sprint subsection task should exist in the plan"
+        );
+    }
+
+    #[test]
+    fn test_select_next_task_uses_orphan_flag_correctly() {
+        // This test verifies that select_next_task relies on the orphan flag
+        // set by validate_on_startup, which is the defensive mechanism
+        let plan_v1 = r#"
+## Current Sprint
+### 1. Old Task
+- [ ] Item
+
+### 2. New Task
+- [ ] Item
+"#;
+        let plan_v2 = r#"
+## Current Sprint
+### 2. New Task
+- [ ] Item
+"#;
+
+        let mut tracker = TaskTracker::default();
+        tracker.parse_plan(plan_v1).unwrap();
+
+        // Set Old Task as current
+        let old_task = TaskId::parse("### 1. Old Task").unwrap();
+        tracker.set_current(&old_task).unwrap();
+
+        // Simulate startup with changed plan
+        tracker.validate_on_startup(plan_v2);
+
+        // select_next_task should NOT return the orphaned old task
+        let selected = tracker.select_next_task();
+        assert!(selected.is_some(), "Should find a task");
+
+        let selected_id = selected.unwrap();
+        // Should select Task 2, not the orphaned Task 1
+        assert!(
+            selected_id.title().contains("New Task"),
+            "Should select New Task, not the orphaned Old Task"
+        );
     }
 }

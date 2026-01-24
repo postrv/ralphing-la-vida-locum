@@ -918,6 +918,11 @@ impl LoopManager {
         // Track last prediction for accuracy recording
         let mut last_risk_score: Option<f64> = None;
 
+        // Validate task tracker state against current plan on startup
+        // This prevents Ralph from getting stuck on stale/orphaned tasks
+        // when the plan changes between sessions
+        self.validate_task_tracker_on_startup();
+
         while self.state.iteration < self.max_iterations {
             self.state.next_iteration();
 

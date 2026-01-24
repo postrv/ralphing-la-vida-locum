@@ -103,6 +103,21 @@ impl LoopManager {
         }
     }
 
+    /// Validate task tracker state against the current plan on startup.
+    ///
+    /// This should be called at the beginning of a session to ensure the
+    /// persisted task tracker state is consistent with the current plan.
+    /// It marks orphaned tasks and clears the current_task if it's stale.
+    ///
+    /// This prevents Ralph from getting stuck on stale/removed tasks when
+    /// the plan changes between sessions.
+    pub(crate) fn validate_task_tracker_on_startup(&mut self) {
+        if let Ok(plan_content) = self.read_plan_content() {
+            self.task_tracker.validate_on_startup(&plan_content);
+            debug!("Task tracker startup validation complete");
+        }
+    }
+
     /// Check for orphaned tasks when the plan structure changes.
     ///
     /// Validates the current task tracker against the plan and marks
