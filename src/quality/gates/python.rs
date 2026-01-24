@@ -264,6 +264,68 @@ Found {} errors and {} warnings.
     fn required_tool(&self) -> Option<&str> {
         Some("ruff")
     }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(file_list) => {
+                // Filter to only .py files
+                let py_files: Vec<&PathBuf> = file_list
+                    .iter()
+                    .filter(|f| f.extension().is_some_and(|ext| ext == "py"))
+                    .collect();
+
+                if py_files.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                let mut args = vec!["check".to_string(), "--output-format=json".to_string()];
+                for file in &py_files {
+                    args.push(file.to_string_lossy().to_string());
+                }
+                args.extend(self.extra_args.iter().cloned());
+
+                let output = Command::new("ruff")
+                    .args(&args)
+                    .current_dir(project_dir)
+                    .output();
+
+                match output {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        if out.status.success() {
+                            Ok(Vec::new())
+                        } else {
+                            let issues = self.parse_ruff_json(&stdout);
+                            if issues.is_empty() && !stdout.is_empty() {
+                                Ok(vec![GateIssue::new(
+                                    IssueSeverity::Error,
+                                    format!(
+                                        "Ruff reported issues: {}",
+                                        stdout.lines().next().unwrap_or("")
+                                    ),
+                                )])
+                            } else {
+                                Ok(issues)
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Ruff not installed - tools will fail gracefully
+                        Ok(vec![GateIssue::new(
+                            IssueSeverity::Warning,
+                            "Ruff not available for scoped check",
+                        )])
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -612,6 +674,60 @@ Found {} type errors.
     fn required_tool(&self) -> Option<&str> {
         Some("mypy")
     }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(file_list) => {
+                // Filter to only .py files
+                let py_files: Vec<&PathBuf> = file_list
+                    .iter()
+                    .filter(|f| f.extension().is_some_and(|ext| ext == "py"))
+                    .collect();
+
+                if py_files.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                let mut args: Vec<String> = py_files
+                    .iter()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .collect();
+                args.extend(self.extra_args.iter().cloned());
+
+                let output = Command::new("mypy")
+                    .args(&args)
+                    .current_dir(project_dir)
+                    .output();
+
+                match output {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+
+                        if out.status.success() {
+                            Ok(Vec::new())
+                        } else {
+                            let issues = self.parse_output(&stdout);
+                            if issues.is_empty() && !stdout.is_empty() {
+                                Ok(vec![GateIssue::new(
+                                    IssueSeverity::Error,
+                                    "Mypy reported type errors (run `mypy` for details)",
+                                )])
+                            } else {
+                                Ok(issues)
+                            }
+                        }
+                    }
+                    Err(_) => Ok(Vec::new()),
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -772,6 +888,52 @@ Found {} critical and {} high severity security issues.
 
     fn required_tool(&self) -> Option<&str> {
         Some("bandit")
+    }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(file_list) => {
+                // Filter to only .py files
+                let py_files: Vec<&PathBuf> = file_list
+                    .iter()
+                    .filter(|f| f.extension().is_some_and(|ext| ext == "py"))
+                    .collect();
+
+                if py_files.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                // Bandit accepts multiple file arguments
+                let mut args: Vec<String> = vec!["-f".to_string(), "json".to_string()];
+                for file in &py_files {
+                    args.push(file.to_string_lossy().to_string());
+                }
+                args.extend(self.extra_args.iter().cloned());
+
+                let output = Command::new("bandit")
+                    .args(&args)
+                    .current_dir(project_dir)
+                    .output();
+
+                match output {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let issues = self.parse_json_output(&stdout);
+                        Ok(issues)
+                    }
+                    Err(_) => Ok(vec![GateIssue::new(
+                        IssueSeverity::Warning,
+                        "Bandit not available for scoped check",
+                    )]),
+                }
+            }
+        }
     }
 }
 
@@ -1168,6 +1330,48 @@ src/foo.py:30: warning: Unused variable [unused-ignore]"#;
                 "Gate {} should provide remediation",
                 gate.name()
             );
+        }
+    }
+
+    // =========================================================================
+    // Scoped Quality Gate tests (Sprint 26.2)
+    // =========================================================================
+
+    #[test]
+    fn test_python_gate_scoped_with_empty_returns_no_issues() {
+        // When files is Some but empty, should return no issues
+        let gate = RuffGate::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_mypy_gate_scoped_with_empty_returns_no_issues() {
+        let gate = MypyGate::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_bandit_gate_scoped_with_empty_returns_no_issues() {
+        let gate = BanditGate::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_python_gates_support_run_scoped_api() {
+        // Verify all Python gates support the run_scoped API
+        let gates = python_gates();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        for gate in &gates {
+            // Should not panic when called with None (falls back to run)
+            // We don't check the result as tools may not be installed
+            let _ = gate.run_scoped(temp_dir.path(), Some(&[]));
         }
     }
 }

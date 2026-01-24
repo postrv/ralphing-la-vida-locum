@@ -390,6 +390,65 @@ pub trait QualityGate: Send + Sync {
     fn required_tool(&self) -> Option<&str> {
         None // Default: built-in gate with no external tool requirement
     }
+
+    /// Runs the quality gate check scoped to specific files.
+    ///
+    /// This method allows running the gate on a subset of files, which is
+    /// useful for incremental builds where only changed files need checking.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_dir` - Path to the project root directory
+    /// * `files` - Optional list of specific files to check. If `None`, checks
+    ///   all files (equivalent to calling [`run()`](QualityGate::run)). If
+    ///   `Some(&[])` (empty slice), returns no issues.
+    ///
+    /// # Returns
+    ///
+    /// A vector of issues found, or an empty vector if the check passes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the gate fails to execute.
+    ///
+    /// # Default Implementation
+    ///
+    /// The default implementation falls back to [`run()`](QualityGate::run)
+    /// when `files` is `None`, and returns an empty vector when `files` is
+    /// an empty slice. Gates that support file scoping should override this
+    /// method to provide more efficient scoped checking.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::quality::gates::{QualityGate, NoAllowGate};
+    /// use std::path::PathBuf;
+    ///
+    /// let gate = NoAllowGate::new();
+    /// let project = Path::new("/path/to/project");
+    ///
+    /// // Check all files
+    /// let all_issues = gate.run_scoped(project, None)?;
+    ///
+    /// // Check only specific files
+    /// let changed_files = vec![PathBuf::from("src/main.rs")];
+    /// let scoped_issues = gate.run_scoped(project, Some(&changed_files))?;
+    /// ```
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(_) => {
+                // Default: fall back to running on all files
+                // Gates that support scoping should override this
+                self.run(project_dir)
+            }
+        }
+    }
 }
 
 // ============================================================================

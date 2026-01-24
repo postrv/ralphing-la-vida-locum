@@ -202,6 +202,66 @@ Found {} issues.
     fn required_tool(&self) -> Option<&str> {
         Some("go")
     }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[std::path::PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(file_list) => {
+                // Filter to only .go files
+                let go_files: Vec<&std::path::PathBuf> = file_list
+                    .iter()
+                    .filter(|f| f.extension().is_some_and(|ext| ext == "go"))
+                    .collect();
+
+                if go_files.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                // go vet can accept specific files
+                let mut args: Vec<String> = vec!["vet".to_string()];
+                for file in &go_files {
+                    args.push(file.to_string_lossy().to_string());
+                }
+                args.extend(self.extra_args.iter().cloned());
+
+                let output = Command::new("go")
+                    .args(&args)
+                    .current_dir(project_dir)
+                    .output();
+
+                match output {
+                    Ok(out) => {
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        if out.status.success() {
+                            Ok(Vec::new())
+                        } else {
+                            let issues = self.parse_output(&stderr);
+                            if issues.is_empty() && !stderr.is_empty() {
+                                Ok(vec![GateIssue::new(
+                                    IssueSeverity::Error,
+                                    format!(
+                                        "go vet reported issues: {}",
+                                        stderr.lines().next().unwrap_or("")
+                                    ),
+                                )])
+                            } else {
+                                Ok(issues)
+                            }
+                        }
+                    }
+                    Err(_) => Ok(vec![GateIssue::new(
+                        IssueSeverity::Warning,
+                        "go not available for scoped check",
+                    )]),
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -434,6 +494,67 @@ Found {} errors and {} warnings.
 
     fn required_tool(&self) -> Option<&str> {
         Some("golangci-lint")
+    }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[std::path::PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(file_list) => {
+                // Filter to only .go files
+                let go_files: Vec<&std::path::PathBuf> = file_list
+                    .iter()
+                    .filter(|f| f.extension().is_some_and(|ext| ext == "go"))
+                    .collect();
+
+                if go_files.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                // golangci-lint can accept specific files
+                let mut args = vec!["run".to_string(), "--out-format=json".to_string()];
+                for file in &go_files {
+                    args.push(file.to_string_lossy().to_string());
+                }
+                args.extend(self.extra_args.iter().cloned());
+
+                let output = Command::new("golangci-lint")
+                    .args(&args)
+                    .current_dir(project_dir)
+                    .output();
+
+                match output {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let issues = self.parse_json_output(&stdout);
+                        if issues.is_empty() && !out.status.success() {
+                            let text_issues = self.parse_text_output(&stdout);
+                            if text_issues.is_empty() && !stdout.is_empty() {
+                                Ok(vec![GateIssue::new(
+                                    IssueSeverity::Error,
+                                    format!(
+                                        "golangci-lint reported issues: {}",
+                                        stdout.lines().next().unwrap_or("")
+                                    ),
+                                )])
+                            } else {
+                                Ok(text_issues)
+                            }
+                        } else {
+                            Ok(issues)
+                        }
+                    }
+                    Err(_) => Ok(vec![GateIssue::new(
+                        IssueSeverity::Warning,
+                        "golangci-lint not available for scoped check",
+                    )]),
+                }
+            }
+        }
     }
 }
 
@@ -1321,6 +1442,38 @@ FAIL	example.com/pkg	0.005s"#;
                 "Gate {} should provide remediation",
                 gate.name()
             );
+        }
+    }
+
+    // =========================================================================
+    // Scoped Quality Gate tests (Sprint 26.2)
+    // =========================================================================
+
+    #[test]
+    fn test_go_vet_gate_scoped_with_empty_returns_no_issues() {
+        let gate = GoVetGate::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_golangci_lint_gate_scoped_with_empty_returns_no_issues() {
+        let gate = GolangciLintGate::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_go_gates_support_run_scoped_api() {
+        // Verify all Go gates support the run_scoped API
+        let gates = go_gates();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        for gate in &gates {
+            // Should not panic when called with empty files
+            let _ = gate.run_scoped(temp_dir.path(), Some(&[]));
         }
     }
 }

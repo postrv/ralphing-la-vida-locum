@@ -191,6 +191,65 @@ Found {} errors and {} warnings.
     fn required_tool(&self) -> Option<&str> {
         Some("npx")
     }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(file_list) => {
+                // Filter to only .ts, .tsx, .js, .jsx files
+                let js_files: Vec<&PathBuf> = file_list
+                    .iter()
+                    .filter(|f| {
+                        f.extension().is_some_and(|ext| {
+                            matches!(ext.to_str(), Some("ts" | "tsx" | "js" | "jsx"))
+                        })
+                    })
+                    .collect();
+
+                if js_files.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                let mut args = vec!["eslint".to_string(), "--format=json".to_string()];
+                for file in &js_files {
+                    args.push(file.to_string_lossy().to_string());
+                }
+                args.extend(self.extra_args.iter().cloned());
+
+                let output = Command::new("npx")
+                    .args(&args)
+                    .current_dir(project_dir)
+                    .output();
+
+                match output {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        let issues = self.parse_json_output(&stdout);
+                        if issues.is_empty() && !out.status.success() && !stdout.is_empty() {
+                            Ok(vec![GateIssue::new(
+                                IssueSeverity::Error,
+                                format!(
+                                    "ESLint reported issues: {}",
+                                    stdout.lines().next().unwrap_or("")
+                                ),
+                            )])
+                        } else {
+                            Ok(issues)
+                        }
+                    }
+                    Err(_) => Ok(vec![GateIssue::new(
+                        IssueSeverity::Warning,
+                        "ESLint not available for scoped check",
+                    )]),
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -592,6 +651,54 @@ Found {} type errors.
 
     fn required_tool(&self) -> Option<&str> {
         Some("npx")
+    }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        match files {
+            None => self.run(project_dir),
+            Some([]) => Ok(Vec::new()),
+            Some(file_list) => {
+                // Filter to only .ts, .tsx files
+                let ts_files: Vec<&PathBuf> = file_list
+                    .iter()
+                    .filter(|f| {
+                        f.extension()
+                            .is_some_and(|ext| matches!(ext.to_str(), Some("ts" | "tsx")))
+                    })
+                    .collect();
+
+                if ts_files.is_empty() {
+                    return Ok(Vec::new());
+                }
+
+                // TypeScript type checking generally needs full project context
+                // Run on all files but filter results to specified files
+                let all_issues = self.run(project_dir)?;
+
+                // Filter to only issues from the specified files
+                let filtered: Vec<GateIssue> = all_issues
+                    .into_iter()
+                    .filter(|issue| {
+                        if let Some(ref issue_file) = issue.file {
+                            ts_files.iter().any(|f| {
+                                // Compare by filename or full path
+                                f.ends_with(issue_file)
+                                    || issue_file.ends_with(f.as_path())
+                                    || f == &issue_file
+                            })
+                        } else {
+                            false
+                        }
+                    })
+                    .collect();
+
+                Ok(filtered)
+            }
+        }
     }
 }
 
@@ -1214,6 +1321,38 @@ src/utils.ts(20,1): error TS2304: Cannot find name 'foo'."#;
                 "Gate {} should provide remediation",
                 gate.name()
             );
+        }
+    }
+
+    // =========================================================================
+    // Scoped Quality Gate tests (Sprint 26.2)
+    // =========================================================================
+
+    #[test]
+    fn test_eslint_gate_scoped_with_empty_returns_no_issues() {
+        let gate = EslintGate::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_tsc_gate_scoped_with_empty_returns_no_issues() {
+        let gate = TscGate::new();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_typescript_gates_support_run_scoped_api() {
+        // Verify all TypeScript gates support the run_scoped API
+        let gates = typescript_gates();
+        let temp_dir = tempfile::TempDir::new().unwrap();
+
+        for gate in &gates {
+            // Should not panic when called with empty files
+            let _ = gate.run_scoped(temp_dir.path(), Some(&[]));
         }
     }
 }

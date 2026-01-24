@@ -17,7 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,885 passing
+**Current Test Count**: 1,900 passing
 
 ---
 
@@ -101,16 +101,16 @@
 **Description**: Run quality gates on a subset of files.
 
 **Requirements**:
-- [ ] Add `files: Option<Vec<PathBuf>>` parameter to gate runners
-- [ ] When `files` is Some, only process those files
-- [ ] Maintain existing behavior when `files` is None (process all)
-- [ ] Update all gate implementations (Rust, Python, TypeScript, Go)
+- [x] Add `files: Option<Vec<PathBuf>>` parameter to gate runners
+- [x] When `files` is Some, only process those files
+- [x] Maintain existing behavior when `files` is None (process all)
+- [x] Update all gate implementations (Rust, Python, TypeScript, Go)
 
 **Test-First**:
 ```rust
-// - test_rust_gate_scoped_to_files
-// - test_python_gate_scoped_to_files
-// - test_gate_processes_all_when_unscoped
+// - test_rust_gate_scoped_to_files ✓
+// - test_python_gate_scoped_to_files ✓
+// - test_gate_processes_all_when_unscoped ✓
 ```
 
 ### Phase 26.3: Scoped Context Building

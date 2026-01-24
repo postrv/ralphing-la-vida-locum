@@ -587,6 +587,30 @@ Found {} forbidden annotations.
             issues.len()
         )
     }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        let files_to_scan = match files {
+            None => self.find_rust_files(project_dir)?,
+            Some([]) => return Ok(Vec::new()),
+            Some(file_list) => file_list
+                .iter()
+                .filter(|f| f.extension().is_some_and(|ext| ext == "rs"))
+                .cloned()
+                .collect(),
+        };
+
+        let mut all_issues = Vec::new();
+        for file in files_to_scan {
+            let issues = self.scan_file(&file)?;
+            all_issues.extend(issues);
+        }
+
+        Ok(all_issues)
+    }
 }
 
 // ============================================================================
@@ -905,6 +929,30 @@ Found {} TODO/FIXME comments.
             issues.len()
         )
     }
+
+    fn run_scoped(
+        &self,
+        project_dir: &Path,
+        files: Option<&[PathBuf]>,
+    ) -> Result<Vec<GateIssue>> {
+        let files_to_scan = match files {
+            None => self.find_rust_files(project_dir)?,
+            Some([]) => return Ok(Vec::new()),
+            Some(file_list) => file_list
+                .iter()
+                .filter(|f| f.extension().is_some_and(|ext| ext == "rs"))
+                .cloned()
+                .collect(),
+        };
+
+        let mut all_issues = Vec::new();
+        for file in files_to_scan {
+            let issues = self.scan_file(&file)?;
+            all_issues.extend(issues);
+        }
+
+        Ok(all_issues)
+    }
 }
 
 // ============================================================================
@@ -1186,5 +1234,170 @@ fn main() {
         for gate in &gates {
             assert_send_sync(gate);
         }
+    }
+
+    // =========================================================================
+    // Scoped Quality Gate tests (Sprint 26.2)
+    // =========================================================================
+
+    #[test]
+    fn test_run_scoped_with_none_calls_run() {
+        // When files is None, run_scoped should behave exactly like run
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        let file_path = src_dir.join("lib.rs");
+        std::fs::write(
+            &file_path,
+            r#"
+#[allow(dead_code)]
+fn unused_function() {}
+"#,
+        )
+        .unwrap();
+
+        let gate = NoAllowGate::new();
+
+        // Both methods should return the same results
+        let run_issues = gate.run(temp_dir.path()).unwrap();
+        let scoped_issues = gate.run_scoped(temp_dir.path(), None).unwrap();
+
+        assert_eq!(run_issues.len(), scoped_issues.len());
+        assert_eq!(run_issues.len(), 1);
+    }
+
+    #[test]
+    fn test_no_allow_gate_scoped_to_files() {
+        // When files is Some, only check those files
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        // Create two files with #[allow] - one will be in scope, one won't
+        let file_a = src_dir.join("a.rs");
+        std::fs::write(
+            &file_a,
+            r#"
+#[allow(dead_code)]
+fn unused_a() {}
+"#,
+        )
+        .unwrap();
+
+        let file_b = src_dir.join("b.rs");
+        std::fs::write(
+            &file_b,
+            r#"
+#[allow(unused_variables)]
+fn unused_b() {}
+"#,
+        )
+        .unwrap();
+
+        let gate = NoAllowGate::new();
+
+        // Only scope to file_a
+        let scoped_issues = gate
+            .run_scoped(temp_dir.path(), Some(std::slice::from_ref(&file_a)))
+            .unwrap();
+
+        // Should only find issues from file_a, not file_b
+        assert_eq!(scoped_issues.len(), 1);
+        assert!(scoped_issues[0].message.contains("dead_code"));
+        assert!(!scoped_issues
+            .iter()
+            .any(|i| i.message.contains("unused_variables")));
+    }
+
+    #[test]
+    fn test_no_todo_gate_scoped_to_files() {
+        // When files is Some, only check those files
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        // Create two files with TODO - one will be in scope, one won't
+        let file_a = src_dir.join("a.rs");
+        std::fs::write(
+            &file_a,
+            r#"
+// TODO: fix this in a.rs
+fn func_a() {}
+"#,
+        )
+        .unwrap();
+
+        let file_b = src_dir.join("b.rs");
+        std::fs::write(
+            &file_b,
+            r#"
+// FIXME: fix this in b.rs
+fn func_b() {}
+"#,
+        )
+        .unwrap();
+
+        let gate = NoTodoGate::new();
+
+        // Only scope to file_a
+        let scoped_issues = gate
+            .run_scoped(temp_dir.path(), Some(std::slice::from_ref(&file_a)))
+            .unwrap();
+
+        // Should only find issues from file_a, not file_b
+        assert_eq!(scoped_issues.len(), 1);
+        assert!(scoped_issues[0].message.contains("TODO"));
+        assert!(!scoped_issues.iter().any(|i| i.message.contains("FIXME")));
+    }
+
+    #[test]
+    fn test_gate_processes_all_when_unscoped() {
+        // Verify that run() still processes all files (regression test)
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        // Create multiple files with issues
+        std::fs::write(
+            src_dir.join("a.rs"),
+            "#[allow(dead_code)]\nfn a() {}",
+        )
+        .unwrap();
+        std::fs::write(
+            src_dir.join("b.rs"),
+            "#[allow(unused_variables)]\nfn b() {}",
+        )
+        .unwrap();
+        std::fs::write(
+            src_dir.join("c.rs"),
+            "#[allow(clippy::unwrap_used)]\nfn c() {}",
+        )
+        .unwrap();
+
+        let gate = NoAllowGate::new();
+        let issues = gate.run(temp_dir.path()).unwrap();
+
+        // Should find all 3 issues from all files
+        assert_eq!(issues.len(), 3);
+    }
+
+    #[test]
+    fn test_scoped_with_empty_files_returns_no_issues() {
+        // When files is Some but empty, should return no issues
+        let temp_dir = TempDir::new().unwrap();
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            "#[allow(dead_code)]\nfn unused() {}",
+        )
+        .unwrap();
+
+        let gate = NoAllowGate::new();
+        let issues = gate.run_scoped(temp_dir.path(), Some(&[])).unwrap();
+
+        assert!(issues.is_empty());
     }
 }
