@@ -40,6 +40,7 @@ pub mod analytics;
 pub mod audit;
 pub mod bootstrap;
 pub mod campaign;
+pub mod changes;
 pub mod checkpoint;
 pub mod config;
 pub mod error;
@@ -128,6 +129,9 @@ pub use verify::{
     create_verifier, CcgVerifier, MockCcgVerifier, QualityDelta, VerificationConfig,
     VerificationFinding, VerificationReport, VerificationSeverity,
 };
+
+// Re-export changes types
+pub use changes::ChangeDetector;
 
 // TestFixture is only available in test builds
 #[cfg(test)]

@@ -721,11 +721,11 @@ cargo clippy --all-targets -- -D warnings
 **Description**: Detect changed files since a commit or in working tree.
 
 **Requirements**:
-- [ ] Create `src/changes/mod.rs` with `ChangeDetector` struct
-- [ ] Implement `changed_since(commit: &str) -> Result<Vec<PathBuf>>`
-- [ ] Implement `changed_in_working_tree() -> Result<Vec<PathBuf>>`
-- [ ] Support filtering by file extension / glob pattern
-- [ ] Handle renamed files correctly
+- [x] Create `src/changes/mod.rs` with `ChangeDetector` struct
+- [x] Implement `changed_since(commit: &str) -> Result<Vec<PathBuf>>`
+- [x] Implement `changed_in_working_tree() -> Result<Vec<PathBuf>>`
+- [x] Support filtering by file extension / glob pattern
+- [x] Handle renamed files correctly
 
 **Test-First Requirements**:
 ```rust
@@ -908,7 +908,7 @@ cargo deny check licenses
 - [ ] Phase 25.4: CLI Command Integration
 
 ### Sprint 26: Incremental Execution
-- [ ] Phase 26.1: Change Detection
+- [x] Phase 26.1: Change Detection
 - [ ] Phase 26.2: Scoped Quality Gates
 - [ ] Phase 26.3: Scoped Context Building
 - [ ] Phase 26.4: Scoped Task Selection
