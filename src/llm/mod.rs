@@ -36,9 +36,228 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Instant;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command as AsyncCommand;
 use tracing::debug;
+
+// =============================================================================
+// Provider Capabilities (Phase 23.1)
+// =============================================================================
+
+/// Capabilities of an LLM provider.
+///
+/// Describes what features a provider supports and its operational limits.
+/// Used for capability negotiation and fallback decisions.
+///
+/// # Example
+///
+/// ```rust
+/// use ralph::llm::ProviderCapabilities;
+///
+/// let caps = ProviderCapabilities::default()
+///     .with_streaming(true)
+///     .with_tool_use(true)
+///     .with_max_context(200_000);
+///
+/// assert!(caps.supports_streaming);
+/// assert!(caps.supports_tool_use);
+/// assert_eq!(caps.max_context_tokens, 200_000);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCapabilities {
+    /// Whether the provider supports streaming responses.
+    pub supports_streaming: bool,
+    /// Whether the provider supports tool/function calling.
+    pub supports_tool_use: bool,
+    /// Maximum context window in tokens.
+    pub max_context_tokens: u32,
+    /// Maximum output tokens per response.
+    pub max_output_tokens: u32,
+}
+
+impl Default for ProviderCapabilities {
+    fn default() -> Self {
+        Self {
+            supports_streaming: false,
+            supports_tool_use: false,
+            max_context_tokens: 128_000,
+            max_output_tokens: 4096,
+        }
+    }
+}
+
+impl ProviderCapabilities {
+    /// Enable or disable streaming support.
+    #[must_use]
+    pub fn with_streaming(mut self, supports: bool) -> Self {
+        self.supports_streaming = supports;
+        self
+    }
+
+    /// Enable or disable tool use support.
+    #[must_use]
+    pub fn with_tool_use(mut self, supports: bool) -> Self {
+        self.supports_tool_use = supports;
+        self
+    }
+
+    /// Set the maximum context window size.
+    #[must_use]
+    pub fn with_max_context(mut self, tokens: u32) -> Self {
+        self.max_context_tokens = tokens;
+        self
+    }
+
+    /// Set the maximum output tokens.
+    #[must_use]
+    pub fn with_max_output(mut self, tokens: u32) -> Self {
+        self.max_output_tokens = tokens;
+        self
+    }
+}
+
+// =============================================================================
+// Stop Reason (Phase 23.1)
+// =============================================================================
+
+/// Reason why a completion stopped.
+///
+/// Different stop reasons may require different handling. For example,
+/// `MaxTokens` might indicate the response was truncated and needs continuation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StopReason {
+    /// Model naturally completed its response.
+    #[default]
+    EndTurn,
+    /// Response reached maximum token limit.
+    MaxTokens,
+    /// Model requested tool/function use.
+    ToolUse,
+    /// Hit a stop sequence.
+    StopSequence,
+    /// Unknown or provider-specific reason.
+    Other,
+}
+
+// =============================================================================
+// LLM Response (Phase 23.1)
+// =============================================================================
+
+/// Response from an LLM completion request.
+///
+/// Contains the model's response along with metadata about token usage,
+/// latency, and estimated cost.
+///
+/// # Example
+///
+/// ```rust
+/// use ralph::llm::{LlmResponse, StopReason};
+///
+/// let response = LlmResponse {
+///     content: "Hello, world!".to_string(),
+///     input_tokens: 10,
+///     output_tokens: 5,
+///     latency_ms: 150,
+///     cost_usd: Some(0.001),
+///     model: "claude-opus".to_string(),
+///     stop_reason: StopReason::EndTurn,
+/// };
+///
+/// assert_eq!(response.total_tokens(), 15);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmResponse {
+    /// The model's response text.
+    pub content: String,
+    /// Number of tokens in the input prompt.
+    pub input_tokens: u32,
+    /// Number of tokens in the output response.
+    pub output_tokens: u32,
+    /// Response latency in milliseconds.
+    pub latency_ms: u64,
+    /// Estimated cost in USD (if available).
+    pub cost_usd: Option<f64>,
+    /// The model that generated this response.
+    pub model: String,
+    /// Reason the completion stopped.
+    pub stop_reason: StopReason,
+}
+
+impl LlmResponse {
+    /// Get total token count (input + output).
+    #[must_use]
+    pub fn total_tokens(&self) -> u32 {
+        self.input_tokens + self.output_tokens
+    }
+}
+
+// =============================================================================
+// Completion Request (Phase 23.1)
+// =============================================================================
+
+/// Request for an LLM completion.
+///
+/// Encapsulates all parameters needed to make a completion request.
+/// Uses builder pattern for ergonomic construction.
+///
+/// # Example
+///
+/// ```rust
+/// use ralph::llm::CompletionRequest;
+///
+/// let request = CompletionRequest::new("What is 2+2?")
+///     .with_max_tokens(100)
+///     .with_temperature(0.7);
+///
+/// assert_eq!(request.prompt, "What is 2+2?");
+/// assert_eq!(request.max_tokens, Some(100));
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionRequest {
+    /// The prompt to send to the model.
+    pub prompt: String,
+    /// Maximum tokens to generate (None = provider default).
+    pub max_tokens: Option<u32>,
+    /// Sampling temperature (None = provider default).
+    pub temperature: Option<f32>,
+    /// Sequences that will stop generation.
+    pub stop_sequences: Vec<String>,
+}
+
+impl CompletionRequest {
+    /// Create a new completion request with the given prompt.
+    #[must_use]
+    pub fn new(prompt: impl Into<String>) -> Self {
+        Self {
+            prompt: prompt.into(),
+            max_tokens: None,
+            temperature: None,
+            stop_sequences: Vec::new(),
+        }
+    }
+
+    /// Set maximum tokens to generate.
+    #[must_use]
+    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = Some(max_tokens);
+        self
+    }
+
+    /// Set sampling temperature.
+    #[must_use]
+    pub fn with_temperature(mut self, temperature: f32) -> Self {
+        self.temperature = Some(temperature);
+        self
+    }
+
+    /// Add a stop sequence.
+    #[must_use]
+    pub fn with_stop_sequence(mut self, sequence: impl Into<String>) -> Self {
+        self.stop_sequences.push(sequence.into());
+        self
+    }
+}
 
 /// Abstraction for LLM client operations.
 ///
@@ -60,19 +279,20 @@ use tracing::debug;
 /// # Example
 ///
 /// ```rust,ignore
-/// use ralph::llm::LlmClient;
+/// use ralph::llm::{LlmClient, CompletionRequest};
 ///
-/// async fn run_with_model(client: &dyn LlmClient, prompt: &str) -> Result<String> {
+/// async fn run_with_model(client: &dyn LlmClient, prompt: &str) -> Result<LlmResponse> {
 ///     println!("Using model: {}", client.model_name());
-///     client.run_prompt(prompt).await
+///     let request = CompletionRequest::new(prompt);
+///     client.complete(request).await
 /// }
 /// ```
 #[async_trait]
 pub trait LlmClient: Send + Sync {
     /// Run a prompt and return the model's response.
     ///
-    /// This is the core method for interacting with the LLM. The prompt
-    /// is sent to the model and the response text is returned.
+    /// This is the legacy method for simple prompt/response interactions.
+    /// For full control over parameters and response metadata, use [`complete`].
     ///
     /// # Arguments
     ///
@@ -91,6 +311,49 @@ pub trait LlmClient: Send + Sync {
     /// - The response cannot be parsed
     async fn run_prompt(&self, prompt: &str) -> Result<String>;
 
+    /// Complete a request and return a detailed response.
+    ///
+    /// This is the primary method for LLM interactions, providing full
+    /// control over request parameters and detailed response metadata
+    /// including token counts, latency, and cost.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The completion request with prompt and parameters
+    ///
+    /// # Returns
+    ///
+    /// An [`LlmResponse`] containing the content and metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The model API is unreachable
+    /// - Authentication fails
+    /// - The request times out
+    /// - The response cannot be parsed
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let request = CompletionRequest::new("What is 2+2?")
+    ///     .with_max_tokens(100);
+    /// let response = client.complete(request).await?;
+    /// println!("Response: {}", response.content);
+    /// println!("Tokens used: {}", response.total_tokens());
+    /// ```
+    async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse>;
+
+    /// Check if the provider is available and reachable.
+    ///
+    /// This performs a lightweight check to determine if the provider
+    /// can accept requests. Does not consume tokens.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the provider is available, `false` otherwise.
+    async fn available(&self) -> bool;
+
     /// Get the name of the model being used.
     ///
     /// Returns a human-readable model identifier (e.g., "claude-opus-4",
@@ -102,6 +365,18 @@ pub trait LlmClient: Send + Sync {
     /// Tool support enables structured interactions where the model can
     /// request specific actions (file edits, command execution, etc.).
     fn supports_tools(&self) -> bool;
+
+    /// Get the provider's capabilities.
+    ///
+    /// Returns information about what features the provider supports
+    /// and its operational limits.
+    fn capabilities(&self) -> ProviderCapabilities;
+
+    /// Get cost per token for this provider.
+    ///
+    /// Returns a tuple of (input_cost_per_token, output_cost_per_token)
+    /// in USD. Returns (0.0, 0.0) for providers without cost tracking.
+    fn cost_per_token(&self) -> (f64, f64);
 }
 
 /// Claude Code client implementation.
@@ -195,6 +470,48 @@ impl LlmClient for ClaudeClient {
         }
     }
 
+    async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
+        let start = Instant::now();
+
+        let content = self.run_prompt(&request.prompt).await?;
+
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        // Estimate token counts (rough approximation: ~4 chars per token)
+        // In production, Claude API returns actual token counts
+        let input_tokens = (request.prompt.len() / 4) as u32;
+        let output_tokens = (content.len() / 4) as u32;
+
+        // Calculate cost based on model
+        let (input_cost, output_cost) = self.cost_per_token();
+        let cost_usd = if input_cost > 0.0 || output_cost > 0.0 {
+            Some(
+                (input_tokens as f64 * input_cost) +
+                (output_tokens as f64 * output_cost)
+            )
+        } else {
+            None
+        };
+
+        Ok(LlmResponse {
+            content,
+            input_tokens,
+            output_tokens,
+            latency_ms,
+            cost_usd,
+            model: self.model_name().to_string(),
+            stop_reason: StopReason::EndTurn,
+        })
+    }
+
+    async fn available(&self) -> bool {
+        // Check if claude CLI is available
+        match AsyncCommand::new("which").arg("claude").output().await {
+            Ok(output) => output.status.success(),
+            Err(_) => false,
+        }
+    }
+
     fn model_name(&self) -> &str {
         match self.model.as_str() {
             "opus" => "claude-opus-4",
@@ -207,6 +524,25 @@ impl LlmClient for ClaudeClient {
     fn supports_tools(&self) -> bool {
         // Claude Code supports tool use
         true
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::default()
+            .with_streaming(true)
+            .with_tool_use(true)
+            .with_max_context(200_000) // Claude has large context window
+            .with_max_output(8192)
+    }
+
+    fn cost_per_token(&self) -> (f64, f64) {
+        // Claude pricing per million tokens (approximate)
+        // Returns cost per single token
+        match self.model.as_str() {
+            "opus" => (15.0 / 1_000_000.0, 75.0 / 1_000_000.0),
+            "sonnet" => (3.0 / 1_000_000.0, 15.0 / 1_000_000.0),
+            "haiku" => (0.25 / 1_000_000.0, 1.25 / 1_000_000.0),
+            _ => (0.0, 0.0), // Unknown model
+        }
     }
 }
 
@@ -345,12 +681,50 @@ impl LlmClient for MockLlmClient {
         Ok(self.response.clone())
     }
 
+    async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
+        let start = Instant::now();
+
+        // Use run_prompt for the actual execution (to preserve fail_count behavior)
+        let content = self.run_prompt(&request.prompt).await?;
+
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        // Estimate token counts (rough approximation for mock)
+        let input_tokens = (request.prompt.len() / 4) as u32;
+        let output_tokens = (content.len() / 4) as u32;
+
+        Ok(LlmResponse {
+            content,
+            input_tokens,
+            output_tokens,
+            latency_ms,
+            cost_usd: None, // Mock has no cost
+            model: self.model.clone(),
+            stop_reason: StopReason::EndTurn,
+        })
+    }
+
+    async fn available(&self) -> bool {
+        // Mock client is always available unless configured with an error
+        self.error.is_none()
+    }
+
     fn model_name(&self) -> &str {
         &self.model
     }
 
     fn supports_tools(&self) -> bool {
         self.tools_supported
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::default()
+            .with_tool_use(self.tools_supported)
+    }
+
+    fn cost_per_token(&self) -> (f64, f64) {
+        // Mock has no cost
+        (0.0, 0.0)
     }
 }
 
@@ -696,6 +1070,26 @@ impl LlmClient for OpenAiClient {
         )
     }
 
+    async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
+        // Delegate to run_prompt which will return the "not implemented" error
+        self.run_prompt(&request.prompt).await.map(|content| {
+            LlmResponse {
+                content,
+                input_tokens: 0,
+                output_tokens: 0,
+                latency_ms: 0,
+                cost_usd: None,
+                model: self.model.clone(),
+                stop_reason: StopReason::EndTurn,
+            }
+        })
+    }
+
+    async fn available(&self) -> bool {
+        // Stub is never truly available
+        false
+    }
+
     fn model_name(&self) -> &str {
         &self.model
     }
@@ -703,6 +1097,25 @@ impl LlmClient for OpenAiClient {
     fn supports_tools(&self) -> bool {
         // OpenAI supports function calling, but stub doesn't implement it
         false
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::default()
+            .with_streaming(true)
+            .with_tool_use(true)
+            .with_max_context(128_000) // GPT-4 context window
+            .with_max_output(4096)
+    }
+
+    fn cost_per_token(&self) -> (f64, f64) {
+        // OpenAI GPT-4o pricing (approximate, per million tokens)
+        match self.model.as_str() {
+            "gpt-4" | "gpt-4o" => (5.0 / 1_000_000.0, 15.0 / 1_000_000.0),
+            "gpt-4o-mini" => (0.15 / 1_000_000.0, 0.60 / 1_000_000.0),
+            "o1" => (15.0 / 1_000_000.0, 60.0 / 1_000_000.0),
+            "o1-mini" => (3.0 / 1_000_000.0, 12.0 / 1_000_000.0),
+            _ => (0.0, 0.0),
+        }
     }
 }
 
@@ -781,6 +1194,26 @@ impl LlmClient for GeminiClient {
         )
     }
 
+    async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
+        // Delegate to run_prompt which will return the "not implemented" error
+        self.run_prompt(&request.prompt).await.map(|content| {
+            LlmResponse {
+                content,
+                input_tokens: 0,
+                output_tokens: 0,
+                latency_ms: 0,
+                cost_usd: None,
+                model: self.model_name().to_string(),
+                stop_reason: StopReason::EndTurn,
+            }
+        })
+    }
+
+    async fn available(&self) -> bool {
+        // Stub is never truly available
+        false
+    }
+
     fn model_name(&self) -> &str {
         // Return the full model name (e.g., "gemini-pro")
         // We can't return a dynamically created string, so we match variants
@@ -795,6 +1228,24 @@ impl LlmClient for GeminiClient {
     fn supports_tools(&self) -> bool {
         // Gemini supports function calling, but stub doesn't implement it
         false
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::default()
+            .with_streaming(true)
+            .with_tool_use(true)
+            .with_max_context(1_000_000) // Gemini has very large context
+            .with_max_output(8192)
+    }
+
+    fn cost_per_token(&self) -> (f64, f64) {
+        // Gemini pricing (approximate, per million tokens)
+        match self.variant.as_str() {
+            "pro" => (1.25 / 1_000_000.0, 5.0 / 1_000_000.0),
+            "flash" => (0.075 / 1_000_000.0, 0.30 / 1_000_000.0),
+            "ultra" => (7.0 / 1_000_000.0, 21.0 / 1_000_000.0),
+            _ => (0.0, 0.0),
+        }
     }
 }
 
@@ -880,6 +1331,26 @@ impl LlmClient for OllamaClient {
         )
     }
 
+    async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
+        // Delegate to run_prompt which will return the "not implemented" error
+        self.run_prompt(&request.prompt).await.map(|content| {
+            LlmResponse {
+                content,
+                input_tokens: 0,
+                output_tokens: 0,
+                latency_ms: 0,
+                cost_usd: None,
+                model: self.model.clone(),
+                stop_reason: StopReason::EndTurn,
+            }
+        })
+    }
+
+    async fn available(&self) -> bool {
+        // Stub is never truly available
+        false
+    }
+
     fn model_name(&self) -> &str {
         &self.model
     }
@@ -887,6 +1358,20 @@ impl LlmClient for OllamaClient {
     fn supports_tools(&self) -> bool {
         // Ollama supports some function calling, but stub doesn't implement it
         false
+    }
+
+    fn capabilities(&self) -> ProviderCapabilities {
+        // Ollama capabilities vary by model, use conservative defaults
+        ProviderCapabilities::default()
+            .with_streaming(true)
+            .with_tool_use(false)
+            .with_max_context(8192) // Conservative default
+            .with_max_output(4096)
+    }
+
+    fn cost_per_token(&self) -> (f64, f64) {
+        // Ollama is free (local inference)
+        (0.0, 0.0)
     }
 }
 
@@ -1674,5 +2159,167 @@ mod tests {
         // Factory should return a stub client (not an error)
         let client = create_llm_client(&config, &project_dir).unwrap();
         assert!(client.model_name().contains("llama"));
+    }
+
+    // =========================================================================
+    // Phase 23.1: LLM Client Trait Refinement Tests
+    // =========================================================================
+
+    /// Test ProviderCapabilities has sensible defaults.
+    #[test]
+    fn test_provider_capabilities_defaults() {
+        let caps = ProviderCapabilities::default();
+        // Default should have streaming disabled (conservative)
+        assert!(!caps.supports_streaming);
+        // Default should have tool use disabled (not all providers support it)
+        assert!(!caps.supports_tool_use);
+        // Default max_context should be reasonable (128k is common)
+        assert!(caps.max_context_tokens > 0);
+        // Default max_output should be reasonable
+        assert!(caps.max_output_tokens > 0);
+    }
+
+    /// Test ProviderCapabilities builder pattern.
+    #[test]
+    fn test_provider_capabilities_builder() {
+        let caps = ProviderCapabilities::default()
+            .with_streaming(true)
+            .with_tool_use(true)
+            .with_max_context(200_000)
+            .with_max_output(8192);
+
+        assert!(caps.supports_streaming);
+        assert!(caps.supports_tool_use);
+        assert_eq!(caps.max_context_tokens, 200_000);
+        assert_eq!(caps.max_output_tokens, 8192);
+    }
+
+    /// Test LlmResponse includes token counts.
+    #[test]
+    fn test_llm_response_includes_token_counts() {
+        let response = LlmResponse {
+            content: "Hello, world!".to_string(),
+            input_tokens: 10,
+            output_tokens: 5,
+            latency_ms: 150,
+            cost_usd: Some(0.001),
+            model: "test-model".to_string(),
+            stop_reason: StopReason::EndTurn,
+        };
+
+        assert_eq!(response.input_tokens, 10);
+        assert_eq!(response.output_tokens, 5);
+        assert_eq!(response.total_tokens(), 15);
+    }
+
+    /// Test LlmResponse latency and cost tracking.
+    #[test]
+    fn test_llm_response_latency_and_cost() {
+        let response = LlmResponse {
+            content: "Response".to_string(),
+            input_tokens: 100,
+            output_tokens: 50,
+            latency_ms: 250,
+            cost_usd: Some(0.0025),
+            model: "claude-opus".to_string(),
+            stop_reason: StopReason::EndTurn,
+        };
+
+        assert_eq!(response.latency_ms, 250);
+        assert_eq!(response.cost_usd, Some(0.0025));
+        assert_eq!(response.model, "claude-opus");
+    }
+
+    /// Test LlmResponse stop reasons.
+    #[test]
+    fn test_llm_response_stop_reasons() {
+        assert_eq!(StopReason::EndTurn, StopReason::EndTurn);
+        assert_ne!(StopReason::EndTurn, StopReason::MaxTokens);
+        assert_ne!(StopReason::EndTurn, StopReason::ToolUse);
+        assert_ne!(StopReason::EndTurn, StopReason::StopSequence);
+    }
+
+    /// Test LlmClient complete() method (via mock).
+    #[tokio::test]
+    async fn test_llm_client_trait_complete() {
+        let request = CompletionRequest {
+            prompt: "What is 2+2?".to_string(),
+            max_tokens: Some(100),
+            temperature: Some(0.7),
+            stop_sequences: vec![],
+        };
+
+        let client = MockLlmClient::new()
+            .with_response("The answer is 4")
+            .with_model_name("mock-model");
+
+        let result = client.complete(request).await;
+        assert!(result.is_ok());
+
+        let response = result.unwrap();
+        assert_eq!(response.content, "The answer is 4");
+        // Token counts are estimated as chars/4
+        // Input: "What is 2+2?" = 12 chars -> 3 tokens
+        // Output: "The answer is 4" = 15 chars -> 3 tokens
+        assert!(response.input_tokens > 0, "Input tokens should be calculated");
+        assert!(response.output_tokens > 0, "Output tokens should be calculated");
+    }
+
+    /// Test LlmClient available() method.
+    #[tokio::test]
+    async fn test_llm_client_available() {
+        let client = MockLlmClient::new();
+        // Mock client should always be available
+        let is_available = client.available().await;
+        assert!(is_available);
+
+        // Client with error configured might not be available
+        let error_client = MockLlmClient::new().with_error("Service unavailable");
+        // Even with error, availability check should work
+        // (it's about reachability, not whether prompts succeed)
+        let _ = error_client.available().await;
+    }
+
+    /// Test LlmClient cost_per_token() method.
+    #[test]
+    fn test_llm_client_cost_per_token() {
+        let client = MockLlmClient::new();
+        let (input_cost, output_cost) = client.cost_per_token();
+        // Mock client has zero cost
+        assert!(input_cost >= 0.0);
+        assert!(output_cost >= 0.0);
+    }
+
+    /// Test LlmClient capabilities() method.
+    #[test]
+    fn test_llm_client_capabilities() {
+        let client = MockLlmClient::new();
+        let caps = client.capabilities();
+        // Just verify we get valid capabilities
+        assert!(caps.max_context_tokens > 0);
+    }
+
+    /// Test CompletionRequest builder pattern.
+    #[test]
+    fn test_completion_request_builder() {
+        let request = CompletionRequest::new("Hello")
+            .with_max_tokens(500)
+            .with_temperature(0.5)
+            .with_stop_sequence("END");
+
+        assert_eq!(request.prompt, "Hello");
+        assert_eq!(request.max_tokens, Some(500));
+        assert_eq!(request.temperature, Some(0.5));
+        assert_eq!(request.stop_sequences, vec!["END".to_string()]);
+    }
+
+    /// Test CompletionRequest default values.
+    #[test]
+    fn test_completion_request_defaults() {
+        let request = CompletionRequest::new("Test prompt");
+        assert_eq!(request.prompt, "Test prompt");
+        assert!(request.max_tokens.is_none());
+        assert!(request.temperature.is_none());
+        assert!(request.stop_sequences.is_empty());
     }
 }

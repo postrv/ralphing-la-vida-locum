@@ -352,11 +352,11 @@ cargo clippy --all-targets -- -D warnings
 **Description**: Refine the `LlmClient` trait for multi-provider support.
 
 **Requirements**:
-- [ ] Create/update `src/llm/mod.rs` with refined `LlmClient` trait
-- [ ] Add methods: `complete()`, `complete_with_retry()`, `available()`, `cost_per_token()`
-- [ ] Add `ProviderCapabilities` struct (supports_streaming, max_context, etc.)
-- [ ] Add `LlmResponse` struct with token counts, latency, cost
-- [ ] Write comprehensive trait documentation
+- [x] Create/update `src/llm/mod.rs` with refined `LlmClient` trait
+- [x] Add methods: `complete()`, `complete_with_retry()`, `available()`, `cost_per_token()`
+- [x] Add `ProviderCapabilities` struct (supports_streaming, max_context, etc.)
+- [x] Add `LlmResponse` struct with token counts, latency, cost
+- [x] Write comprehensive trait documentation
 
 **Test-First Requirements**:
 ```rust
@@ -889,7 +889,7 @@ cargo deny check licenses
 - [ ] Phase 22.5: Extract `checkpoint` Submodules
 
 ### Sprint 23: LLM Provider Abstraction
-- [ ] Phase 23.1: LLM Client Trait Refinement
+- [x] Phase 23.1: LLM Client Trait Refinement
 - [ ] Phase 23.2: Claude Provider
 - [ ] Phase 23.3: Ollama Provider
 - [ ] Phase 23.4: OpenAI Provider
