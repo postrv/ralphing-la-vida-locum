@@ -102,7 +102,8 @@ pub use analytics::{
 
 // Re-export audit types
 pub use audit::{
-    AuditEntry, AuditEventType, AuditLogger, RotationConfig, VerificationResult,
+    AuditEntry, AuditEventType, AuditLogger, AuditQuery, AuditQueryResult, AuditReader,
+    RotationConfig, VerificationResult,
 };
 
 // Re-export campaign types

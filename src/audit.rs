@@ -652,6 +652,211 @@ fn compute_genesis_hash() -> String {
     hex::encode(hasher.finalize())
 }
 
+// ============================================================================
+// AuditReader - Query interface for audit logs (Phase 19.2)
+// ============================================================================
+
+/// Reader for querying audit log entries with filtering and pagination.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::audit::{AuditReader, AuditEventType};
+/// use chrono::Utc;
+///
+/// let reader = AuditReader::new(project_dir)?;
+///
+/// // Get the 10 most recent entries
+/// let entries = reader.query().limit(10).execute()?;
+///
+/// // Get only gate results since a specific time
+/// let entries = reader
+///     .query()
+///     .event_type(AuditEventType::GateResult)
+///     .since(Utc::now() - chrono::Duration::hours(24))
+///     .execute()?;
+/// ```
+#[derive(Debug)]
+pub struct AuditReader {
+    project_dir: PathBuf,
+}
+
+impl AuditReader {
+    /// Create a new audit reader for the given project directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_dir` - The root directory of the project
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audit directory cannot be accessed.
+    pub fn new(project_dir: PathBuf) -> Result<Self> {
+        Ok(Self { project_dir })
+    }
+
+    /// Start building a query for audit entries.
+    #[must_use]
+    pub fn query(&self) -> AuditQuery {
+        AuditQuery::new(self.project_dir.clone())
+    }
+
+    /// Get the path to the audit log file.
+    fn audit_file(&self) -> PathBuf {
+        self.project_dir.join(".ralph/audit.jsonl")
+    }
+
+    /// Read all entries from the audit log.
+    fn read_all_entries(&self) -> Result<Vec<AuditEntry>> {
+        let file_path = self.audit_file();
+
+        if !file_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let file = File::open(&file_path).context("Failed to open audit file")?;
+        let reader = BufReader::new(file);
+
+        let mut entries = Vec::new();
+        for (line_num, line_result) in reader.lines().enumerate() {
+            let line = line_result.context("Failed to read line from audit file")?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let entry: AuditEntry = serde_json::from_str(&line)
+                .with_context(|| format!("Failed to parse audit entry at line {}", line_num + 1))?;
+            entries.push(entry);
+        }
+
+        Ok(entries)
+    }
+}
+
+/// Builder for constructing audit log queries with filters.
+#[derive(Debug, Clone)]
+pub struct AuditQuery {
+    project_dir: PathBuf,
+    limit: Option<usize>,
+    since: Option<DateTime<Utc>>,
+    event_type: Option<AuditEventType>,
+}
+
+impl AuditQuery {
+    /// Create a new query builder.
+    fn new(project_dir: PathBuf) -> Self {
+        Self {
+            project_dir,
+            limit: None,
+            since: None,
+            event_type: None,
+        }
+    }
+
+    /// Limit the number of entries returned.
+    ///
+    /// When a limit is set, returns the most recent N entries that match
+    /// the other filters.
+    #[must_use]
+    pub fn limit(mut self, n: usize) -> Self {
+        self.limit = Some(n);
+        self
+    }
+
+    /// Filter entries to those created since the given timestamp.
+    #[must_use]
+    pub fn since(mut self, timestamp: DateTime<Utc>) -> Self {
+        self.since = Some(timestamp);
+        self
+    }
+
+    /// Filter entries to those of a specific event type.
+    #[must_use]
+    pub fn event_type(mut self, event_type: AuditEventType) -> Self {
+        self.event_type = Some(event_type);
+        self
+    }
+
+    /// Execute the query and return matching entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audit log cannot be read.
+    pub fn execute(self) -> Result<Vec<AuditEntry>> {
+        let reader = AuditReader::new(self.project_dir)?;
+        let mut entries = reader.read_all_entries()?;
+
+        // Apply event type filter
+        if let Some(event_type) = self.event_type {
+            entries.retain(|e| e.event_type == event_type);
+        }
+
+        // Apply since filter
+        if let Some(since) = self.since {
+            entries.retain(|e| e.timestamp >= since);
+        }
+
+        // Apply limit (take most recent N entries)
+        if let Some(limit) = self.limit {
+            let len = entries.len();
+            if len > limit {
+                // Keep the most recent entries
+                entries = entries.into_iter().skip(len - limit).collect();
+            }
+        }
+
+        Ok(entries)
+    }
+
+    /// Execute the query and return results with summary metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audit log cannot be read.
+    pub fn execute_with_summary(self) -> Result<AuditQueryResult> {
+        let limit = self.limit;
+        let reader = AuditReader::new(self.project_dir.clone())?;
+        let total_count = reader.read_all_entries()?.len();
+
+        let entries = self.execute()?;
+        let has_more = limit.is_some_and(|l| total_count > l);
+
+        Ok(AuditQueryResult {
+            entries,
+            total_count,
+            has_more,
+        })
+    }
+}
+
+/// Result of an audit query with metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditQueryResult {
+    /// The matching audit entries.
+    pub entries: Vec<AuditEntry>,
+    /// Total number of entries in the audit log (before filtering).
+    pub total_count: usize,
+    /// Whether there are more entries beyond the limit.
+    pub has_more: bool,
+}
+
+impl std::str::FromStr for AuditEventType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "command_execution" => Ok(Self::CommandExecution),
+            "gate_result" => Ok(Self::GateResult),
+            "commit" => Ok(Self::Commit),
+            "session_start" => Ok(Self::SessionStart),
+            "session_end" => Ok(Self::SessionEnd),
+            "checkpoint_created" => Ok(Self::CheckpointCreated),
+            "rollback" => Ok(Self::Rollback),
+            "config_change" => Ok(Self::ConfigChange),
+            _ => anyhow::bail!("Unknown audit event type: {}", s),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1226,5 +1431,239 @@ mod tests {
                 .unwrap();
             assert_eq!(entry.sequence, i as u64);
         }
+    }
+
+    // ========================================================================
+    // Tests for AuditReader (Phase 19.2)
+    // ========================================================================
+
+    #[test]
+    fn test_audit_reader_displays_recent_entries() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Log some entries
+        logger
+            .log_command("session-1", "cargo build", 0, None)
+            .unwrap();
+        logger
+            .log_command("session-1", "cargo test", 0, None)
+            .unwrap();
+        logger
+            .log_gate_result("session-1", "clippy", true, None)
+            .unwrap();
+
+        // Create reader and query entries
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let entries = reader.query().execute().unwrap();
+
+        assert_eq!(entries.len(), 3);
+        // Should be in chronological order (oldest first)
+        assert_eq!(entries[0].data["command"], "cargo build");
+        assert_eq!(entries[1].data["command"], "cargo test");
+        assert_eq!(entries[2].data["gate_name"], "clippy");
+    }
+
+    #[test]
+    fn test_audit_reader_supports_limit() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Log 10 entries
+        for i in 0..10 {
+            logger
+                .log_command("session-1", &format!("command_{}", i), 0, None)
+                .unwrap();
+        }
+
+        // Create reader and query with limit
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let entries = reader.query().limit(5).execute().unwrap();
+
+        assert_eq!(entries.len(), 5);
+        // Should return the most recent 5 entries
+        assert_eq!(entries[0].data["command"], "command_5");
+        assert_eq!(entries[4].data["command"], "command_9");
+    }
+
+    #[test]
+    fn test_audit_reader_supports_since_filter() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Log entries at different times
+        logger
+            .log_command("session-1", "old_command", 0, None)
+            .unwrap();
+
+        // Wait a moment and record the time
+        let since_time = Utc::now();
+
+        logger
+            .log_command("session-1", "new_command_1", 0, None)
+            .unwrap();
+        logger
+            .log_command("session-1", "new_command_2", 0, None)
+            .unwrap();
+
+        // Query with since filter
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let entries = reader.query().since(since_time).execute().unwrap();
+
+        // Should only include entries after since_time
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].data["command"], "new_command_1");
+        assert_eq!(entries[1].data["command"], "new_command_2");
+    }
+
+    #[test]
+    fn test_audit_reader_supports_event_type_filter() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Log different event types
+        logger
+            .log_command("session-1", "cargo build", 0, None)
+            .unwrap();
+        logger
+            .log_gate_result("session-1", "clippy", true, None)
+            .unwrap();
+        logger
+            .log_command("session-1", "cargo test", 0, None)
+            .unwrap();
+        logger
+            .log_gate_result("session-1", "tests", true, None)
+            .unwrap();
+
+        // Query only GateResult events
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let entries = reader
+            .query()
+            .event_type(AuditEventType::GateResult)
+            .execute()
+            .unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|e| e.event_type == AuditEventType::GateResult));
+    }
+
+    #[test]
+    fn test_audit_reader_combined_filters() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Log multiple events
+        for i in 0..5 {
+            logger
+                .log_command("session-1", &format!("cmd_{}", i), 0, None)
+                .unwrap();
+            logger
+                .log_gate_result("session-1", &format!("gate_{}", i), true, None)
+                .unwrap();
+        }
+
+        // Query with type filter and limit
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let entries = reader
+            .query()
+            .event_type(AuditEventType::CommandExecution)
+            .limit(3)
+            .execute()
+            .unwrap();
+
+        assert_eq!(entries.len(), 3);
+        assert!(entries.iter().all(|e| e.event_type == AuditEventType::CommandExecution));
+    }
+
+    #[test]
+    fn test_audit_reader_json_output() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        logger
+            .log_command("session-1", "cargo test", 0, None)
+            .unwrap();
+
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let entries = reader.query().execute().unwrap();
+
+        // Entries should be serializable to JSON
+        let json = serde_json::to_string(&entries).unwrap();
+        assert!(json.contains("cargo test"));
+        assert!(json.contains("command_execution"));
+
+        // Should also work with pretty print
+        let pretty_json = serde_json::to_string_pretty(&entries).unwrap();
+        assert!(pretty_json.contains("cargo test"));
+    }
+
+    #[test]
+    fn test_audit_reader_empty_log() {
+        let temp_dir = TempDir::new().unwrap();
+        let _logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let entries = reader.query().execute().unwrap();
+
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_audit_event_type_from_str() {
+        assert_eq!(
+            "command_execution".parse::<AuditEventType>().unwrap(),
+            AuditEventType::CommandExecution
+        );
+        assert_eq!(
+            "gate_result".parse::<AuditEventType>().unwrap(),
+            AuditEventType::GateResult
+        );
+        assert_eq!(
+            "commit".parse::<AuditEventType>().unwrap(),
+            AuditEventType::Commit
+        );
+        assert_eq!(
+            "session_start".parse::<AuditEventType>().unwrap(),
+            AuditEventType::SessionStart
+        );
+        assert_eq!(
+            "session_end".parse::<AuditEventType>().unwrap(),
+            AuditEventType::SessionEnd
+        );
+        assert_eq!(
+            "checkpoint_created".parse::<AuditEventType>().unwrap(),
+            AuditEventType::CheckpointCreated
+        );
+        assert_eq!(
+            "rollback".parse::<AuditEventType>().unwrap(),
+            AuditEventType::Rollback
+        );
+        assert_eq!(
+            "config_change".parse::<AuditEventType>().unwrap(),
+            AuditEventType::ConfigChange
+        );
+
+        // Invalid type should error
+        assert!("invalid_type".parse::<AuditEventType>().is_err());
+    }
+
+    #[test]
+    fn test_audit_query_result_summary() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        logger
+            .log_command("session-1", "cmd1", 0, None)
+            .unwrap();
+        logger
+            .log_gate_result("session-1", "gate1", true, None)
+            .unwrap();
+
+        let reader = AuditReader::new(temp_dir.path().to_path_buf()).unwrap();
+        let result = reader.query().execute_with_summary().unwrap();
+
+        assert_eq!(result.entries.len(), 2);
+        assert_eq!(result.total_count, 2);
+        assert!(!result.has_more);
     }
 }

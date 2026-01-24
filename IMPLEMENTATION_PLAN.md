@@ -52,23 +52,23 @@ cargo clippy --all-targets -- -D warnings
 cargo test --lib -- config_validate
 ```
 
-### 34. Phase 19.2: Audit Show Command
+### 34. Phase 19.2: Audit Show Command ✅
 
 Add `ralph audit show` command.
 
 **Test Requirements**:
-- [ ] Test displays recent audit entries
-- [ ] Test supports `--limit N` flag
-- [ ] Test supports `--since <datetime>` filter
-- [ ] Test supports `--type <event_type>` filter
-- [ ] Test outputs JSON with `--json` flag
+- [x] Test displays recent audit entries
+- [x] Test supports `--limit N` flag
+- [x] Test supports `--since <datetime>` filter
+- [x] Test supports `--type <event_type>` filter
+- [x] Test outputs JSON with `--json` flag
 
 **Implementation**:
-- [ ] Add `AuditReader` for querying log
-- [ ] Implement filter/limit logic
-- [ ] Add `ralph audit show` subcommand to CLI
-- [ ] Add formatted table output
-- [ ] Document in CLI help
+- [x] Add `AuditReader` for querying log
+- [x] Implement filter/limit logic
+- [x] Add `ralph audit show` subcommand to CLI
+- [x] Add formatted table output
+- [x] Document in CLI help
 
 **Quality Gates**:
 ```bash

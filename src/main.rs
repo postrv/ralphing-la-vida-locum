@@ -196,6 +196,12 @@ enum Commands {
         #[command(subcommand)]
         action: PluginsAction,
     },
+
+    /// Manage audit logs
+    Audit {
+        #[command(subcommand)]
+        action: AuditAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -377,6 +383,28 @@ enum PluginsAction {
     Info {
         /// Plugin name
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuditAction {
+    /// Display recent audit entries
+    Show {
+        /// Maximum number of entries to display
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
+
+        /// Show entries since this datetime (RFC 3339 format, e.g., 2024-01-01T00:00:00Z)
+        #[arg(long, value_name = "DATETIME")]
+        since: Option<String>,
+
+        /// Filter by event type (command_execution, gate_result, commit, session_start, session_end, checkpoint_created, rollback, config_change)
+        #[arg(short = 't', long, value_name = "TYPE")]
+        event_type: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1360,7 +1388,131 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+
+        Commands::Audit { action } => {
+            match action {
+                AuditAction::Show {
+                    limit,
+                    since,
+                    event_type,
+                    json,
+                } => {
+                    use ralph::audit::{AuditEventType, AuditReader};
+
+                    let reader = AuditReader::new(project_path.clone())?;
+                    let mut query = reader.query();
+
+                    // Apply limit
+                    query = query.limit(limit);
+
+                    // Apply since filter
+                    if let Some(since_str) = since {
+                        let since_dt = chrono::DateTime::parse_from_rfc3339(&since_str)
+                            .map_err(|e| anyhow::anyhow!("Invalid datetime format: {}. Use RFC 3339 format (e.g., 2024-01-01T00:00:00Z)", e))?
+                            .with_timezone(&chrono::Utc);
+                        query = query.since(since_dt);
+                    }
+
+                    // Apply event type filter
+                    if let Some(event_type_str) = event_type {
+                        let event_type: AuditEventType = event_type_str.parse()
+                            .map_err(|_| anyhow::anyhow!(
+                                "Invalid event type '{}'. Valid types: command_execution, gate_result, commit, session_start, session_end, checkpoint_created, rollback, config_change",
+                                event_type_str
+                            ))?;
+                        query = query.event_type(event_type);
+                    }
+
+                    let entries = query.execute()?;
+
+                    if json {
+                        println!("{}", serde_json::to_string_pretty(&entries)?);
+                    } else if entries.is_empty() {
+                        println!("\n{} No audit entries found.", "Audit:".cyan().bold());
+                    } else {
+                        println!(
+                            "\n{} Audit Log ({} entries)",
+                            "Audit:".cyan().bold(),
+                            entries.len()
+                        );
+                        println!("{}", "─".repeat(100));
+                        // Print header row
+                        let header = format!(
+                            "{:<6} {:<20} {:<20} {:<12} {}",
+                            "SEQ", "TIMESTAMP", "EVENT TYPE", "SESSION", "DETAILS"
+                        );
+                        println!("{}", header);
+                        println!("{}", "─".repeat(100));
+
+                        for entry in &entries {
+                            let timestamp = entry.timestamp.format("%Y-%m-%d %H:%M:%S");
+                            let details = format_audit_details(&entry.data, &entry.event_type);
+                            let session_short = if entry.session_id.len() > 10 {
+                                format!("{}...", &entry.session_id[..10])
+                            } else {
+                                entry.session_id.clone()
+                            };
+
+                            println!(
+                                "{:<6} {:<20} {:<20} {:<12} {}",
+                                entry.sequence,
+                                timestamp,
+                                entry.event_type.to_string(),
+                                session_short,
+                                details
+                            );
+                        }
+                        println!("{}", "─".repeat(100));
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Format audit entry details for table display.
+fn format_audit_details(data: &serde_json::Value, event_type: &ralph::AuditEventType) -> String {
+    match event_type {
+        ralph::AuditEventType::CommandExecution => {
+            let command = data.get("command").and_then(|v| v.as_str()).unwrap_or("?");
+            let exit_code = data.get("exit_code").and_then(|v| v.as_i64()).unwrap_or(-1);
+            let status = if exit_code == 0 { "✓" } else { "✗" };
+            format!("{} {} (exit: {})", status, truncate_str(command, 50), exit_code)
+        }
+        ralph::AuditEventType::GateResult => {
+            let gate_name = data.get("gate_name").and_then(|v| v.as_str()).unwrap_or("?");
+            let passed = data.get("passed").and_then(|v| v.as_bool()).unwrap_or(false);
+            let status = if passed { "✓ passed" } else { "✗ failed" };
+            format!("{}: {}", gate_name, status)
+        }
+        ralph::AuditEventType::Commit => {
+            let hash = data.get("commit_hash").and_then(|v| v.as_str()).unwrap_or("?");
+            let message = data.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            format!("{} - {}", &hash[..7.min(hash.len())], truncate_str(message, 40))
+        }
+        ralph::AuditEventType::SessionStart | ralph::AuditEventType::SessionEnd => {
+            "session boundary".to_string()
+        }
+        ralph::AuditEventType::CheckpointCreated => {
+            "checkpoint created".to_string()
+        }
+        ralph::AuditEventType::Rollback => {
+            "rollback performed".to_string()
+        }
+        ralph::AuditEventType::ConfigChange => {
+            let setting = data.get("setting").and_then(|v| v.as_str()).unwrap_or("?");
+            format!("changed: {}", setting)
+        }
+    }
+}
+
+/// Truncate a string to a maximum length with ellipsis.
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len - 3])
+    }
 }
