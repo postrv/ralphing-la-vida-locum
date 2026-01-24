@@ -886,7 +886,7 @@ cargo deny check licenses
 - [x] Phase 22.1: Extract `config` Submodules (resolution.rs, validation.rs, git.rs done)
 - [x] Phase 22.2: Extract `analytics` Submodules (events.rs, session.rs, trends.rs, storage.rs, reporting.rs done)
 - [~] Phase 22.3: Extract `task_tracker` Submodules (metrics.rs done; selection/orphan logic tightly coupled to TaskTracker)
-- [ ] Phase 22.4: Extract `OutputParser` Trait
+- [x] Phase 22.4: Extract `OutputParser` Trait (parser.rs with trait and utilities; existing gates not refactored)
 - [x] Phase 22.5: Extract `checkpoint` Submodules (thresholds.rs, diff.rs, quality_metrics.rs done)
 
 ### Sprint 23: LLM Provider Abstraction
