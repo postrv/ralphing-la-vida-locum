@@ -96,7 +96,13 @@ enum Commands {
         #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
         incremental_gates: bool,
 
+        /// Resume from a previous session if available.
+        /// Defaults to true. Use --no-resume or --fresh to start fresh.
+        #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+        resume: bool,
+
         /// Start fresh, ignoring any existing session state.
+        /// Alias for --no-resume.
         #[arg(long)]
         fresh: bool,
 
@@ -493,12 +499,17 @@ async fn main() -> anyhow::Result<()> {
             parallel_gates,
             gate_timeout,
             incremental_gates,
+            resume,
             fresh,
             no_persist,
         } => {
-            // Session persistence (Phase 21.2 prep for Phase 21.4 integration)
+            // Session persistence (Phase 21.4)
             let ralph_dir = project_path.join(".ralph");
             let session_persistence = session::persistence::SessionPersistence::new(&ralph_dir);
+
+            // Determine if we should resume: --resume=true AND --fresh=false
+            // --fresh overrides --resume (they're essentially opposites)
+            let should_resume = resume && !fresh;
 
             // Handle --fresh flag by deleting existing session state
             if fresh && session_persistence.exists() {
@@ -509,41 +520,19 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
 
-            // Check for and load existing session state
-            if !fresh && session_persistence.exists() {
-                if let Ok(Some(previous_session)) = session_persistence.load() {
-                    tracing::info!(
-                        "Found previous session from {}, iteration {}",
-                        previous_session.saved_at(),
-                        previous_session.loop_state.as_ref().map_or(0, |s| s.iteration)
-                    );
-                }
-            }
-
-            // Initialize new session state for this run
-            let mut current_session = session::SessionState::new();
-            current_session.set_loop_state(r#loop::state::LoopState::new(mode));
-
-            // Save initial session state (demonstrates atomic write)
-            if let Err(e) = session_persistence.save(&current_session) {
-                tracing::warn!("Failed to save initial session state: {}", e);
-            }
-
-            // Log session file paths for debugging
-            tracing::debug!(
-                "Session: main={}, tmp={}",
-                session_persistence.session_file_path().display(),
-                session_persistence.tmp_file_path().display()
-            );
-
             // Clean up any stale temporary files from interrupted saves
             let tmp_path = session_persistence.tmp_file_path();
             if tmp_path.exists() {
                 let _ = std::fs::remove_file(&tmp_path);
             }
 
-            // Note: session_persistence.delete() is available for Phase 21.4's --fresh flag
-            // to explicitly clear session state when requested by the user
+            // Log session file paths for debugging
+            tracing::debug!(
+                "Session: main={}, tmp={}, resume={}",
+                session_persistence.session_file_path().display(),
+                session_persistence.tmp_file_path().display(),
+                should_resume
+            );
 
             // Load project configuration
             let mut config = ProjectConfig::load(&project_path).unwrap_or_default();
@@ -581,14 +570,18 @@ async fn main() -> anyhow::Result<()> {
                 .with_max_iterations(max_iterations)
                 .with_stagnation_threshold(stagnation_threshold)
                 .with_doc_sync_interval(doc_sync_interval)
-                .with_verbose(cli.verbose);
+                .with_verbose(cli.verbose)
+                .with_session_persistence(session_persistence.clone())
+                .with_resume(should_resume);
 
             // Configure signal handler for graceful shutdown (Phase 21.3)
+            // Create a placeholder session state - the actual state will be saved by LoopManager
+            let placeholder_session = session::SessionState::new();
             let signal_config = session::signals::SignalHandlerConfig {
                 persist: !no_persist,
             };
             let signal_handler = session::signals::SignalHandler::new(signal_config)
-                .with_persistence(session_persistence.clone(), current_session);
+                .with_persistence(session_persistence.clone(), placeholder_session);
 
             if no_persist {
                 tracing::info!("Session persistence disabled (--no-persist flag)");
@@ -614,18 +607,25 @@ async fn main() -> anyhow::Result<()> {
 
             let mut manager = LoopManager::new(loop_config)?;
 
-            // Run the loop with signal handling for graceful shutdown (Phase 21.3)
+            // Run the loop with signal handling for graceful shutdown (Phase 21.3/21.4)
             // Use tokio::select! to race between the loop and shutdown signals
             tokio::select! {
                 result = manager.run() => {
                     // Loop completed normally
                     result?;
-                    // Save final session state on normal completion
+                    // Save final session state on normal completion using LoopManager's shutdown
+                    if let Err(e) = manager.shutdown() {
+                        tracing::warn!("Failed to save session on completion: {}", e);
+                    }
+                    // Also call signal handler's shutdown for compatibility
                     let final_result = signal_handler.shutdown().await;
                     tracing::debug!("Loop completed, shutdown result: {:?}", final_result);
                 }
                 result = signal_handler.wait_for_shutdown() => {
-                    // Signal received - state was already saved in wait_for_shutdown
+                    // Signal received - save state using LoopManager's shutdown
+                    if let Err(e) = manager.shutdown() {
+                        tracing::warn!("Failed to save session on signal: {}", e);
+                    }
                     match result {
                         Ok(shutdown_result) => {
                             tracing::info!("Graceful shutdown completed: {:?}", shutdown_result);
