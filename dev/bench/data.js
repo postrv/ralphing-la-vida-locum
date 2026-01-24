@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769277402124,
+  "lastUpdate": 1769278286857,
   "repoUrl": "https://github.com/postrv/ralphing-la-vida-locum",
   "entries": {
     "Ralph Performance Benchmarks": [
@@ -257,6 +257,135 @@ window.BENCHMARK_DATA = {
           {
             "name": "context_building/typical_context",
             "value": 818.312378826902,
+            "unit": "ns"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "committer": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "distinct": true,
+          "id": "81b108de07e2b240eea39334ede983884e32eaf9",
+          "message": "feat(cli): Add --files and --changed flags for incremental execution (Phase 26.5)\n\nAdd two new incremental execution flags to `ralph loop`:\n- `--files <glob>`: Process only files matching a glob pattern\n- `--changed`: Shorthand for `--changed-since HEAD~1`\n\nThe three incremental flags (--changed-since, --files, --changed) are\nmutually exclusive and will error if more than one is specified.\n\nThis completes Sprint 26: Incremental Execution Mode.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+          "timestamp": "2026-01-24T18:05:01Z",
+          "tree_id": "500b6f70214fc5f40a9157107bf6e5f9902883eb",
+          "url": "https://github.com/postrv/ralphing-la-vida-locum/commit/81b108de07e2b240eea39334ede983884e32eaf9"
+        },
+        "date": 1769278286562,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 249614.69204959323,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 231369.5994292384,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 239873.55308723214,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 1504570.7183316662,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 374177.25895447354,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 747890.2740183347,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/polyglot_project",
+            "value": 429189.93818114087,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/single_language",
+            "value": 259948.61943777095,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 744712.7177949592,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 385005.8226037228,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 92049.02702724708,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 859520.780497558,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 569991.8710825734,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 428067.2216401496,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 323205.365039121,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/plan",
+            "value": 10743.622818089638,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/build",
+            "value": 28177.727802993475,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/debug",
+            "value": 12961.055484879382,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/full_context",
+            "value": 3475.43871112835,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/minimal_context",
+            "value": 525.4314185675987,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/typical_context",
+            "value": 750.719409651269,
             "unit": "ns"
           }
         ]
