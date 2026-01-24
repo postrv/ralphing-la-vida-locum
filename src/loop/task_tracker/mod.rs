@@ -3171,7 +3171,10 @@ mod tests {
         // Clear current task if orphaned
         let was_cleared = tracker.clear_current_task_if_orphaned();
 
-        assert!(was_cleared, "Should return true when current task was orphaned and cleared");
+        assert!(
+            was_cleared,
+            "Should return true when current task was orphaned and cleared"
+        );
         assert!(tracker.current_task.is_none());
     }
 
@@ -3191,7 +3194,10 @@ mod tests {
         // Task is not orphaned
         let was_cleared = tracker.clear_current_task_if_orphaned();
 
-        assert!(!was_cleared, "Should return false when current task is not orphaned");
+        assert!(
+            !was_cleared,
+            "Should return false when current task is not orphaned"
+        );
         assert!(tracker.current_task.is_some());
     }
 
