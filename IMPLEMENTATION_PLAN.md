@@ -1,6 +1,6 @@
-# Ralph Self-Improvement Implementation Plan
+# Implementation Plan Template
 
-> **Meta-Development**: This plan will be executed by Ralph to improve Ralph.
+> **Meta-Development**: This plan will be executed by Ralph to improve your project.
 > **Methodology**: Strict TDD - Write failing test → Minimal implementation → Refactor
 > **Quality Standard**: Production-grade, zero warnings, comprehensive documentation
 
@@ -10,28 +10,35 @@
 
 | Sprint | Focus | Effort | Status |
 |--------|-------|--------|--------|
-| 23 | LLM Provider Abstraction | 2-3 days | **Complete** |
-| 24 | Predictor Persistence & Diagnostics | 1-2 days | **Complete** |
-| 25 | Analytics Dashboard | 1-2 days | **Complete** |
-| 26 | Incremental Execution Mode | 2-3 days | **Complete** |
-
-**Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
-
-**Current Test Count**: 2,440 passing (1,918 lib + 522 bin)
+| 1 | Example Sprint | 1-2 days | **In Progress** |
 
 ---
 
-## Phase 24.3: Adaptive Weight Tuning ✅
+## Sprint 1: Example Sprint
 
-**Description**: Slowly adjust predictor weights based on recorded accuracy.
+**Goal**: Describe the sprint goal here.
+
+**Success Criteria**:
+- Criterion 1
+- Criterion 2
+- Criterion 3
+
+### Phase 1.1: First Phase
+
+**Description**: Describe what this phase accomplishes.
 
 **Requirements**:
-- [x] Add `enable_adaptive_weights` config option (default: false)
-- [x] Track which factors contributed to correct vs incorrect predictions
-- [x] Implement simple weight adjustment: +0.1 for factors in correct predictions, -0.1 for incorrect
-- [x] Clamp weights to [0.1, 2.0] range to prevent runaway
-- [x] Add `ralph predictor tune` command to manually trigger tuning
-- [x] Log weight changes
+- [ ] Requirement 1
+- [ ] Requirement 2
+- [ ] Requirement 3
+
+### Phase 1.2: Second Phase
+
+**Description**: Describe what this phase accomplishes.
+
+**Requirements**:
+- [ ] Requirement 1
+- [ ] Requirement 2
 
 ---
 
@@ -45,10 +52,6 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 cargo doc --no-deps
-
-# Should pass (warn if not)
-cargo deny check advisories
-cargo deny check licenses
 ```
 
 ---
@@ -63,7 +66,6 @@ cargo deny check licenses
 6. **Commit messages**: Use conventional commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`).
 7. **No dead code**: Remove any commented-out code or unused functions.
 8. **No TODOs in committed code**: Either do it now or create a task for later.
-9. **Use narsil**: Reindex before starting work, use for code discovery.
 
 ---
 
@@ -72,6 +74,5 @@ cargo deny check licenses
 This plan is complete when:
 1. All checkboxes are marked
 2. All quality gates pass
-3. `cargo test` shows 2,500+ tests passing
-4. Documentation is updated
-5. CHANGELOG.md reflects all changes
+3. Documentation is updated
+4. CHANGELOG.md reflects all changes
