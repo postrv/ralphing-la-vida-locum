@@ -358,6 +358,63 @@ The internal supervisor ("Chief Wiggum") monitors loop health:
 | **Elevated** | 2x stagnation | Invoke supervisor |
 | **Critical** | 3x stagnation | Abort with diagnostic dump |
 
+## Session Persistence & Resume
+
+Ralph saves session state to disk, enabling recovery after crashes or intentional restarts without losing progress.
+
+### How It Works
+
+Session state is automatically saved:
+- After each iteration (debounced to max once per 30 seconds)
+- On graceful shutdown (`Ctrl+C` / `SIGTERM`)
+- When the loop completes normally
+
+State is stored in `.ralph/session.json` using atomic writes to prevent corruption.
+
+### CLI Flags
+
+```bash
+# Default behavior: resume from previous session
+ralph --project . loop --max-iterations 50
+
+# Start fresh, ignoring existing session
+ralph --project . loop --fresh
+
+# Or equivalently
+ralph --project . loop --no-resume
+
+# Disable persistence entirely (for testing)
+ralph --project . loop --no-persist
+```
+
+### What's Persisted
+
+| Component | Data Saved |
+|-----------|------------|
+| **Loop State** | Current iteration, mode, stagnation counter |
+| **Task Tracker** | Task progress, completion status |
+| **Supervisor** | Health history, mode switches, error tracking |
+| **Predictor** | Prediction history for accuracy tracking |
+| **Metadata** | Session ID, timestamps, schema version |
+
+### Version Compatibility
+
+Session files include a schema version. When loading:
+- Compatible versions are restored directly
+- Incompatible versions trigger a fresh start (with warning)
+- Corrupted files are deleted and logged (graceful degradation)
+
+### Concurrent Access Protection
+
+File locking prevents multiple Ralph instances from corrupting state:
+
+```
+.ralph/
+├── session.json       # Main session file
+├── session.json.tmp   # Atomic write staging
+└── session.json.lock  # Advisory lock file
+```
+
 ## narsil-mcp Integration
 
 Ralph integrates with [narsil-mcp](https://github.com/postrv/narsil-mcp) for code intelligence. All narsil-mcp features **gracefully degrade** when unavailable—Ralph continues to function normally, returning `None` or empty collections.

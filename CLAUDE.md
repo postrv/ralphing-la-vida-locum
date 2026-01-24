@@ -230,6 +230,58 @@ Ralph monitors for stagnation and will escalate:
 
 ---
 
+## SESSION PERSISTENCE & RECOVERY
+
+Ralph automatically saves session state to `.ralph/session.json` for crash recovery.
+
+### Default Behavior
+
+- Sessions auto-resume on restart (use `--fresh` to start clean)
+- State is saved after each iteration and on `Ctrl+C`
+- Corrupted sessions are automatically deleted (fresh start)
+
+### Recovery Scenarios
+
+**Normal restart:**
+```bash
+# Will resume from where you left off
+ralph --project . loop --max-iterations 50
+```
+
+**After a crash:**
+```bash
+# Check session state
+cat .ralph/session.json | jq '.metadata'
+
+# Resume automatically
+ralph --project . loop --max-iterations 50
+```
+
+**Force fresh start:**
+```bash
+# Ignore existing session
+ralph --project . loop --fresh
+```
+
+**Debugging session issues:**
+```bash
+# Disable persistence for testing
+ralph --project . loop --no-persist
+
+# Delete session manually
+rm .ralph/session.json
+```
+
+### What's Restored
+
+On resume, Ralph restores:
+- Current iteration count and loop mode
+- Task tracker state (task progress)
+- Supervisor health history
+- Stagnation predictor history
+
+---
+
 ## QUALITY GATES (Pre-Commit Checklist)
 
 **Start of Task:**
@@ -284,8 +336,11 @@ The supervisor checks:
 ## QUICK REFERENCE
 
 ```bash
-# Start automation
+# Start automation (auto-resumes from previous session)
 ralph --project . loop --max-iterations 50
+
+# Start fresh (ignore existing session)
+ralph --project . loop --fresh --max-iterations 50
 
 # Debug stagnation
 ralph --project . loop --phase debug --max-iterations 10
@@ -295,6 +350,9 @@ ralph config validate
 
 # View analytics
 ralph analytics sessions --last 5
+
+# View session state
+cat .ralph/session.json | jq '.metadata'
 
 # Verify git environment
 gh auth status

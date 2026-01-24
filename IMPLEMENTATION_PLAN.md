@@ -118,19 +118,19 @@ cargo test --lib session::signals
 cargo clippy --all-targets -- -D warnings
 ```
 
-### 4. Phase 21.4: LoopManager Integration
+### 4. Phase 21.4: LoopManager Integration ✅
 
 **Description**: Integrate session persistence into the main loop lifecycle.
 
 **Requirements**:
-- [ ] Add `SessionPersistence` to `LoopManager` struct
-- [ ] Call `persistence.load()` in `LoopManager::new()` to restore state
-- [ ] Call `persistence.save()` after each iteration (debounced - max once per 30s)
-- [ ] Call `persistence.save()` in `LoopManager::shutdown()` (unconditional)
-- [ ] Add `--resume` CLI flag (default true) to control whether to load previous session
-- [ ] Add `--fresh` CLI flag as alias for `--resume=false`
-- [ ] Log session restoration: "Resuming session from <timestamp>, iteration <n>"
-- [ ] Write integration tests with full loop lifecycle
+- [x] Add `SessionPersistence` to `LoopManager` struct
+- [x] Call `persistence.load()` in `LoopManager::new()` to restore state
+- [x] Call `persistence.save()` after each iteration (debounced - max once per 30s)
+- [x] Call `persistence.save()` in `LoopManager::shutdown()` (unconditional)
+- [x] Add `--resume` CLI flag (default true) to control whether to load previous session
+- [x] Add `--fresh` CLI flag as alias for `--resume=false`
+- [x] Log session restoration: "Resuming session from <timestamp>, iteration <n>"
+- [x] Write integration tests with full loop lifecycle
 
 **Test-First Requirements**:
 ```rust
@@ -150,16 +150,16 @@ cargo test --test integration_session  # New integration test file
 cargo clippy --all-targets -- -D warnings
 ```
 
-### 5. Phase 21.5: Documentation & CLI Help
+### 5. Phase 21.5: Documentation & CLI Help ✅
 
 **Description**: Document the session persistence feature.
 
 **Requirements**:
-- [ ] Add module-level documentation to `src/session/mod.rs`
-- [ ] Update README.md with session persistence section
-- [ ] Update CLAUDE.md with session recovery notes
-- [ ] Update CLI help text for `--resume`, `--fresh`, `--no-persist` flags
-- [ ] Add example usage in docs
+- [x] Add module-level documentation to `src/session/mod.rs`
+- [x] Update README.md with session persistence section
+- [x] Update CLAUDE.md with session recovery notes
+- [x] Update CLI help text for `--resume`, `--fresh`, `--no-persist` flags
+- [x] Add example usage in docs
 
 **Quality Gates**:
 ```bash
@@ -878,12 +878,12 @@ cargo deny check licenses
 
 ## Progress Tracking
 
-### Sprint 21: Session Persistence
+### Sprint 21: Session Persistence ✅
 - [x] Phase 21.1: Session State Domain Model
 - [x] Phase 21.2: Session Persistence Layer
 - [x] Phase 21.3: Signal Handler Integration
-- [ ] Phase 21.4: LoopManager Integration
-- [ ] Phase 21.5: Documentation & CLI Help
+- [x] Phase 21.4: LoopManager Integration
+- [x] Phase 21.5: Documentation & CLI Help
 
 ### Sprint 22: File Decomposition
 - [ ] Phase 22.1: Extract `config` Submodules
