@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1769278286857,
+  "lastUpdate": 1769279280661,
   "repoUrl": "https://github.com/postrv/ralphing-la-vida-locum",
   "entries": {
     "Ralph Performance Benchmarks": [
@@ -386,6 +386,135 @@ window.BENCHMARK_DATA = {
           {
             "name": "context_building/typical_context",
             "value": 750.719409651269,
+            "unit": "ns"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "committer": {
+            "email": "71533421+postrv@users.noreply.github.com",
+            "name": "postrv",
+            "username": "postrv"
+          },
+          "distinct": true,
+          "id": "96b4cf44dc7e19ee73398aa488dbec8c17669819",
+          "message": "feat(cli): Wire --model variant and add --no-fallback flag (Phase 23.5)\n\n- Add model field to RealClaudeProcess with configurable variant\n- Add with_model() constructor and model() getter\n- Wire Claude variant from LlmConfig through LoopManager to RealClaudeProcess\n- Add --no-fallback CLI flag (currently no-op until ProviderRouter integration)\n- Add 4 new tests for RealClaudeProcess model configuration\n\nThe --model CLI flag now properly uses the configured variant (opus/sonnet/haiku)\nwhen running Claude Code iterations. Previously the model was hardcoded.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>",
+          "timestamp": "2026-01-24T18:21:43Z",
+          "tree_id": "f3139d64a3251a58cc695d9c679a84405474ac1f",
+          "url": "https://github.com/postrv/ralphing-la-vida-locum/commit/96b4cf44dc7e19ee73398aa488dbec8c17669819"
+        },
+        "date": 1769279279850,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 241086.03045561645,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 218038.27495548784,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/parallel",
+            "value": 232627.5800093496,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 1480436.3588984257,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 369745.0861563401,
+            "unit": "ns"
+          },
+          {
+            "name": "parallel_vs_sequential/sequential",
+            "value": 740501.8759564823,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/polyglot_project",
+            "value": 436394.1852119605,
+            "unit": "ns"
+          },
+          {
+            "name": "polyglot_detection/single_language",
+            "value": 263670.4412584014,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 755553.9164170683,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 387087.50667529093,
+            "unit": "ns"
+          },
+          {
+            "name": "gate_execution/no_allow_gate",
+            "value": 93226.82990729013,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 877774.9099950173,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 572321.1571785788,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 434109.6286710282,
+            "unit": "ns"
+          },
+          {
+            "name": "language_detection/detect",
+            "value": 324746.7499715556,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/plan",
+            "value": 10760.246978316396,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/build",
+            "value": 26171.133165410185,
+            "unit": "ns"
+          },
+          {
+            "name": "prompt_building/debug",
+            "value": 13283.785995594066,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/full_context",
+            "value": 3596.8318209819345,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/minimal_context",
+            "value": 549.4448612895637,
+            "unit": "ns"
+          },
+          {
+            "name": "context_building/typical_context",
+            "value": 823.0600948933413,
             "unit": "ns"
           }
         ]
