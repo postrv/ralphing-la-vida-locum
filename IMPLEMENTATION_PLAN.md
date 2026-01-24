@@ -12,12 +12,12 @@
 |--------|-------|--------|--------|
 | 23 | LLM Provider Abstraction | 2-3 days | **Complete** |
 | 24 | Predictor Persistence & Diagnostics | 1-2 days | **Complete** |
-| 25 | Analytics Dashboard | 1-2 days | **Current** |
-| 26 | Incremental Execution Mode | 2-3 days | Pending |
+| 25 | Analytics Dashboard | 1-2 days | **Complete** |
+| 26 | Incremental Execution Mode | 2-3 days | **Current** |
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,852 passing
+**Current Test Count**: 1,885 passing
 
 ---
 
@@ -75,11 +75,11 @@
 **Description**: Add `ralph analytics dashboard` command.
 
 **Requirements**:
-- [ ] Add `dashboard` subcommand to `ralph analytics`
-- [ ] Options: `--output <path>` (default: `.ralph/dashboard.html`), `--sessions <n>`, `--open` (open in browser)
-- [ ] Generate and save HTML file
-- [ ] Print path to generated file
-- [ ] Optionally open in default browser
+- [x] Add `dashboard` subcommand to `ralph analytics`
+- [x] Options: `--output <path>` (default: `.ralph/dashboard.html`), `--sessions <n>`, `--open` (open in browser)
+- [x] Generate and save HTML file
+- [x] Print path to generated file
+- [x] Optionally open in default browser
 
 ---
 
