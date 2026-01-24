@@ -13,11 +13,11 @@
 | 23 | LLM Provider Abstraction | 2-3 days | **Complete** |
 | 24 | Predictor Persistence & Diagnostics | 1-2 days | **Complete** |
 | 25 | Analytics Dashboard | 1-2 days | **Complete** |
-| 26 | Incremental Execution Mode | 2-3 days | **Current** |
+| 26 | Incremental Execution Mode | 2-3 days | **Complete** |
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,918 passing
+**Current Test Count**: 1,926 passing
 
 ---
 
@@ -37,15 +37,15 @@
 - [x] Phase 26.3: Scoped Context Building (`ChangeScope`, CCG neighbors)
 - [x] Phase 26.4: Scoped Task Selection (`affected_files`, prioritization)
 
-### Phase 26.5: CLI Integration
+### Phase 26.5: CLI Integration ✅
 
 **Description**: Add incremental execution flags to CLI.
 
 **Requirements**:
 - [x] Add `--changed-since <commit>` flag to `ralph loop`
-- [ ] Add `--files <glob>` flag to `ralph loop`
-- [ ] Add `--changed` flag as shorthand for `--changed-since HEAD~1`
-- [ ] Flags are mutually exclusive (error if both specified)
+- [x] Add `--files <glob>` flag to `ralph loop`
+- [x] Add `--changed` flag as shorthand for `--changed-since HEAD~1`
+- [x] Flags are mutually exclusive (error if both specified)
 - [x] Log scope at start: "Running in incremental mode: 5 files changed since abc123"
 
 ---

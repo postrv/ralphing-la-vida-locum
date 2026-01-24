@@ -115,6 +115,15 @@ enum Commands {
         /// Example: --changed-since HEAD~1 or --changed-since abc1234
         #[arg(long, value_name = "COMMIT")]
         changed_since: Option<String>,
+
+        /// Run in incremental mode, processing only files matching the given glob pattern.
+        /// Example: --files "src/**/*.rs" or --files "*.py"
+        #[arg(long, value_name = "GLOB")]
+        files: Option<String>,
+
+        /// Shorthand for --changed-since HEAD~1. Process only files changed in the last commit.
+        #[arg(long)]
+        changed: bool,
     },
 
     /// Build context for LLM analysis
@@ -550,7 +559,27 @@ async fn main() -> anyhow::Result<()> {
             fresh,
             no_persist,
             changed_since,
+            files,
+            changed,
         } => {
+            // Check mutual exclusivity of incremental execution flags (Phase 26.5)
+            let incremental_flag_count = [
+                changed_since.is_some(),
+                files.is_some(),
+                changed,
+            ]
+            .iter()
+            .filter(|&&x| x)
+            .count();
+
+            if incremental_flag_count > 1 {
+                eprintln!(
+                    "{} The flags --changed-since, --files, and --changed are mutually exclusive. Use only one.",
+                    "Error:".red().bold()
+                );
+                std::process::exit(1);
+            }
+
             // Session persistence (Phase 21.4)
             let ralph_dir = project_path.join(".ralph");
             let session_persistence = session::persistence::SessionPersistence::new(&ralph_dir);
@@ -640,6 +669,77 @@ async fn main() -> anyhow::Result<()> {
                             "{} Failed to detect changes since '{}': {}",
                             "Error:".red().bold(),
                             commit,
+                            e
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            // Handle --files flag for incremental execution (Phase 26.5)
+            if let Some(ref pattern) = files {
+                use globset::Glob;
+                use walkdir::WalkDir;
+
+                match Glob::new(pattern).map(|g| g.compile_matcher()) {
+                    Ok(matcher) => {
+                        let matched_files: Vec<std::path::PathBuf> = WalkDir::new(&project_path)
+                            .into_iter()
+                            .filter_map(|e| e.ok())
+                            .filter(|e| e.file_type().is_file())
+                            .filter_map(|e| {
+                                let path = e.path();
+                                // Get relative path from project root
+                                path.strip_prefix(&project_path)
+                                    .ok()
+                                    .filter(|rel| matcher.is_match(rel))
+                                    .map(|rel| rel.to_path_buf())
+                            })
+                            .collect();
+
+                        if matched_files.is_empty() {
+                            tracing::warn!(
+                                "No files matched glob pattern '{}' - running without file scope",
+                                pattern
+                            );
+                        } else {
+                            tracing::info!(
+                                "Running in incremental mode: {} files matched glob pattern '{}'",
+                                matched_files.len(),
+                                pattern
+                            );
+                            let scope = ralph::changes::ChangeScope::from_files(matched_files);
+                            loop_config = loop_config.with_change_scope(scope);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{} Invalid glob pattern '{}': {}",
+                            "Error:".red().bold(),
+                            pattern,
+                            e
+                        );
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            // Handle --changed flag as shorthand for --changed-since HEAD~1 (Phase 26.5)
+            if changed {
+                let detector = ralph::changes::ChangeDetector::new(&project_path);
+                match ralph::changes::ChangeScope::from_detector_since(&detector, "HEAD~1") {
+                    Ok(scope) => {
+                        let file_count = scope.changed_files().len();
+                        tracing::info!(
+                            "Running in incremental mode: {} files changed since HEAD~1",
+                            file_count
+                        );
+                        loop_config = loop_config.with_change_scope(scope);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "{} Failed to detect changes since HEAD~1: {}",
+                            "Error:".red().bold(),
                             e
                         );
                         std::process::exit(1);

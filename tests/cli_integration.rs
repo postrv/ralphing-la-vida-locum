@@ -1012,3 +1012,264 @@ fn test_analytics_dashboard_help() {
         .stdout(predicate::str::contains("--output"))
         .stdout(predicate::str::contains("--sessions"));
 }
+
+// ============================================================
+// Incremental Execution CLI Tests (Sprint 26, Phase 26.5)
+// ============================================================
+
+#[test]
+fn test_loop_help_shows_files_flag() {
+    // Test: `ralph loop --help` shows --files flag
+    // Expected behavior: Help text includes --files option with glob description
+    ralph()
+        .arg("loop")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--files"))
+        .stdout(predicate::str::contains("glob"));
+}
+
+#[test]
+fn test_loop_help_shows_changed_flag() {
+    // Test: `ralph loop --help` shows --changed flag (distinct from --changed-since)
+    // Expected behavior: Help text includes --changed option as shorthand for --changed-since HEAD~1
+    // The regex ensures we match "--changed" as a standalone flag (followed by newline), not --changed-since
+    ralph()
+        .arg("loop")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_match(r"--changed\n").unwrap())
+        .stdout(predicate::str::contains("Shorthand for --changed-since HEAD~1"));
+}
+
+#[test]
+fn test_loop_files_and_changed_since_mutually_exclusive() {
+    // Test: `ralph loop --files <glob> --changed-since <commit>` errors
+    // Expected behavior: Error message explaining the flags are mutually exclusive
+    let temp = TempDir::new().unwrap();
+
+    // Create minimal project with IMPLEMENTATION_PLAN.md
+    std::fs::write(temp.path().join("IMPLEMENTATION_PLAN.md"), "# Plan").unwrap();
+
+    // Initialize git repo so --changed-since can work
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to init git");
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to config git");
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to config git");
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to add");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to commit");
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("loop")
+        .arg("--files")
+        .arg("*.rs")
+        .arg("--changed-since")
+        .arg("HEAD~1")
+        .arg("--max-iterations")
+        .arg("1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mutually exclusive"));
+}
+
+#[test]
+fn test_loop_files_and_changed_mutually_exclusive() {
+    // Test: `ralph loop --files <glob> --changed` errors
+    // Expected behavior: Error message explaining the flags are mutually exclusive
+    let temp = TempDir::new().unwrap();
+
+    // Create minimal project with IMPLEMENTATION_PLAN.md
+    std::fs::write(temp.path().join("IMPLEMENTATION_PLAN.md"), "# Plan").unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("loop")
+        .arg("--files")
+        .arg("*.rs")
+        .arg("--changed")
+        .arg("--max-iterations")
+        .arg("1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mutually exclusive"));
+}
+
+#[test]
+fn test_loop_changed_since_and_changed_mutually_exclusive() {
+    // Test: `ralph loop --changed-since <commit> --changed` errors
+    // Expected behavior: Error message explaining the flags are mutually exclusive
+    let temp = TempDir::new().unwrap();
+
+    // Create minimal project with IMPLEMENTATION_PLAN.md
+    std::fs::write(temp.path().join("IMPLEMENTATION_PLAN.md"), "# Plan").unwrap();
+
+    // Initialize git repo so --changed-since can work
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to init git");
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to config git");
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to config git");
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to add");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to commit");
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("loop")
+        .arg("--changed-since")
+        .arg("HEAD~1")
+        .arg("--changed")
+        .arg("--max-iterations")
+        .arg("1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mutually exclusive"));
+}
+
+#[test]
+fn test_loop_files_flag_logs_scope() {
+    // Test: `ralph loop --files <glob>` logs the scope information
+    // Expected behavior: Log message showing files matched by glob pattern
+    let temp = TempDir::new().unwrap();
+
+    // Create minimal project
+    std::fs::write(temp.path().join("IMPLEMENTATION_PLAN.md"), "# Plan").unwrap();
+    std::fs::write(temp.path().join("test.rs"), "fn main() {}").unwrap();
+    std::fs::write(temp.path().join("lib.rs"), "// lib").unwrap();
+
+    // Bootstrap the project so config exists
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    // Check that the flag is recognized and the scope message appears
+    // Note: tracing output goes to stdout in test configuration
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("loop")
+        .arg("--files")
+        .arg("*.rs")
+        .arg("--max-iterations")
+        .arg("0")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("incremental mode"))
+        .stdout(predicate::str::contains("files matched"));
+}
+
+#[test]
+fn test_loop_changed_flag_logs_scope() {
+    // Test: `ralph loop --changed` logs the scope information
+    // Expected behavior: Log message showing files changed since HEAD~1
+    let temp = TempDir::new().unwrap();
+
+    // Create minimal project
+    std::fs::write(temp.path().join("IMPLEMENTATION_PLAN.md"), "# Plan").unwrap();
+
+    // Initialize git repo
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to init git");
+    std::process::Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to config git");
+    std::process::Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to config git");
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to add");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to commit");
+
+    // Bootstrap the project
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("bootstrap")
+        .assert()
+        .success();
+
+    // Add another commit
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to add");
+    std::process::Command::new("git")
+        .args(["commit", "-m", "bootstrap"])
+        .current_dir(temp.path())
+        .output()
+        .expect("Failed to commit");
+
+    // Check that the flag is recognized and the scope message appears
+    // Note: tracing output goes to stdout in test configuration
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("loop")
+        .arg("--changed")
+        .arg("--max-iterations")
+        .arg("0")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("incremental mode"))
+        .stdout(predicate::str::contains("HEAD~1"));
+}
