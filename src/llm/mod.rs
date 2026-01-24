@@ -32,11 +32,15 @@
 
 pub mod claude;
 pub mod ollama;
+pub mod openai;
 
 pub use claude::{
     ClaudeApiError, ClaudeModel, ClaudeProvider, ParseClaudeModelError, RateLimitTracker,
 };
 pub use ollama::{OllamaApiError, OllamaModel, OllamaProvider};
+pub use openai::{
+    OpenAiApiError, OpenAiModel, OpenAiProvider, OpenAiRateLimitTracker, ParseOpenAiModelError,
+};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -1400,7 +1404,7 @@ impl LlmClient for OllamaClient {
 /// # Errors
 ///
 /// Returns an error if:
-/// - The model is not yet implemented (OpenAI, Gemini, Ollama)
+/// - The model is not yet implemented (Gemini)
 /// - The configuration is invalid
 ///
 /// # Example
@@ -1422,14 +1426,15 @@ pub fn create_llm_client(config: &LlmConfig, project_dir: &Path) -> Result<Box<d
             Ok(Box::new(client))
         }
         "openai" => {
-            // Return stub client - will error on run_prompt but allows testing
+            // Use the new OpenAiProvider
             let variant = config
                 .options
                 .get("variant")
                 .and_then(|v| v.as_str())
                 .unwrap_or("gpt-4o");
-            let client = OpenAiClient::new(variant).with_api_key_env(&config.api_key_env);
-            Ok(Box::new(client))
+            let model = OpenAiModel::parse(variant).unwrap_or_default();
+            let provider = OpenAiProvider::new(model).with_api_key_env(&config.api_key_env);
+            Ok(Box::new(provider))
         }
         "gemini" => {
             // Return stub client - will error on run_prompt but allows testing

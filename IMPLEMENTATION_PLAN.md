@@ -17,7 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,777 passing
+**Current Test Count**: 1,802 passing
 
 ---
 
@@ -34,6 +34,8 @@
 **Already Complete**:
 - [x] Phase 23.1: LLM Client Trait Refinement (`src/llm/mod.rs`)
 - [x] Phase 23.2: Claude Provider (`src/llm/claude.rs`)
+- [x] Phase 23.3: Ollama Provider (`src/llm/ollama.rs`)
+- [x] Phase 23.4: OpenAI Provider (`src/llm/openai.rs`)
 
 ### Phase 23.2: Claude Provider (Refactor Existing) ✅
 
@@ -71,22 +73,22 @@
 // - test_ollama_graceful_degradation_when_unavailable ✅
 ```
 
-### Phase 23.4: OpenAI Provider
+### Phase 23.4: OpenAI Provider ✅
 
 **Description**: Implement OpenAI provider.
 
 **Requirements**:
-- [ ] Create `src/llm/openai.rs` implementing `LlmClient`
-- [ ] Support GPT-4o and GPT-4-turbo models
-- [ ] Handle API key from environment (`OPENAI_API_KEY`)
-- [ ] Implement proper error handling for API errors
-- [ ] Add rate limit detection and backoff
+- [x] Create `src/llm/openai.rs` implementing `LlmClient`
+- [x] Support GPT-4o, GPT-4-turbo, and o1 models
+- [x] Handle API key from environment (`OPENAI_API_KEY`)
+- [x] Implement proper error handling for API errors
+- [x] Add rate limit detection and backoff
 
 **Test-First**:
 ```rust
-// - test_openai_provider_implements_llm_client
-// - test_openai_api_key_from_env
-// - test_openai_rate_limit_detection
+// - test_openai_provider_implements_llm_client ✅
+// - test_openai_api_key_from_env ✅
+// - test_openai_rate_limit_detection ✅
 ```
 
 ### Phase 23.5: Provider Router & Fallback
