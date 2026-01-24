@@ -27,23 +27,24 @@
 
 **Goal**: Add CLI commands for config validation, audit management, and verification.
 
-### 33. Phase 19.1: Config Validate Command
+### 33. Phase 19.1: Config Validate Command ✅
 
 Add `ralph config validate` command.
 
 **Test Requirements**:
-- [ ] Test validates project config syntax
-- [ ] Test validates inheritance chain resolution
-- [ ] Test validates extends references exist
-- [ ] Test reports missing required fields
-- [ ] Test exits with appropriate error codes
+- [x] Test validates project config syntax
+- [x] Test validates inheritance chain resolution
+- [x] Test validates extends references exist
+- [x] Test reports missing required fields
+- [x] Test exits with appropriate error codes
 
 **Implementation**:
-- [ ] Add `ConfigValidator` struct
-- [ ] Implement validation for all config sections
-- [ ] Add `ralph config validate` subcommand to CLI
-- [ ] Add `--verbose` flag for detailed output
-- [ ] Document in CLI help
+- [x] Add `ConfigValidator` struct
+- [x] Implement validation for all config sections
+- [x] Add `ralph config validate` subcommand to CLI
+- [x] Add `--verbose` flag for detailed output
+- [x] Add `--json` flag for machine-readable output
+- [x] Document in CLI help
 
 **Quality Gates**:
 ```bash

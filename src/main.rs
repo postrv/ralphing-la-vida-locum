@@ -350,7 +350,15 @@ enum ConfigAction {
     },
 
     /// Validate configuration files
-    Validate,
+    Validate {
+        /// Show detailed validation output including inheritance chain
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Show configuration file paths
     Paths,
@@ -1029,59 +1037,70 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
 
-                ConfigAction::Validate => {
-                    let settings_path = ProjectConfig::settings_path(&project_path);
-                    let claude_md_path = ProjectConfig::claude_md_path(&project_path);
+                ConfigAction::Validate { verbose, json } => {
+                    let validator = ralph::config::ConfigValidator::new(&project_path);
+                    let report = validator.validate()?;
 
-                    let mut valid = true;
+                    if json {
+                        // JSON output mode
+                        let output = serde_json::json!({
+                            "valid": report.is_valid(),
+                            "errors": report.errors,
+                            "warnings": report.warnings,
+                            "files_checked": report.files_checked.iter()
+                                .map(|p| p.display().to_string())
+                                .collect::<Vec<_>>(),
+                            "inheritance_chain": report.inheritance_chain.sources.iter()
+                                .map(|s| serde_json::json!({
+                                    "level": format!("{}", s.level),
+                                    "path": s.path.display().to_string(),
+                                    "loaded": s.loaded
+                                }))
+                                .collect::<Vec<_>>(),
+                            "exit_code": report.exit_code()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&output)?);
+                    } else if verbose {
+                        // Verbose human-readable output
+                        println!("{}", report.verbose_report());
+                    } else {
+                        // Standard human-readable output
+                        println!("\n{} Configuration Validation", "Config:".cyan().bold());
+                        println!("{}", "─".repeat(40));
 
-                    // Check settings.json
-                    if settings_path.exists() {
-                        match ProjectConfig::load(&project_path) {
-                            Ok(_) => println!("{} settings.json is valid", "OK".green()),
-                            Err(e) => {
-                                eprintln!("{} settings.json: {}", "Error:".red(), e);
-                                valid = false;
-                            }
+                        // Show errors
+                        for error in &report.errors {
+                            eprintln!("   {} {}", "Error:".red(), error);
                         }
-                    } else {
-                        println!(
-                            "{} settings.json not found (using defaults)",
-                            "Info:".blue()
-                        );
-                    }
 
-                    // Check CLAUDE.md
-                    if claude_md_path.exists() {
-                        println!("{} CLAUDE.md exists", "OK".green());
-                    } else {
-                        println!("{} CLAUDE.md not found", "Warning:".yellow());
-                    }
-
-                    // Check MCP config
-                    let mcp_path = project_path.join(".claude/mcp.json");
-                    if mcp_path.exists() {
-                        match std::fs::read_to_string(&mcp_path) {
-                            Ok(content) => {
-                                match serde_json::from_str::<serde_json::Value>(&content) {
-                                    Ok(_) => println!("{} mcp.json is valid", "OK".green()),
-                                    Err(e) => {
-                                        eprintln!("{} mcp.json: {}", "Error:".red(), e);
-                                        valid = false;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("{} Cannot read mcp.json: {}", "Error:".red(), e);
-                                valid = false;
-                            }
+                        // Show warnings
+                        for warning in &report.warnings {
+                            println!("   {} {}", "Warning:".yellow(), warning);
                         }
-                    } else {
-                        println!("{} mcp.json not found", "Info:".blue());
+
+                        // Show files checked
+                        println!();
+                        println!("   Files checked: {}", report.files_checked.len());
+
+                        // Final status
+                        println!();
+                        if report.is_valid() {
+                            println!(
+                                "   {} {}",
+                                "OK".green().bold(),
+                                report.summary()
+                            );
+                        } else {
+                            eprintln!(
+                                "   {} {}",
+                                "Failed:".red().bold(),
+                                report.summary()
+                            );
+                        }
                     }
 
-                    if !valid {
-                        std::process::exit(1);
+                    if !report.is_valid() {
+                        std::process::exit(report.exit_code());
                     }
                 }
 

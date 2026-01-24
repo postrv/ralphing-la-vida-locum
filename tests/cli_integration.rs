@@ -315,8 +315,7 @@ fn test_config_validate_with_config() {
         .arg("validate")
         .assert()
         .success()
-        .stdout(predicate::str::contains("settings.json is valid"))
-        .stdout(predicate::str::contains("CLAUDE.md exists"));
+        .stdout(predicate::str::contains("Configuration is valid"));
 }
 
 #[test]

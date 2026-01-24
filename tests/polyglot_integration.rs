@@ -684,7 +684,7 @@ fn test_config_validate_after_polyglot_bootstrap() {
         .arg("validate")
         .assert()
         .success()
-        .stdout(predicate::str::contains("settings.json is valid"));
+        .stdout(predicate::str::contains("Configuration is valid"));
 }
 
 #[test]

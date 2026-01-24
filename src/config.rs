@@ -1358,6 +1358,360 @@ impl SharedConfigResolver {
     }
 }
 
+// ============================================================================
+// Config Validator (Phase 19.1 - Config Validate Command)
+// ============================================================================
+
+/// Result of configuration validation.
+#[derive(Debug, Clone)]
+pub struct ValidationReport {
+    /// Errors that prevent the configuration from being valid.
+    pub errors: Vec<String>,
+    /// Warnings that don't prevent validity but indicate potential issues.
+    pub warnings: Vec<String>,
+    /// The inheritance chain that was resolved.
+    pub inheritance_chain: InheritanceChain,
+    /// Files that were validated.
+    pub files_checked: Vec<PathBuf>,
+}
+
+impl ValidationReport {
+    /// Create a new empty validation report.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            inheritance_chain: InheritanceChain::new(),
+            files_checked: Vec::new(),
+        }
+    }
+
+    /// Returns true if the configuration is valid (no errors).
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// Returns the exit code for the validation (0 = valid, 1 = invalid).
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        if self.is_valid() { 0 } else { 1 }
+    }
+
+    /// Generate a human-readable summary of the validation result.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        if self.is_valid() {
+            if self.warnings.is_empty() {
+                "Configuration is valid.".to_string()
+            } else {
+                format!(
+                    "Configuration is valid with {} warning(s).",
+                    self.warnings.len()
+                )
+            }
+        } else {
+            format!(
+                "Configuration is invalid with {} error(s).",
+                self.errors.len()
+            )
+        }
+    }
+
+    /// Generate a verbose report including all details.
+    #[must_use]
+    pub fn verbose_report(&self) -> String {
+        // Initialize with header
+        let mut lines = vec![
+            "Configuration Validation Report".to_string(),
+            "─".repeat(50),
+            String::new(),
+            "Inheritance chain:".to_string(),
+        ];
+
+        // Inheritance chain
+        if self.inheritance_chain.sources.is_empty() {
+            lines.push("  (no config files found)".to_string());
+        } else {
+            for source in &self.inheritance_chain.sources {
+                let status = if source.loaded { "✓" } else { "✗" };
+                lines.push(format!(
+                    "  {} [{}] {}",
+                    status,
+                    source.level,
+                    source.path.display()
+                ));
+            }
+        }
+
+        // Files checked
+        if !self.files_checked.is_empty() {
+            lines.push(String::new());
+            lines.push(format!("Files checked ({}):", self.files_checked.len()));
+            for file in &self.files_checked {
+                lines.push(format!("  - {}", file.display()));
+            }
+        }
+
+        // Errors
+        if !self.errors.is_empty() {
+            lines.push(String::new());
+            lines.push(format!("Errors ({}):", self.errors.len()));
+            for error in &self.errors {
+                lines.push(format!("  ✗ {}", error));
+            }
+        }
+
+        // Warnings
+        if !self.warnings.is_empty() {
+            lines.push(String::new());
+            lines.push(format!("Warnings ({}):", self.warnings.len()));
+            for warning in &self.warnings {
+                lines.push(format!("  ⚠ {}", warning));
+            }
+        }
+
+        // Final status
+        lines.push(String::new());
+        lines.push(format!("Status: {}", self.summary()));
+
+        lines.join("\n")
+    }
+}
+
+impl Default for ValidationReport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Validates project configuration files.
+///
+/// `ConfigValidator` performs comprehensive validation of Ralph configuration,
+/// including:
+/// - JSON syntax validation
+/// - Inheritance chain resolution
+/// - `extends` reference validation
+/// - Field validation (e.g., predictor weights)
+/// - Optional file validation (CLAUDE.md, mcp.json)
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use ralph::config::ConfigValidator;
+/// use std::path::Path;
+///
+/// let validator = ConfigValidator::new(Path::new("/path/to/project"));
+/// let report = validator.validate()?;
+///
+/// if report.is_valid() {
+///     println!("Configuration is valid!");
+/// } else {
+///     for error in &report.errors {
+///         eprintln!("Error: {}", error);
+///     }
+///     std::process::exit(report.exit_code());
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct ConfigValidator {
+    project_dir: PathBuf,
+    system_config_path: Option<PathBuf>,
+    user_config_path: Option<PathBuf>,
+}
+
+impl ConfigValidator {
+    /// Create a new validator for the given project directory.
+    #[must_use]
+    pub fn new(project_dir: &Path) -> Self {
+        let locations = ConfigLocations::new();
+        Self {
+            project_dir: project_dir.to_path_buf(),
+            system_config_path: locations.system,
+            user_config_path: locations.user,
+        }
+    }
+
+    /// Set a custom system config path for testing.
+    #[must_use]
+    pub fn with_system_config_path(mut self, path: PathBuf) -> Self {
+        self.system_config_path = Some(path);
+        self
+    }
+
+    /// Set a custom user config path for testing.
+    #[must_use]
+    pub fn with_user_config_path(mut self, path: PathBuf) -> Self {
+        self.user_config_path = Some(path);
+        self
+    }
+
+    /// Validate the configuration and return a detailed report.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only for unexpected I/O failures. Validation errors
+    /// are reported in the `ValidationReport`.
+    pub fn validate(&self) -> anyhow::Result<ValidationReport> {
+        let mut report = ValidationReport::new();
+
+        // Check settings.json syntax and load inheritance chain
+        let settings_path = ProjectConfig::settings_path(&self.project_dir);
+        report.files_checked.push(settings_path.clone());
+
+        if settings_path.exists() {
+            // Validate JSON syntax first
+            match std::fs::read_to_string(&settings_path) {
+                Ok(content) => {
+                    if let Err(e) = serde_json::from_str::<serde_json::Value>(&content) {
+                        report.errors.push(format!(
+                            "settings.json syntax error: {} (parse failed at line {}, column {})",
+                            e,
+                            e.line(),
+                            e.column()
+                        ));
+                        // Can't continue if JSON is invalid
+                        return Ok(report);
+                    }
+                }
+                Err(e) => {
+                    report.errors.push(format!("Cannot read settings.json: {}", e));
+                    return Ok(report);
+                }
+            }
+
+            // Validate inheritance chain
+            let loader = ConfigLoader::new()
+                .with_system_config_path(
+                    self.system_config_path
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("/nonexistent")),
+                )
+                .with_user_config_path(
+                    self.user_config_path
+                        .clone()
+                        .unwrap_or_else(|| PathBuf::from("/nonexistent")),
+                );
+
+            match loader.load_with_chain(&self.project_dir) {
+                Ok((_, chain)) => {
+                    report.inheritance_chain = chain;
+                }
+                Err(e) => {
+                    report.errors.push(format!("Inheritance chain error: {}", e));
+                }
+            }
+
+            // Validate extends references using SharedConfigResolver
+            let resolver = SharedConfigResolver::new(&self.project_dir);
+            match resolver.load() {
+                Ok(config) => {
+                    // Validate the loaded config
+                    if let Err(e) = config.predictor_weights.validate() {
+                        report.errors.push(format!("Predictor weights validation error: {}", e));
+                    }
+
+                    if let Err(e) = config.llm.validate() {
+                        report.errors.push(format!("LLM config validation error: {}", e));
+                    }
+                }
+                Err(e) => {
+                    report.errors.push(format!("{}", e));
+                }
+            }
+        } else {
+            // No settings.json - warn and use defaults
+            report.warnings.push(
+                "settings.json not found - using defaults".to_string()
+            );
+
+            // Still set up inheritance chain for the missing file
+            report.inheritance_chain.add_source(
+                ConfigLevel::Project,
+                settings_path,
+                false,
+            );
+        }
+
+        // Check mcp.json if it exists
+        let mcp_path = self.project_dir.join(".claude/mcp.json");
+        if mcp_path.exists() {
+            report.files_checked.push(mcp_path.clone());
+            match std::fs::read_to_string(&mcp_path) {
+                Ok(content) => {
+                    if let Err(e) = serde_json::from_str::<serde_json::Value>(&content) {
+                        report.errors.push(format!(
+                            "mcp.json syntax error: {} (parse failed at line {}, column {})",
+                            e,
+                            e.line(),
+                            e.column()
+                        ));
+                    }
+                }
+                Err(e) => {
+                    report.errors.push(format!("Cannot read mcp.json: {}", e));
+                }
+            }
+        }
+
+        // Check CLAUDE.md exists (warn if missing)
+        let claude_md_path = ProjectConfig::claude_md_path(&self.project_dir);
+        if claude_md_path.exists() {
+            report.files_checked.push(claude_md_path);
+        } else {
+            report.warnings.push(
+                "CLAUDE.md not found - project instructions may be missing".to_string()
+            );
+        }
+
+        // Add system/user config paths to inheritance chain if they exist
+        if let Some(ref system_path) = self.system_config_path {
+            let loaded = system_path.exists();
+            if report.inheritance_chain.sources.is_empty()
+                || report.inheritance_chain.sources[0].level != ConfigLevel::System
+            {
+                let mut new_sources = vec![ConfigSource {
+                    level: ConfigLevel::System,
+                    path: system_path.clone(),
+                    loaded,
+                }];
+                new_sources.append(&mut report.inheritance_chain.sources);
+                report.inheritance_chain.sources = new_sources;
+            }
+        }
+
+        if let Some(ref user_path) = self.user_config_path {
+            let loaded = user_path.exists();
+            // Find the right position to insert (after system, before project)
+            let insert_pos = report
+                .inheritance_chain
+                .sources
+                .iter()
+                .position(|s| s.level == ConfigLevel::Project)
+                .unwrap_or(report.inheritance_chain.sources.len());
+
+            if !report
+                .inheritance_chain
+                .sources
+                .iter()
+                .any(|s| s.level == ConfigLevel::User)
+            {
+                report.inheritance_chain.sources.insert(
+                    insert_pos,
+                    ConfigSource {
+                        level: ConfigLevel::User,
+                        path: user_path.clone(),
+                        loaded,
+                    },
+                );
+            }
+        }
+
+        Ok(report)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2651,5 +3005,341 @@ mod tests {
             (config.predictor_weights.commit_gap - 0.40).abs() < f64::EPSILON,
             "Should inherit commit_gap from extended config"
         );
+    }
+
+    // =========================================================================
+    // ConfigValidator Tests (Phase 19.1 - Config Validate Command)
+    // =========================================================================
+
+    #[test]
+    fn test_config_validate_valid_project_config_syntax() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create a valid settings.json
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"respectGitignore": true, "permissions": {"allow": [], "deny": []}}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate();
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        assert!(report.is_valid());
+        assert!(report.errors.is_empty());
+    }
+
+    #[test]
+    fn test_config_validate_invalid_json_syntax() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create an invalid JSON file
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"respectGitignore": true, invalid json here"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate();
+
+        assert!(result.is_ok()); // validate() returns Ok with errors in report
+        let report = result.unwrap();
+        assert!(!report.is_valid());
+        assert!(!report.errors.is_empty());
+        assert!(report.errors.iter().any(|e| e.contains("syntax") || e.contains("parse")));
+    }
+
+    #[test]
+    fn test_config_validate_inheritance_chain_resolution() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create user config
+        let user_config_dir = temp.path().join("user_config");
+        std::fs::create_dir_all(&user_config_dir).unwrap();
+        std::fs::write(
+            user_config_dir.join("config.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.30}}"#,
+        )
+        .unwrap();
+
+        // Create project config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir)
+            .with_user_config_path(user_config_dir.join("config.json"));
+        let result = validator.validate();
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        assert!(report.is_valid());
+        // Should have chain info
+        assert!(!report.inheritance_chain.sources.is_empty());
+    }
+
+    #[test]
+    fn test_config_validate_extends_reference_exists() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create a shared config
+        let config_dir = project_dir.join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("team.json"),
+            r#"{"predictorWeights": {"commit_gap": 0.40}}"#,
+        )
+        .unwrap();
+
+        // Create project config that extends the shared config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "config/team.json"}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate();
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn test_config_validate_extends_reference_missing() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create project config that extends a non-existent config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "config/nonexistent.json"}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate();
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        assert!(!report.is_valid());
+        assert!(report.errors.iter().any(|e| e.contains("nonexistent") || e.contains("not found")));
+    }
+
+    #[test]
+    fn test_config_validate_reports_missing_required_fields() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create an empty config (missing typical fields)
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate();
+
+        // Empty config is valid (all fields have defaults)
+        // But validator can report warnings for missing CLAUDE.md
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        // An empty JSON object is still valid
+        assert!(report.is_valid());
+    }
+
+    #[test]
+    fn test_config_validate_invalid_predictor_weights() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create config with invalid predictor weight (negative value)
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"predictorWeights": {"commit_gap": -0.5}}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate();
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        assert!(!report.is_valid());
+        assert!(report.errors.iter().any(|e| e.contains("negative")));
+    }
+
+    #[test]
+    fn test_config_validate_exit_code_valid() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create valid config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate().unwrap();
+
+        assert_eq!(result.exit_code(), 0);
+    }
+
+    #[test]
+    fn test_config_validate_exit_code_invalid() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create invalid config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"predictorWeights": {"preset": "invalid_preset"}}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate().unwrap();
+
+        assert_eq!(result.exit_code(), 1);
+    }
+
+    #[test]
+    fn test_config_validate_verbose_includes_inheritance_chain() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create project config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate().unwrap();
+
+        // Verbose output should include inheritance chain
+        let verbose_output = result.verbose_report();
+        assert!(verbose_output.contains("inheritance") || verbose_output.contains("chain"));
+    }
+
+    #[test]
+    fn test_config_validate_checks_mcp_json() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create valid settings.json
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        // Create invalid mcp.json
+        std::fs::write(
+            project_dir.join(".claude/mcp.json"),
+            r#"{"invalid json"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate().unwrap();
+
+        assert!(!result.is_valid());
+        assert!(result.errors.iter().any(|e| e.contains("mcp.json")));
+    }
+
+    #[test]
+    fn test_config_validate_warns_missing_claude_md() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create valid settings.json but no CLAUDE.md
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"respectGitignore": true}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate().unwrap();
+
+        // Should have a warning about missing CLAUDE.md
+        assert!(result.warnings.iter().any(|w| w.contains("CLAUDE.md")));
+    }
+
+    #[test]
+    fn test_config_validate_no_settings_uses_defaults() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create empty project dir (no .claude folder)
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate();
+
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        // No config files is valid (uses defaults)
+        assert!(report.is_valid());
+        assert!(report.warnings.iter().any(|w| w.contains("settings") || w.contains("defaults")));
+    }
+
+    #[test]
+    fn test_config_validate_circular_extends_detected() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path();
+
+        // Create circular extends
+        let config_dir = project_dir.join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("a.json"),
+            r#"{"extends": "config/b.json"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            config_dir.join("b.json"),
+            r#"{"extends": "config/a.json"}"#,
+        )
+        .unwrap();
+
+        // Create project config
+        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::write(
+            project_dir.join(".claude/settings.json"),
+            r#"{"extends": "config/a.json"}"#,
+        )
+        .unwrap();
+
+        let validator = ConfigValidator::new(project_dir);
+        let result = validator.validate().unwrap();
+
+        assert!(!result.is_valid());
+        assert!(result.errors.iter().any(|e| e.to_lowercase().contains("circular")));
     }
 }

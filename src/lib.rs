@@ -56,9 +56,9 @@ pub use error::{IntoRalphError, RalphError, Result};
 // Re-export config types
 pub use config::{
     is_ssh_command, suggest_gh_alternative, verify_git_environment, ArrayMergeStrategy,
-    ConfigLevel, ConfigLoader, ConfigLocations, ConfigSource, GitEnvironmentCheck,
-    InheritanceChain, PredictorWeightsConfig, ProjectConfig, StagnationLevel, DANGEROUS_PATTERNS,
-    SECRET_PATTERNS, SSH_BLOCKED_PATTERNS,
+    ConfigLevel, ConfigLoader, ConfigLocations, ConfigSource, ConfigValidator, GitEnvironmentCheck,
+    InheritanceChain, PredictorWeightsConfig, ProjectConfig, StagnationLevel, ValidationReport,
+    DANGEROUS_PATTERNS, SECRET_PATTERNS, SSH_BLOCKED_PATTERNS,
 };
 
 // Re-export testing types for convenience
