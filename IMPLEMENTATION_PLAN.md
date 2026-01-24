@@ -57,11 +57,11 @@
 **Description**: Generate SVG charts for visual trends.
 
 **Requirements**:
-- [ ] Create `src/analytics/dashboard/charts.rs`
-- [ ] Implement simple line chart SVG generator (iterations over time)
-- [ ] Implement bar chart SVG generator (quality gate pass/fail)
-- [ ] Implement pie chart SVG generator (time distribution by phase)
-- [ ] All charts as inline SVG (no external libraries)
+- [x] Create `src/analytics/dashboard/charts.rs`
+- [x] Implement simple line chart SVG generator (iterations over time)
+- [x] Implement bar chart SVG generator (quality gate pass/fail)
+- [x] Implement pie chart SVG generator (time distribution by phase)
+- [x] All charts as inline SVG (no external libraries)
 
 **Test-First**:
 ```rust

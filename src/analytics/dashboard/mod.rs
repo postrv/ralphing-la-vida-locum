@@ -4,8 +4,10 @@
 //! into a dashboard-ready format, supporting time filtering and
 //! summary statistics calculation.
 
+pub mod charts;
 pub mod template;
 
+pub use charts::{BarChart, ChartConfig, ChartDataPoint, LineChart, PieChart};
 pub use template::DashboardTemplate;
 
 use anyhow::Result;
