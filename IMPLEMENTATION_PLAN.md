@@ -21,7 +21,7 @@
 
 ---
 
-**Current Focus: Sprint 21** (Session Persistence & Resume)
+**Current Focus: Sprint 22** (File Decomposition - Phases 22.3-22.5 remaining)
 
 ---
 
@@ -179,29 +179,29 @@ cargo test --doc
 - All existing tests pass without modification
 - No new clippy warnings
 
-### 1. Phase 22.1: Extract `config` Submodules
+### 1. Phase 22.1: Extract `config` Submodules ✅
 
 **Description**: Split `src/config.rs` (3,362 lines) into focused submodules.
 
 **Target Structure**:
 ```
+src/config.rs        # Main module with re-exports (~2,075 lines, hybrid structure)
 src/config/
-├── mod.rs           # Re-exports, SharedConfig struct (~200 lines)
-├── resolution.rs    # SharedConfigResolver, inheritance logic (~800 lines)
-├── validation.rs    # ConfigValidator, error types (~600 lines)
-├── git.rs           # Git config detection (user.name, user.email) (~400 lines)
-└── templates.rs     # Template path resolution (~400 lines)
+├── resolution.rs    # SharedConfigResolver, inheritance logic (1,731 lines)
+├── validation.rs    # ConfigValidator, error types (1,035 lines)
+└── git.rs           # Security patterns, SSH blocking (444 lines)
 ```
 
 **Requirements**:
 - [x] Create `src/config/` directory structure
 - [x] Move `SharedConfigResolver` and related types to `resolution.rs`
 - [x] Move `ConfigValidator` and validation logic to `validation.rs`
-- [ ] Move git config detection to `git.rs`
-- [ ] Move template path resolution to `templates.rs`
-- [x] Keep `SharedConfig` struct in `mod.rs` with re-exports
+- [x] Move git/security patterns to `git.rs` (dangerous commands, secrets, SSH blocking)
+- [x] Keep `SharedConfig` struct in `config.rs` with re-exports
 - [x] Ensure all `pub use` statements maintain API compatibility
 - [x] Move tests to appropriate submodules
+
+**Note**: templates.rs not needed - template logic is in `src/bootstrap/templates.rs` and `src/prompt/templates.rs`.
 
 **Test-First Requirements**:
 ```rust
@@ -219,36 +219,33 @@ cargo clippy --all-targets -- -D warnings
 cargo doc --no-deps 2>&1 | grep -i "warning.*config" && exit 1 || true
 ```
 
-### 2. Phase 22.2: Extract `analytics` Submodules
+### 2. Phase 22.2: Extract `analytics` Submodules ✅
 
-**Description**: Split `src/analytics.rs` (4,048 lines) into focused submodules.
+**Description**: Split `src/analytics/mod.rs` into focused submodules.
 
-**Target Structure**:
+**Current Structure**:
 ```
 src/analytics/
-├── mod.rs           # Re-exports, Analytics struct (~300 lines)
-├── events.rs        # Event types, EventBuilder (~800 lines)
-├── session.rs       # SessionMetrics, session tracking (~600 lines)
-├── trends.rs        # Trend analysis, pattern detection (~700 lines)
-├── storage.rs       # JSONL file I/O, tamper detection (~500 lines)
-└── reporting.rs     # Report generation, formatting (~500 lines)
+├── mod.rs           # Analytics struct, AnalyticsEvent, SessionSummary (2,643 lines)
+├── events.rs        # StructuredEvent, EventFilter, EventType (640 lines)
+├── session.rs       # AggregateStats, PredictorAccuracyStats (168 lines)
+├── trends.rs        # QualityMetricsSnapshot, QualityTrend, TrendDirection (692 lines)
+├── storage.rs       # AnalyticsUploadConfig, AnalyticsUploader, PrivacySettings (475 lines)
+├── reporting.rs     # GateStats, ReportFormat, SessionReport (514 lines)
+└── dashboard/       # Dashboard data aggregation
 ```
 
 **Requirements**:
-- [ ] Create `src/analytics/` directory structure
-- [ ] Move event types and builders to `events.rs`
-- [ ] Move session metrics to `session.rs`
-- [ ] Move trend analysis to `trends.rs`
-- [ ] Move JSONL storage to `storage.rs`
-- [ ] Move reporting to `reporting.rs`
-- [ ] Maintain all `pub use` for API compatibility
-- [ ] Move tests to appropriate submodules
+- [x] Create `src/analytics/` directory structure
+- [x] Move event types and builders to `events.rs`
+- [x] Move session metrics to `session.rs`
+- [x] Move trend analysis to `trends.rs`
+- [x] Move upload/privacy settings to `storage.rs`
+- [x] Move reporting to `reporting.rs`
+- [x] Maintain all `pub use` for API compatibility
+- [x] Move tests to appropriate submodules
 
-**Test-First Requirements**:
-```rust
-// Run BEFORE any changes to establish baseline:
-cargo test --lib analytics -- --nocapture > /tmp/analytics_tests_before.txt
-```
+**Note**: mod.rs still contains Analytics struct with JSONL I/O and core functionality. This is appropriate as it's the main coordinator.
 
 **Quality Gates**:
 ```bash
@@ -886,11 +883,11 @@ cargo deny check licenses
 - [x] Phase 21.5: Documentation & CLI Help
 
 ### Sprint 22: File Decomposition
-- [~] Phase 22.1: Extract `config` Submodules (resolution.rs + validation.rs done, git.rs + templates.rs pending)
-- [ ] Phase 22.2: Extract `analytics` Submodules
-- [ ] Phase 22.3: Extract `task_tracker` Submodules
+- [x] Phase 22.1: Extract `config` Submodules (resolution.rs, validation.rs, git.rs done)
+- [x] Phase 22.2: Extract `analytics` Submodules (events.rs, session.rs, trends.rs, storage.rs, reporting.rs done)
+- [ ] Phase 22.3: Extract `task_tracker` Submodules (selection.rs, orphan.rs, metrics.rs pending)
 - [ ] Phase 22.4: Extract `OutputParser` Trait
-- [ ] Phase 22.5: Extract `checkpoint` Submodules
+- [ ] Phase 22.5: Extract `checkpoint` Submodules (verification.rs, diff.rs, storage.rs, rollback.rs pending)
 
 ### Sprint 23: LLM Provider Abstraction
 - [x] Phase 23.1: LLM Client Trait Refinement
