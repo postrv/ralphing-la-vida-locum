@@ -27,25 +27,25 @@
 
 **Goal**: Add CLI commands for config validation, audit management, and verification.
 
-> ✅ **Completed**: 19.1 Config Validate, 19.2 Audit Show (see `docs/COMPLETED_SPRINTS.md`)
+> ✅ **Completed**: 19.1 Config Validate, 19.2 Audit Show, 19.3 Audit Verify (see `docs/COMPLETED_SPRINTS.md`)
 
-### 35. Phase 19.3: Audit Verify Command
+### ~~35. Phase 19.3: Audit Verify Command~~ ✅ Complete
 
 Add `ralph audit verify` command.
 
 **Test Requirements**:
-- [ ] Test verifies hash chain integrity
-- [ ] Test reports first corrupted entry
-- [ ] Test succeeds on valid log
-- [ ] Test fails on tampered log
-- [ ] Test outputs verification report
+- [x] Test verifies hash chain integrity
+- [x] Test reports first corrupted entry
+- [x] Test succeeds on valid log
+- [x] Test fails on tampered log
+- [x] Test outputs verification report
 
 **Implementation**:
-- [ ] Add verification to `AuditLogger::verify()`
-- [ ] Add `ralph audit verify` subcommand to CLI
-- [ ] Add `--repair` flag to truncate at corruption
-- [ ] Add JSON report output
-- [ ] Document in CLI help
+- [x] Add verification to `AuditLogger::verify()` (already existed)
+- [x] Add `ralph audit verify` subcommand to CLI
+- [x] Add `--repair` flag to truncate at corruption
+- [x] Add JSON report output
+- [x] Document in CLI help
 
 **Quality Gates**:
 ```bash

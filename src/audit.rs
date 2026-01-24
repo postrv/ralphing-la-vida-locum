@@ -180,6 +180,19 @@ impl VerificationResult {
     }
 }
 
+/// Result of repairing an audit log.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepairResult {
+    /// Whether any repair was performed.
+    pub repaired: bool,
+    /// Number of entries removed.
+    pub entries_removed: u64,
+    /// Number of valid entries kept.
+    pub valid_entries_kept: u64,
+    /// Path to the backup file (if backup was created).
+    pub backup_path: Option<String>,
+}
+
 /// The genesis hash used for the first entry in the audit log.
 const GENESIS_HASH: &str = "ralph-audit-genesis-v1";
 
@@ -605,6 +618,81 @@ impl AuditLogger {
         }
 
         Ok(())
+    }
+
+    /// Repair a corrupted audit log by truncating at the first invalid entry.
+    ///
+    /// This method verifies the audit log and, if corruption is found, creates a
+    /// backup of the original file and truncates the log at the first invalid entry.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `RepairResult` indicating whether repair was performed and details
+    /// about what was changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the audit log cannot be read, backed up, or written.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let logger = AuditLogger::new(project_dir)?;
+    /// let result = logger.repair()?;
+    /// if result.repaired {
+    ///     println!("Removed {} corrupted entries", result.entries_removed);
+    /// }
+    /// ```
+    pub fn repair(&self) -> Result<RepairResult> {
+        let verification = self.verify()?;
+
+        // If the log is valid, no repair needed
+        if verification.is_valid {
+            return Ok(RepairResult {
+                repaired: false,
+                entries_removed: 0,
+                valid_entries_kept: verification.entries_verified,
+                backup_path: None,
+            });
+        }
+
+        // Get the index of the first invalid entry
+        let first_invalid = verification
+            .first_invalid_entry
+            .context("Verification failed but no invalid entry index provided")?;
+
+        // Read all entries
+        let entries = self.read_entries()?;
+        let total_entries = entries.len() as u64;
+
+        // Create backup of the original file
+        let file_path = self.audit_file();
+        let backup_path = self.audit_dir().join(format!(
+            "audit_backup_{}.jsonl",
+            Utc::now().format("%Y%m%d_%H%M%S")
+        ));
+
+        if file_path.exists() {
+            fs::copy(&file_path, &backup_path).context("Failed to create backup")?;
+        }
+
+        // Keep only the valid entries (entries before first_invalid)
+        let valid_entries: Vec<_> = entries.into_iter().take(first_invalid as usize).collect();
+        let valid_count = valid_entries.len() as u64;
+
+        // Write the valid entries back
+        let mut file = File::create(&file_path).context("Failed to create new audit file")?;
+        for entry in &valid_entries {
+            let json = serde_json::to_string(entry).context("Failed to serialize entry")?;
+            writeln!(file, "{}", json).context("Failed to write entry")?;
+        }
+
+        Ok(RepairResult {
+            repaired: true,
+            entries_removed: total_entries - valid_count,
+            valid_entries_kept: valid_count,
+            backup_path: Some(backup_path.display().to_string()),
+        })
     }
 
     /// Get entries filtered by event type.
@@ -1665,5 +1753,189 @@ mod tests {
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.total_count, 2);
         assert!(!result.has_more);
+    }
+
+    // ========================================================================
+    // Tests for Audit Verify Command (Phase 19.3)
+    // ========================================================================
+
+    #[test]
+    fn test_audit_verify_reports_hash_chain_integrity() {
+        // Verify returns a report that includes the chain verification status
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Create a valid log with multiple entries
+        logger.log_command("session-1", "cargo build", 0, None).unwrap();
+        logger.log_command("session-1", "cargo test", 0, None).unwrap();
+        logger.log_gate_result("session-1", "clippy", true, None).unwrap();
+
+        let result = logger.verify().unwrap();
+
+        // Verification result should include chain integrity status
+        assert!(result.is_valid);
+        assert_eq!(result.entries_verified, 3);
+        assert!(result.first_invalid_entry.is_none());
+    }
+
+    #[test]
+    fn test_audit_verify_reports_first_corrupted_entry() {
+        // When log is corrupted, verify reports the first corrupted entry
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Create entries
+        logger.log_command("session-1", "cmd1", 0, None).unwrap();
+        logger.log_command("session-1", "cmd2", 0, None).unwrap();
+        logger.log_command("session-1", "cmd3", 0, None).unwrap();
+
+        // Tamper with the second entry
+        let file_path = temp_dir.path().join(".ralph/audit.jsonl");
+        let content = fs::read_to_string(&file_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        let mut entry: AuditEntry = serde_json::from_str(lines[1]).unwrap();
+        entry.previous_hash = "corrupted_hash_000000000000000000000000000000000000".to_string();
+        entry.hash = entry.compute_hash();
+        let tampered_line = serde_json::to_string(&entry).unwrap();
+
+        let new_content = format!("{}\n{}\n{}\n", lines[0], tampered_line, lines[2]);
+        fs::write(&file_path, new_content).unwrap();
+
+        let result = logger.verify().unwrap();
+
+        // Should report the first corrupted entry (entry 1, zero-indexed)
+        assert!(!result.is_valid);
+        assert_eq!(result.first_invalid_entry, Some(1));
+        assert!(result.error_description.is_some());
+    }
+
+    #[test]
+    fn test_audit_verify_succeeds_on_valid_log() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Create a valid log
+        logger.log_command("session-1", "cargo build", 0, None).unwrap();
+        logger.log_gate_result("session-1", "clippy", true, None).unwrap();
+        logger.log_commit("session-1", "abc123", "test commit", "dev@example.com").unwrap();
+
+        let result = logger.verify().unwrap();
+
+        assert!(result.is_valid);
+        assert_eq!(result.entries_verified, 3);
+    }
+
+    #[test]
+    fn test_audit_verify_fails_on_tampered_log() {
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        logger.log_command("session-1", "cargo test", 0, None).unwrap();
+
+        // Tamper with the log by modifying the file directly
+        let file_path = temp_dir.path().join(".ralph/audit.jsonl");
+        let content = fs::read_to_string(&file_path).unwrap();
+
+        let mut entry: AuditEntry = serde_json::from_str(content.trim()).unwrap();
+        entry.hash = "invalid_hash_000000000000000000000000000000000000000".to_string();
+        let tampered = serde_json::to_string(&entry).unwrap();
+        fs::write(&file_path, format!("{}\n", tampered)).unwrap();
+
+        let result = logger.verify().unwrap();
+
+        assert!(!result.is_valid);
+        assert!(result.error_description.unwrap().contains("hash verification failed"));
+    }
+
+    #[test]
+    fn test_audit_repair_truncates_at_corruption() {
+        // Repair should truncate the log at the first corrupted entry
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        // Create 5 valid entries
+        logger.log_command("session-1", "cmd0", 0, None).unwrap();
+        logger.log_command("session-1", "cmd1", 0, None).unwrap();
+        logger.log_command("session-1", "cmd2", 0, None).unwrap();
+        logger.log_command("session-1", "cmd3", 0, None).unwrap();
+        logger.log_command("session-1", "cmd4", 0, None).unwrap();
+
+        // Tamper with entry 2 (third entry)
+        let file_path = temp_dir.path().join(".ralph/audit.jsonl");
+        let content = fs::read_to_string(&file_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        let mut entry: AuditEntry = serde_json::from_str(lines[2]).unwrap();
+        entry.previous_hash = "corrupted_hash_000000000000000000000000000000000000".to_string();
+        entry.hash = entry.compute_hash();
+        let tampered_line = serde_json::to_string(&entry).unwrap();
+
+        let new_content = format!(
+            "{}\n{}\n{}\n{}\n{}\n",
+            lines[0], lines[1], tampered_line, lines[3], lines[4]
+        );
+        fs::write(&file_path, new_content).unwrap();
+
+        // Verify repair exists and returns information about the repair
+        let repair_result = logger.repair().unwrap();
+
+        // Repair should report it truncated at entry 2
+        assert!(repair_result.repaired);
+        assert_eq!(repair_result.entries_removed, 3);
+        assert_eq!(repair_result.valid_entries_kept, 2);
+
+        // After repair, verification should pass
+        let verify_result = logger.verify().unwrap();
+        assert!(verify_result.is_valid);
+        assert_eq!(verify_result.entries_verified, 2);
+    }
+
+    #[test]
+    fn test_audit_repair_no_op_on_valid_log() {
+        // Repair on a valid log should be a no-op
+        let temp_dir = TempDir::new().unwrap();
+        let logger = AuditLogger::new(temp_dir.path().to_path_buf()).unwrap();
+
+        logger.log_command("session-1", "cmd1", 0, None).unwrap();
+        logger.log_command("session-1", "cmd2", 0, None).unwrap();
+
+        let repair_result = logger.repair().unwrap();
+
+        // No repair needed
+        assert!(!repair_result.repaired);
+        assert_eq!(repair_result.entries_removed, 0);
+        assert_eq!(repair_result.valid_entries_kept, 2);
+    }
+
+    #[test]
+    fn test_audit_verification_result_serializable_to_json() {
+        // Verification result should be serializable for JSON output
+        let result = VerificationResult::valid(10);
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"is_valid\":true"));
+        assert!(json.contains("\"entries_verified\":10"));
+
+        let invalid = VerificationResult::invalid(5, 5, "hash mismatch");
+        let json = serde_json::to_string(&invalid).unwrap();
+        assert!(json.contains("\"is_valid\":false"));
+        assert!(json.contains("\"first_invalid_entry\":5"));
+        assert!(json.contains("hash mismatch"));
+    }
+
+    #[test]
+    fn test_audit_repair_result_serializable_to_json() {
+        // Repair result should be serializable for JSON output
+        let result = RepairResult {
+            repaired: true,
+            entries_removed: 3,
+            valid_entries_kept: 2,
+            backup_path: Some("/path/to/backup".to_string()),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"repaired\":true"));
+        assert!(json.contains("\"entries_removed\":3"));
+        assert!(json.contains("\"valid_entries_kept\":2"));
+        assert!(json.contains("backup"));
     }
 }

@@ -406,6 +406,17 @@ enum AuditAction {
         #[arg(long)]
         json: bool,
     },
+
+    /// Verify integrity of the audit log hash chain
+    Verify {
+        /// Repair corrupted log by truncating at first invalid entry (creates backup)
+        #[arg(long)]
+        repair: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[tokio::main]
@@ -1463,6 +1474,96 @@ async fn main() -> anyhow::Result<()> {
                             );
                         }
                         println!("{}", "─".repeat(100));
+                    }
+                }
+
+                AuditAction::Verify { repair, json } => {
+                    let logger = ralph::AuditLogger::new(project_path.clone())?;
+
+                    // First, verify the log
+                    let verify_result = logger.verify()?;
+
+                    // If repair requested and log is invalid, perform repair
+                    let repair_result = if repair && !verify_result.is_valid {
+                        Some(logger.repair()?)
+                    } else {
+                        None
+                    };
+
+                    if json {
+                        // JSON output
+                        let output = serde_json::json!({
+                            "verification": {
+                                "is_valid": verify_result.is_valid,
+                                "entries_verified": verify_result.entries_verified,
+                                "first_invalid_entry": verify_result.first_invalid_entry,
+                                "error_description": verify_result.error_description,
+                            },
+                            "repair": repair_result.as_ref().map(|r| serde_json::json!({
+                                "repaired": r.repaired,
+                                "entries_removed": r.entries_removed,
+                                "valid_entries_kept": r.valid_entries_kept,
+                                "backup_path": r.backup_path,
+                            })),
+                        });
+                        println!("{}", serde_json::to_string_pretty(&output)?);
+                    } else {
+                        // Human-readable output
+                        println!("\n{} Audit Log Verification", "Audit:".cyan().bold());
+                        println!("{}", "─".repeat(60));
+
+                        if verify_result.is_valid {
+                            println!(
+                                "   {} Hash chain integrity verified",
+                                "✓".green().bold()
+                            );
+                            println!(
+                                "   Entries verified: {}",
+                                verify_result.entries_verified
+                            );
+                        } else {
+                            println!(
+                                "   {} Hash chain integrity check failed",
+                                "✗".red().bold()
+                            );
+                            println!(
+                                "   Entries verified before corruption: {}",
+                                verify_result.first_invalid_entry.unwrap_or(0)
+                            );
+                            if let Some(ref err) = verify_result.error_description {
+                                println!("   Error: {}", err.red());
+                            }
+                        }
+
+                        // Show repair result if repair was performed
+                        if let Some(ref r) = repair_result {
+                            println!();
+                            println!("{}", "─".repeat(60));
+                            if r.repaired {
+                                println!(
+                                    "   {} Audit log repaired",
+                                    "✓".green().bold()
+                                );
+                                println!("   Entries removed: {}", r.entries_removed);
+                                println!("   Valid entries kept: {}", r.valid_entries_kept);
+                                if let Some(ref backup) = r.backup_path {
+                                    println!("   Backup saved to: {}", backup);
+                                }
+                            } else {
+                                println!("   No repair needed");
+                            }
+                        } else if !verify_result.is_valid && !repair {
+                            println!();
+                            println!(
+                                "   {} Use --repair to truncate at corruption point",
+                                "Tip:".yellow()
+                            );
+                        }
+                    }
+
+                    // Exit with error code if verification failed and no repair was done
+                    if !verify_result.is_valid && repair_result.is_none() {
+                        std::process::exit(1);
                     }
                 }
             }
