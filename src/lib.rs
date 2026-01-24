@@ -48,6 +48,7 @@ pub mod llm;
 pub mod narsil;
 pub mod prompt;
 pub mod quality;
+pub mod stagnation;
 pub mod testing;
 pub mod verify;
 
@@ -135,6 +136,12 @@ pub use verify::{
 
 // Re-export changes types
 pub use changes::ChangeDetector;
+
+// Re-export stagnation types
+pub use stagnation::{
+    PredictorStats, RiskLevel, RiskScore, RiskWeights, StatsPersistence, MIN_STATS_VERSION,
+    STATS_FILENAME, STATS_VERSION,
+};
 
 // TestFixture is only available in test builds
 #[cfg(test)]
