@@ -66,13 +66,13 @@ cargo clippy --all-targets -- -D warnings
 **Description**: Implement atomic file-based persistence with corruption protection.
 
 **Requirements**:
-- [ ] Create `src/session/persistence.rs` with `SessionPersistence` struct
-- [ ] Implement atomic write: write to `.ralph/session.json.tmp`, then rename (prevents corruption)
-- [ ] Implement `save(&self, state: &SessionState) -> Result<()>`
-- [ ] Implement `load(&self) -> Result<Option<SessionState>>` (returns None if no file or corrupted)
-- [ ] Add file locking to prevent concurrent Ralph instances corrupting state
-- [ ] Log warnings (not errors) for corrupted files, delete and continue
-- [ ] Write integration tests with tempdir
+- [x] Create `src/session/persistence.rs` with `SessionPersistence` struct
+- [x] Implement atomic write: write to `.ralph/session.json.tmp`, then rename (prevents corruption)
+- [x] Implement `save(&self, state: &SessionState) -> Result<()>`
+- [x] Implement `load(&self) -> Result<Option<SessionState>>` (returns None if no file or corrupted)
+- [x] Add file locking to prevent concurrent Ralph instances corrupting state
+- [x] Log warnings (not errors) for corrupted files, delete and continue
+- [x] Write integration tests with tempdir
 
 **Test-First Requirements**:
 ```rust
@@ -880,7 +880,7 @@ cargo deny check licenses
 
 ### Sprint 21: Session Persistence
 - [x] Phase 21.1: Session State Domain Model
-- [ ] Phase 21.2: Session Persistence Layer
+- [x] Phase 21.2: Session Persistence Layer
 - [ ] Phase 21.3: Signal Handler Integration
 - [ ] Phase 21.4: LoopManager Integration
 - [ ] Phase 21.5: Documentation & CLI Help

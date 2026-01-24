@@ -20,6 +20,15 @@
 //! Session state includes a version field to handle schema evolution:
 //! - Compatible versions can be loaded directly
 //! - Incompatible versions are rejected gracefully (fresh start)
+//!
+//! # Persistence
+//!
+//! The [`SessionPersistence`] struct provides atomic file-based storage:
+//! - Atomic writes prevent corruption on crash
+//! - File locking prevents concurrent Ralph instances
+//! - Corrupted files are handled gracefully (deleted with warning)
+
+pub mod persistence;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

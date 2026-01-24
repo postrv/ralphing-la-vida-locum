@@ -95,6 +95,10 @@ enum Commands {
         /// Use --no-incremental-gates to disable.
         #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
         incremental_gates: bool,
+
+        /// Start fresh, ignoring any existing session state.
+        #[arg(long)]
+        fresh: bool,
     },
 
     /// Build context for LLM analysis
@@ -484,7 +488,57 @@ async fn main() -> anyhow::Result<()> {
             parallel_gates,
             gate_timeout,
             incremental_gates,
+            fresh,
         } => {
+            // Session persistence (Phase 21.2 prep for Phase 21.4 integration)
+            let ralph_dir = project_path.join(".ralph");
+            let session_persistence = session::persistence::SessionPersistence::new(&ralph_dir);
+
+            // Handle --fresh flag by deleting existing session state
+            if fresh && session_persistence.exists() {
+                if let Err(e) = session_persistence.delete() {
+                    tracing::warn!("Failed to delete existing session: {}", e);
+                } else {
+                    tracing::info!("Deleted existing session state (--fresh mode)");
+                }
+            }
+
+            // Check for and load existing session state
+            if !fresh && session_persistence.exists() {
+                if let Ok(Some(previous_session)) = session_persistence.load() {
+                    tracing::info!(
+                        "Found previous session from {}, iteration {}",
+                        previous_session.saved_at(),
+                        previous_session.loop_state.as_ref().map_or(0, |s| s.iteration)
+                    );
+                }
+            }
+
+            // Initialize new session state for this run
+            let mut current_session = session::SessionState::new();
+            current_session.set_loop_state(r#loop::state::LoopState::new(mode));
+
+            // Save initial session state (demonstrates atomic write)
+            if let Err(e) = session_persistence.save(&current_session) {
+                tracing::warn!("Failed to save initial session state: {}", e);
+            }
+
+            // Log session file paths for debugging
+            tracing::debug!(
+                "Session: main={}, tmp={}",
+                session_persistence.session_file_path().display(),
+                session_persistence.tmp_file_path().display()
+            );
+
+            // Clean up any stale temporary files from interrupted saves
+            let tmp_path = session_persistence.tmp_file_path();
+            if tmp_path.exists() {
+                let _ = std::fs::remove_file(&tmp_path);
+            }
+
+            // Note: session_persistence.delete() is available for Phase 21.4's --fresh flag
+            // to explicitly clear session state when requested by the user
+
             // Load project configuration
             let mut config = ProjectConfig::load(&project_path).unwrap_or_default();
 
