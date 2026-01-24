@@ -134,7 +134,11 @@ impl ValidationReport {
             lines.push("  (no config files found)".to_string());
         } else {
             for source in &self.inheritance_chain.sources {
-                let status = if source.loaded { "\u{2713}" } else { "\u{2717}" };
+                let status = if source.loaded {
+                    "\u{2713}"
+                } else {
+                    "\u{2717}"
+                };
                 lines.push(format!(
                     "  {} [{}] {}",
                     status,

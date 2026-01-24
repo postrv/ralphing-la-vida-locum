@@ -2506,10 +2506,7 @@ impl LoopManager {
         persistence.save(&session)?;
         self.last_save_time = Some(Instant::now());
 
-        debug!(
-            "Session saved after iteration {}",
-            self.state.iteration
-        );
+        debug!("Session saved after iteration {}", self.state.iteration);
         Ok(true)
     }
 }

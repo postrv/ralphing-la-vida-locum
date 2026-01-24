@@ -134,9 +134,7 @@ impl DashboardData {
 
         // Get trend data (filtered by days if date range specified)
         let days = match &time_range {
-            TimeRange::DateRange { start, end } => {
-                Some((*end - *start).num_days() as u32)
-            }
+            TimeRange::DateRange { start, end } => Some((*end - *start).num_days() as u32),
             _ => None,
         };
         let trends = analytics.get_trend_data(days)?;
@@ -154,19 +152,17 @@ impl DashboardData {
     }
 
     /// Filter sessions by time range.
-    fn filter_sessions(sessions: Vec<SessionSummary>, time_range: &TimeRange) -> Vec<SessionSummary> {
+    fn filter_sessions(
+        sessions: Vec<SessionSummary>,
+        time_range: &TimeRange,
+    ) -> Vec<SessionSummary> {
         match time_range {
             TimeRange::All => sessions,
             TimeRange::LastNSessions(n) => sessions.into_iter().take(*n).collect(),
-            TimeRange::DateRange { start, end } => {
-                sessions
-                    .into_iter()
-                    .filter(|s| {
-                        s.started_at
-                            .is_some_and(|t| t >= *start && t <= *end)
-                    })
-                    .collect()
-            }
+            TimeRange::DateRange { start, end } => sessions
+                .into_iter()
+                .filter(|s| s.started_at.is_some_and(|t| t >= *start && t <= *end))
+                .collect(),
         }
     }
 
@@ -181,18 +177,14 @@ impl DashboardData {
 
         match time_range {
             TimeRange::All => events,
-            TimeRange::LastNSessions(_) => {
-                events
-                    .into_iter()
-                    .filter(|e| session_ids.contains(e.session_id.as_str()))
-                    .collect()
-            }
-            TimeRange::DateRange { start, end } => {
-                events
-                    .into_iter()
-                    .filter(|e| e.timestamp >= *start && e.timestamp <= *end)
-                    .collect()
-            }
+            TimeRange::LastNSessions(_) => events
+                .into_iter()
+                .filter(|e| session_ids.contains(e.session_id.as_str()))
+                .collect(),
+            TimeRange::DateRange { start, end } => events
+                .into_iter()
+                .filter(|e| e.timestamp >= *start && e.timestamp <= *end)
+                .collect(),
         }
     }
 
@@ -219,10 +211,7 @@ impl DashboardData {
             .count();
 
         // Calculate average session duration
-        let total_duration: i64 = sessions
-            .iter()
-            .filter_map(|s| s.duration_minutes)
-            .sum();
+        let total_duration: i64 = sessions.iter().filter_map(|s| s.duration_minutes).sum();
         let sessions_with_duration = sessions
             .iter()
             .filter(|s| s.duration_minutes.is_some())
@@ -319,11 +308,7 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "test-session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("test-session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         // When: Creating dashboard data from analytics
@@ -380,21 +365,14 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         // When: Filtering by date range that includes today
         let start = Utc::now() - chrono::Duration::hours(1);
         let end = Utc::now() + chrono::Duration::hours(1);
-        let dashboard = DashboardData::from_analytics(
-            &analytics,
-            TimeRange::DateRange { start, end },
-        )
-        .unwrap();
+        let dashboard =
+            DashboardData::from_analytics(&analytics, TimeRange::DateRange { start, end }).unwrap();
 
         // Then: Dashboard should contain the session
         assert_eq!(dashboard.session_count(), 1);
@@ -414,21 +392,14 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         // When: Filtering by date range in the past
         let start = Utc::now() - chrono::Duration::days(10);
         let end = Utc::now() - chrono::Duration::days(5);
-        let dashboard = DashboardData::from_analytics(
-            &analytics,
-            TimeRange::DateRange { start, end },
-        )
-        .unwrap();
+        let dashboard =
+            DashboardData::from_analytics(&analytics, TimeRange::DateRange { start, end }).unwrap();
 
         // Then: Dashboard should be empty (session is outside range)
         assert!(dashboard.is_empty());
@@ -457,11 +428,7 @@ mod tests {
                 .unwrap();
         }
         analytics
-            .log_event(
-                "session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         // Session 2: 2 iterations
@@ -482,11 +449,7 @@ mod tests {
                 .unwrap();
         }
         analytics
-            .log_event(
-                "session-2",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-2", "session_end", serde_json::json!({}))
             .unwrap();
 
         // When: Creating dashboard data
@@ -511,11 +474,7 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         // Failed session (has error)
@@ -534,11 +493,7 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "session-2",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-2", "session_end", serde_json::json!({}))
             .unwrap();
 
         // When: Creating dashboard data
@@ -562,11 +517,7 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         // When: Creating dashboard data
@@ -628,11 +579,7 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         let dashboard = DashboardData::from_analytics(&analytics, TimeRange::All).unwrap();
@@ -662,11 +609,7 @@ mod tests {
             )
             .unwrap();
         analytics
-            .log_event(
-                "session-1",
-                "session_end",
-                serde_json::json!({}),
-            )
+            .log_event("session-1", "session_end", serde_json::json!({}))
             .unwrap();
 
         // When: Creating dashboard data
@@ -674,7 +617,10 @@ mod tests {
 
         // Then: Dashboard should include trends (even if empty)
         // Trends are populated from quality metrics, not basic events
-        assert!(dashboard.trends.warning_count_points.is_empty() || !dashboard.trends.warning_count_points.is_empty());
+        assert!(
+            dashboard.trends.warning_count_points.is_empty()
+                || !dashboard.trends.warning_count_points.is_empty()
+        );
     }
 
     #[test]

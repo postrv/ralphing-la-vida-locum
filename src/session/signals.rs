@@ -138,7 +138,11 @@ impl SignalHandler {
     ///     .with_persistence(persistence, state);
     /// ```
     #[must_use]
-    pub fn with_persistence(mut self, persistence: SessionPersistence, state: SessionState) -> Self {
+    pub fn with_persistence(
+        mut self,
+        persistence: SessionPersistence,
+        state: SessionState,
+    ) -> Self {
         self.persistence = Some(Arc::new(persistence));
         self.session_state = Some(Arc::new(Mutex::new(state)));
         self
@@ -172,7 +176,9 @@ impl SignalHandler {
             return ShutdownResult::PersistenceDisabled;
         }
 
-        let (Some(ref persistence), Some(ref state_mutex)) = (&self.persistence, &self.session_state) else {
+        let (Some(ref persistence), Some(ref state_mutex)) =
+            (&self.persistence, &self.session_state)
+        else {
             warn!("Graceful shutdown: no state or persistence configured");
             return ShutdownResult::NoStateToSave;
         };
@@ -264,8 +270,8 @@ mod tests {
         let persistence = SessionPersistence::new(temp_dir.path().join(".ralph"));
         let state = SessionState::new();
 
-        let handler = SignalHandler::new(SignalHandlerConfig::default())
-            .with_persistence(persistence, state);
+        let handler =
+            SignalHandler::new(SignalHandlerConfig::default()).with_persistence(persistence, state);
 
         (handler, temp_dir)
     }
@@ -321,8 +327,8 @@ mod tests {
         state.set_loop_state(LoopState::new(LoopMode::Build));
         state.supervisor.mode_switch_count = 5;
 
-        let handler = SignalHandler::new(SignalHandlerConfig::default())
-            .with_persistence(persistence, state);
+        let handler =
+            SignalHandler::new(SignalHandlerConfig::default()).with_persistence(persistence, state);
 
         // Trigger shutdown
         let result = handler.shutdown().await;
@@ -332,7 +338,10 @@ mod tests {
 
         // Verify file was created
         let session_file = ralph_dir.join("session.json");
-        assert!(session_file.exists(), "Session file should exist after shutdown");
+        assert!(
+            session_file.exists(),
+            "Session file should exist after shutdown"
+        );
 
         // Verify contents are valid
         let contents = std::fs::read_to_string(&session_file).expect("read file");
@@ -359,7 +368,10 @@ mod tests {
 
         // Verify no file was created
         let session_file = ralph_dir.join("session.json");
-        assert!(!session_file.exists(), "Session file should not exist when persist=false");
+        assert!(
+            !session_file.exists(),
+            "Session file should not exist when persist=false"
+        );
     }
 
     #[tokio::test]
@@ -380,8 +392,8 @@ mod tests {
         let persistence = SessionPersistence::new(&ralph_dir);
         let state = SessionState::new();
 
-        let handler = SignalHandler::new(SignalHandlerConfig::default())
-            .with_persistence(persistence, state);
+        let handler =
+            SignalHandler::new(SignalHandlerConfig::default()).with_persistence(persistence, state);
 
         // Create directory and make it read-only to force save error
         std::fs::create_dir_all(&ralph_dir).expect("create dir");
@@ -399,7 +411,10 @@ mod tests {
     fn test_shutdown_result_variants() {
         // Verify all variants can be created and compared
         assert_eq!(ShutdownResult::StateSaved, ShutdownResult::StateSaved);
-        assert_eq!(ShutdownResult::PersistenceDisabled, ShutdownResult::PersistenceDisabled);
+        assert_eq!(
+            ShutdownResult::PersistenceDisabled,
+            ShutdownResult::PersistenceDisabled
+        );
         assert_eq!(ShutdownResult::NoStateToSave, ShutdownResult::NoStateToSave);
         assert_eq!(
             ShutdownResult::SaveFailed("test".to_string()),
@@ -407,7 +422,10 @@ mod tests {
         );
 
         // Different variants are not equal
-        assert_ne!(ShutdownResult::StateSaved, ShutdownResult::PersistenceDisabled);
+        assert_ne!(
+            ShutdownResult::StateSaved,
+            ShutdownResult::PersistenceDisabled
+        );
     }
 
     #[tokio::test]
@@ -422,14 +440,14 @@ mod tests {
 
         // Race against a short timeout - the wait should not complete
         // (no signal is sent), but it also should not panic
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(10),
-            shutdown_future,
-        )
-        .await;
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(10), shutdown_future).await;
 
         // We expect timeout since no signal was sent
-        assert!(result.is_err(), "wait_for_shutdown should timeout without a signal");
+        assert!(
+            result.is_err(),
+            "wait_for_shutdown should timeout without a signal"
+        );
     }
 
     // Note: Testing actual signal handling (SIGINT/SIGTERM) would require:

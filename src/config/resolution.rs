@@ -1291,7 +1291,10 @@ mod tests {
 
         // With Replace strategy, project permissions should completely override user
         assert_eq!(config.permissions.allow.len(), 1);
-        assert!(config.permissions.allow.contains(&"Bash(cargo *)".to_string()));
+        assert!(config
+            .permissions
+            .allow
+            .contains(&"Bash(cargo *)".to_string()));
     }
 
     #[test]
@@ -1323,8 +1326,14 @@ mod tests {
 
         // With Merge strategy, both permissions should be present
         assert_eq!(config.permissions.allow.len(), 2);
-        assert!(config.permissions.allow.contains(&"Bash(git *)".to_string()));
-        assert!(config.permissions.allow.contains(&"Bash(cargo *)".to_string()));
+        assert!(config
+            .permissions
+            .allow
+            .contains(&"Bash(git *)".to_string()));
+        assert!(config
+            .permissions
+            .allow
+            .contains(&"Bash(cargo *)".to_string()));
     }
 
     // ------------------------------------------------------------------------
@@ -1375,7 +1384,8 @@ mod tests {
 
     #[test]
     fn test_shared_config_error_url_not_supported() {
-        let err = SharedConfigError::url_not_supported("https://example.com/config.json".to_string());
+        let err =
+            SharedConfigError::url_not_supported("https://example.com/config.json".to_string());
 
         let display = format!("{}", err);
         assert!(display.contains("URL extends not yet supported"));
@@ -1446,7 +1456,10 @@ mod tests {
         let resolver = SharedConfigResolver::new(Path::new("/project"));
 
         assert_eq!(resolver.project_dir(), Path::new("/project"));
-        assert_eq!(resolver.max_depth(), SharedConfigResolver::DEFAULT_MAX_DEPTH);
+        assert_eq!(
+            resolver.max_depth(),
+            SharedConfigResolver::DEFAULT_MAX_DEPTH
+        );
     }
 
     #[test]
@@ -1462,10 +1475,7 @@ mod tests {
         let result = resolver.resolve_extends_path("config/base.json");
 
         assert!(result.is_ok());
-        assert_eq!(
-            result.unwrap(),
-            PathBuf::from("/project/config/base.json")
-        );
+        assert_eq!(result.unwrap(), PathBuf::from("/project/config/base.json"));
     }
 
     #[test]

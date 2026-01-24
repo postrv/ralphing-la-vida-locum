@@ -185,7 +185,13 @@ impl ChangeDetector {
     pub fn changed_in_working_tree(&self) -> Result<Vec<PathBuf>> {
         // Get staged changes (diff --cached)
         let staged_output = Command::new("git")
-            .args(["diff", "--name-status", "--diff-filter=ACDMR", "-M", "--cached"])
+            .args([
+                "diff",
+                "--name-status",
+                "--diff-filter=ACDMR",
+                "-M",
+                "--cached",
+            ])
             .current_dir(&self.repo_path)
             .output()
             .map_err(|e| RalphError::git("diff --cached", e.to_string()))?;
@@ -505,7 +511,9 @@ mod tests {
         let fixture = TestFixture::with_git_repo();
 
         // Modify an existing file
-        fixture.write_file("PROMPT_build.md", "# Modified content").unwrap();
+        fixture
+            .write_file("PROMPT_build.md", "# Modified content")
+            .unwrap();
 
         let detector = ChangeDetector::new(fixture.path());
         let changes = detector.changed_in_working_tree().unwrap();
@@ -570,7 +578,9 @@ mod tests {
 
         // Add files with different extensions
         fixture.write_file("code.rs", "fn main() {}").unwrap();
-        fixture.write_file("config.toml", "key = \"value\"").unwrap();
+        fixture
+            .write_file("config.toml", "key = \"value\"")
+            .unwrap();
         fixture.write_file("readme.md", "# Title").unwrap();
 
         let detector = ChangeDetector::new(fixture.path()).with_extensions(&["rs"]);
@@ -597,7 +607,9 @@ mod tests {
         let old_hash = fixture.get_commit_hash();
 
         // Make changes after the commit
-        fixture.write_file("new_after_commit.rs", "fn new() {}").unwrap();
+        fixture
+            .write_file("new_after_commit.rs", "fn new() {}")
+            .unwrap();
         fixture.make_commit("Add new file");
 
         let detector = ChangeDetector::new(fixture.path());
@@ -628,7 +640,11 @@ mod tests {
         let detector = ChangeDetector::new(fixture.path());
         let changes = detector.changed_in_working_tree().unwrap();
 
-        assert!(changes.is_empty(), "Should have no changes. Found: {:?}", changes);
+        assert!(
+            changes.is_empty(),
+            "Should have no changes. Found: {:?}",
+            changes
+        );
     }
 
     #[test]
@@ -636,7 +652,9 @@ mod tests {
         let fixture = TestFixture::with_git_repo();
 
         // Add a new file and stage it
-        fixture.write_file("staged_file.rs", "fn staged() {}").unwrap();
+        fixture
+            .write_file("staged_file.rs", "fn staged() {}")
+            .unwrap();
 
         std::process::Command::new("git")
             .args(["add", "staged_file.rs"])
@@ -659,7 +677,9 @@ mod tests {
         let fixture = TestFixture::with_git_repo();
 
         fixture.write_file("code.rs", "fn main() {}").unwrap();
-        fixture.write_file("config.toml", "key = \"value\"").unwrap();
+        fixture
+            .write_file("config.toml", "key = \"value\"")
+            .unwrap();
         fixture.write_file("readme.md", "# Title").unwrap();
 
         let detector = ChangeDetector::new(fixture.path()).with_extensions(&["rs", "toml"]);

@@ -58,9 +58,8 @@ impl SessionPersistence {
         fs::create_dir_all(&self.dir)?;
 
         let lock_file = File::create(self.lock_file_path())?;
-        FileExt::lock_exclusive(&lock_file).map_err(|e| {
-            RalphError::Internal(format!("Failed to acquire session lock: {e}"))
-        })?;
+        FileExt::lock_exclusive(&lock_file)
+            .map_err(|e| RalphError::Internal(format!("Failed to acquire session lock: {e}")))?;
 
         let tmp_path = self.tmp_file_path();
         let json = serde_json::to_string_pretty(state)?;
@@ -303,7 +302,9 @@ mod tests {
         let persistence2 = SessionPersistence::new(&persistence.dir);
 
         FileExt::unlock(&lock_file).expect("release lock");
-        persistence2.save(&state).expect("save after unlock should succeed");
+        persistence2
+            .save(&state)
+            .expect("save after unlock should succeed");
     }
 
     #[test]

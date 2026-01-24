@@ -4,8 +4,8 @@ pub mod resolution;
 pub mod validation;
 
 pub use resolution::{
-    ArrayMergeStrategy, ConfigLevel, ConfigLoader, ConfigLocations, ConfigSource,
-    ExtendableConfig, InheritanceChain, SharedConfigError, SharedConfigResolver,
+    ArrayMergeStrategy, ConfigLevel, ConfigLoader, ConfigLocations, ConfigSource, ExtendableConfig,
+    InheritanceChain, SharedConfigError, SharedConfigResolver,
 };
 pub use validation::{ConfigValidator, ValidationReport};
 
@@ -784,7 +784,6 @@ pub fn verify_git_environment() -> GitEnvironmentCheck {
 
     check
 }
-
 
 #[cfg(test)]
 mod tests {

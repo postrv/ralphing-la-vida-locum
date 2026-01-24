@@ -43,8 +43,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::r#loop::state::LoopState;
 use crate::r#loop::task_tracker::TaskTracker;
-use crate::supervisor::{HealthMetrics, SupervisorVerdict};
 use crate::supervisor::predictor::{PredictorConfig, RiskScore};
+use crate::supervisor::{HealthMetrics, SupervisorVerdict};
 
 /// Current schema version for session state.
 /// Increment when making breaking changes to the serialization format.
@@ -408,10 +408,7 @@ mod tests {
         // Verify all fields roundtrip correctly
         assert_eq!(restored.metadata.version, state.metadata.version);
         assert!(restored.loop_state.is_some());
-        assert_eq!(
-            restored.loop_state.as_ref().unwrap().mode,
-            LoopMode::Build
-        );
+        assert_eq!(restored.loop_state.as_ref().unwrap().mode, LoopMode::Build);
         assert!(restored.task_tracker.is_some());
         assert_eq!(restored.supervisor.mode_switch_count, 3);
         assert_eq!(
@@ -433,7 +430,9 @@ mod tests {
         assert!(!SessionState::is_compatible_version(0));
 
         // Future versions are not compatible (forward compatibility boundary)
-        assert!(!SessionState::is_compatible_version(SESSION_STATE_VERSION + 1));
+        assert!(!SessionState::is_compatible_version(
+            SESSION_STATE_VERSION + 1
+        ));
         assert!(!SessionState::is_compatible_version(100));
 
         // Test on actual state
@@ -560,7 +559,9 @@ mod tests {
         assert!(!snapshot_with_error.is_empty());
 
         let mut snapshot_with_history = SupervisorSnapshot::new();
-        snapshot_with_history.health_history.push(HealthMetrics::default());
+        snapshot_with_history
+            .health_history
+            .push(HealthMetrics::default());
         assert!(!snapshot_with_history.is_empty());
     }
 

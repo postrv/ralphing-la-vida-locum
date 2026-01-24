@@ -485,10 +485,7 @@ impl LlmClient for ClaudeClient {
         // Calculate cost based on model
         let (input_cost, output_cost) = self.cost_per_token();
         let cost_usd = if input_cost > 0.0 || output_cost > 0.0 {
-            Some(
-                (input_tokens as f64 * input_cost) +
-                (output_tokens as f64 * output_cost)
-            )
+            Some((input_tokens as f64 * input_cost) + (output_tokens as f64 * output_cost))
         } else {
             None
         };
@@ -718,8 +715,7 @@ impl LlmClient for MockLlmClient {
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::default()
-            .with_tool_use(self.tools_supported)
+        ProviderCapabilities::default().with_tool_use(self.tools_supported)
     }
 
     fn cost_per_token(&self) -> (f64, f64) {
@@ -1072,8 +1068,9 @@ impl LlmClient for OpenAiClient {
 
     async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
         // Delegate to run_prompt which will return the "not implemented" error
-        self.run_prompt(&request.prompt).await.map(|content| {
-            LlmResponse {
+        self.run_prompt(&request.prompt)
+            .await
+            .map(|content| LlmResponse {
                 content,
                 input_tokens: 0,
                 output_tokens: 0,
@@ -1081,8 +1078,7 @@ impl LlmClient for OpenAiClient {
                 cost_usd: None,
                 model: self.model.clone(),
                 stop_reason: StopReason::EndTurn,
-            }
-        })
+            })
     }
 
     async fn available(&self) -> bool {
@@ -1196,8 +1192,9 @@ impl LlmClient for GeminiClient {
 
     async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
         // Delegate to run_prompt which will return the "not implemented" error
-        self.run_prompt(&request.prompt).await.map(|content| {
-            LlmResponse {
+        self.run_prompt(&request.prompt)
+            .await
+            .map(|content| LlmResponse {
                 content,
                 input_tokens: 0,
                 output_tokens: 0,
@@ -1205,8 +1202,7 @@ impl LlmClient for GeminiClient {
                 cost_usd: None,
                 model: self.model_name().to_string(),
                 stop_reason: StopReason::EndTurn,
-            }
-        })
+            })
     }
 
     async fn available(&self) -> bool {
@@ -1333,8 +1329,9 @@ impl LlmClient for OllamaClient {
 
     async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
         // Delegate to run_prompt which will return the "not implemented" error
-        self.run_prompt(&request.prompt).await.map(|content| {
-            LlmResponse {
+        self.run_prompt(&request.prompt)
+            .await
+            .map(|content| LlmResponse {
                 content,
                 input_tokens: 0,
                 output_tokens: 0,
@@ -1342,8 +1339,7 @@ impl LlmClient for OllamaClient {
                 cost_usd: None,
                 model: self.model.clone(),
                 stop_reason: StopReason::EndTurn,
-            }
-        })
+            })
     }
 
     async fn available(&self) -> bool {
@@ -2261,8 +2257,14 @@ mod tests {
         // Token counts are estimated as chars/4
         // Input: "What is 2+2?" = 12 chars -> 3 tokens
         // Output: "The answer is 4" = 15 chars -> 3 tokens
-        assert!(response.input_tokens > 0, "Input tokens should be calculated");
-        assert!(response.output_tokens > 0, "Output tokens should be calculated");
+        assert!(
+            response.input_tokens > 0,
+            "Input tokens should be calculated"
+        );
+        assert!(
+            response.output_tokens > 0,
+            "Output tokens should be calculated"
+        );
     }
 
     /// Test LlmClient available() method.
