@@ -2001,13 +2001,23 @@ impl LoopManager {
                             if let Ok(mut report) = supervisor.generate_diagnostics(&self.analytics) {
                                 // Add predictor summary if we have a predictor
                                 let predictor_stats = predictor.export_stats();
+                                // Convert RiskBreakdown to Vec for the summary
+                                let factor_breakdown = vec![
+                                    ("commit_gap".to_string(), risk_breakdown.commit_gap_contribution),
+                                    ("file_churn".to_string(), risk_breakdown.file_churn_contribution),
+                                    ("error_repeat".to_string(), risk_breakdown.error_repeat_contribution),
+                                    ("test_stagnation".to_string(), risk_breakdown.test_stagnation_contribution),
+                                    ("mode_oscillation".to_string(), risk_breakdown.mode_oscillation_contribution),
+                                    ("warning_growth".to_string(), risk_breakdown.warning_growth_contribution),
+                                ];
+
                                 let predictor_summary = crate::supervisor::PredictorSummary {
                                     current_risk_level: predictor
                                         .config()
                                         .thresholds
                                         .classify(last_risk_score.unwrap_or(0.0)),
                                     risk_score: last_risk_score.unwrap_or(0.0),
-                                    factor_breakdown: Vec::new(),
+                                    factor_breakdown,
                                     total_predictions: predictor_stats.total_predictions(),
                                     accuracy_percent: predictor_stats.accuracy().map(|a| a * 100.0),
                                     recent_predictions: predictor.prediction_history()

@@ -241,6 +241,18 @@ enum Commands {
         #[arg(short, long, value_name = "FILE")]
         output: Option<PathBuf>,
     },
+
+    /// Show project status including predictor stats and session state
+    ///
+    /// Displays the current state of the automation including:
+    /// - Predictor statistics (accuracy, predictions by risk level)
+    /// - Current session state (if any)
+    /// - Recent commits
+    Status {
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1794,6 +1806,94 @@ async fn main() -> anyhow::Result<()> {
                 );
             } else {
                 println!("{}", output_content);
+            }
+        }
+
+        Commands::Status { json } => {
+            use ralph::stagnation::StatsPersistence;
+
+            // Load predictor stats
+            let stats_persistence = StatsPersistence::new(&project_path);
+            let predictor_stats = stats_persistence.load_or_default()?;
+
+            // Load session state if available
+            let ralph_dir = project_path.join(".ralph");
+            let session_persistence = session::persistence::SessionPersistence::new(&ralph_dir);
+            let session_state = session_persistence.load().ok().flatten();
+
+            // Get recent commits
+            let recent_commits: Vec<String> = std::process::Command::new("git")
+                .args(["log", "--oneline", "-5"])
+                .current_dir(&project_path)
+                .output()
+                .ok()
+                .map(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if json {
+                // JSON output
+                let output = serde_json::json!({
+                    "predictor": {
+                        "total_predictions": predictor_stats.total_predictions(),
+                        "correct_predictions": predictor_stats.correct_predictions(),
+                        "accuracy": predictor_stats.accuracy(),
+                        "last_updated": predictor_stats.last_updated(),
+                    },
+                    "session": session_state.as_ref().map(|s| serde_json::json!({
+                        "iteration": s.loop_state.as_ref().map(|l| l.iteration),
+                        "mode": s.loop_state.as_ref().map(|l| l.mode.to_string()),
+                        "stagnation_count": s.loop_state.as_ref().map(|l| l.stagnation_count),
+                    })),
+                    "recent_commits": recent_commits,
+                });
+                println!("{}", serde_json::to_string_pretty(&output)?);
+            } else {
+                // Human-readable output
+                println!("\n{} Project Status", "Ralph:".cyan().bold());
+                println!("{}", "─".repeat(60));
+
+                // Predictor stats section
+                println!("\n{}", "Predictor Statistics:".bold());
+                if predictor_stats.total_predictions() > 0 {
+                    println!("   {}", predictor_stats.summary());
+                    println!(
+                        "   Last updated: {}",
+                        predictor_stats.last_updated().format("%Y-%m-%d %H:%M:%S UTC")
+                    );
+                } else {
+                    println!("   No predictions recorded yet");
+                }
+
+                // Session state section
+                println!("\n{}", "Session State:".bold());
+                if let Some(ref state) = session_state {
+                    if let Some(ref loop_state) = state.loop_state {
+                        println!("   Iteration: {}", loop_state.iteration);
+                        println!("   Mode: {}", loop_state.mode);
+                        println!("   Stagnation count: {}", loop_state.stagnation_count);
+                    } else {
+                        println!("   No active loop state");
+                    }
+                } else {
+                    println!("   No session state found");
+                }
+
+                // Recent commits section
+                println!("\n{}", "Recent Commits:".bold());
+                if recent_commits.is_empty() {
+                    println!("   No commits found");
+                } else {
+                    for commit in &recent_commits {
+                        println!("   {}", commit);
+                    }
+                }
+
+                println!();
             }
         }
     }
