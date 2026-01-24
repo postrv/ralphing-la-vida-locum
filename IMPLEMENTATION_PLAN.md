@@ -11,178 +11,13 @@
 | Sprint | Focus | Effort | Status |
 |--------|-------|--------|--------|
 | 23 | LLM Provider Abstraction | 2-3 days | **Complete** |
-| 24 | Predictor Persistence & Diagnostics | 1-2 days | Pending |
-| 25 | Analytics Dashboard | 1-2 days | Pending |
+| 24 | Predictor Persistence & Diagnostics | 1-2 days | **Complete** |
+| 25 | Analytics Dashboard | 1-2 days | **Current** |
 | 26 | Incremental Execution Mode | 2-3 days | Pending |
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
 **Current Test Count**: 1,852 passing
-
----
-
-## Sprint 23: LLM Provider Abstraction
-
-**Goal**: Complete the LLM abstraction layer to support multiple providers with fallback.
-
-**Success Criteria**:
-- `--model` flag works for claude, openai, gemini, ollama
-- Automatic fallback on rate limit or timeout
-- Provider-specific prompt formatting handled transparently
-- Cost tracking per provider
-
-**Already Complete**:
-- [x] Phase 23.1: LLM Client Trait Refinement (`src/llm/mod.rs`)
-- [x] Phase 23.2: Claude Provider (`src/llm/claude.rs`)
-- [x] Phase 23.3: Ollama Provider (`src/llm/ollama.rs`)
-- [x] Phase 23.4: OpenAI Provider (`src/llm/openai.rs`)
-- [x] Phase 23.5: Provider Router & Fallback (`src/llm/router.rs`)
-- [x] Phase 23.6: Cost Tracking (`src/analytics/cost.rs`)
-
-### Phase 23.2: Claude Provider (Refactor Existing) ✅
-
-**Description**: Refactor existing Claude integration to implement the new trait.
-
-**Requirements**:
-- [x] Create `src/llm/claude.rs` implementing `LlmClient`
-- [x] Move existing Claude-specific code from scattered locations
-- [x] Implement proper error handling for API errors
-- [x] Add rate limit detection and backoff
-- [x] Support both `claude-sonnet-4-20250514` and `claude-opus-4-5-20251101`
-
-**Test-First**:
-```rust
-// - test_claude_provider_implements_llm_client ✅
-// - test_claude_rate_limit_detection ✅
-// - test_claude_model_selection ✅
-```
-
-### Phase 23.3: Ollama Provider ✅
-
-**Description**: Implement Ollama provider for local/free inference.
-
-**Requirements**:
-- [x] Create `src/llm/ollama.rs` implementing `LlmClient`
-- [x] Auto-detect Ollama availability via `ollama list`
-- [x] Support common models: llama3, codellama, mistral, deepseek-coder
-- [x] Handle connection errors gracefully (Ollama not running)
-- [ ] Implement streaming for long responses (future: HTTP API streaming)
-
-**Test-First**:
-```rust
-// - test_ollama_provider_implements_llm_client ✅
-// - test_ollama_availability_detection ✅
-// - test_ollama_graceful_degradation_when_unavailable ✅
-```
-
-### Phase 23.4: OpenAI Provider ✅
-
-**Description**: Implement OpenAI provider.
-
-**Requirements**:
-- [x] Create `src/llm/openai.rs` implementing `LlmClient`
-- [x] Support GPT-4o, GPT-4-turbo, and o1 models
-- [x] Handle API key from environment (`OPENAI_API_KEY`)
-- [x] Implement proper error handling for API errors
-- [x] Add rate limit detection and backoff
-
-**Test-First**:
-```rust
-// - test_openai_provider_implements_llm_client ✅
-// - test_openai_api_key_from_env ✅
-// - test_openai_rate_limit_detection ✅
-```
-
-### Phase 23.5: Provider Router & Fallback ✅
-
-**Description**: Implement provider selection and automatic fallback.
-
-**Requirements**:
-- [x] Create `src/llm/router.rs` with `ProviderRouter` struct
-- [ ] Implement `--model` CLI flag: `claude`, `openai`, `gemini`, `ollama`, `auto` (CLI integration pending)
-- [x] `auto` mode: try providers in order of preference until one succeeds
-- [x] Implement fallback on: rate limit, timeout, connection error
-- [x] Log provider switches: "Falling back from Claude to Ollama: rate limited"
-- [x] Add `--no-fallback` flag to disable automatic fallback (via FallbackConfig)
-
-**Test-First**:
-```rust
-// - test_provider_router_selects_requested_provider ✅
-// - test_provider_router_auto_mode_tries_in_order ✅
-// - test_provider_router_fallback_on_rate_limit ✅
-// - test_provider_router_no_fallback_flag ✅
-```
-
-### Phase 23.6: Cost Tracking ✅
-
-**Description**: Track LLM costs across providers.
-
-**Requirements**:
-- [x] Add `CostTracker` to analytics module
-- [x] Track tokens in/out per provider per session
-- [x] Calculate estimated cost based on provider pricing
-- [x] Add `ralph analytics costs` command to show cumulative costs
-- [x] Persist cost data in `.ralph/costs.json`
-
-**Test-First**:
-```rust
-// - test_cost_tracker_records_tokens ✅
-// - test_cost_tracker_calculates_cost_per_provider ✅
-// - test_cost_tracker_persistence ✅
-```
-
----
-
-## Sprint 24: Predictor Persistence & Diagnostics Enhancement
-
-**Goal**: Enable cross-session learning and faster human intervention.
-
-**Success Criteria**:
-- Predictor accuracy stats persist across sessions
-- Diagnostic reports include predictor breakdown
-- Accuracy improves over time via adaptive weighting (optional)
-
-**Already Complete**:
-- [x] Phase 24.1: Core persistence module (`src/stagnation/persistence.rs`)
-
-### Phase 24.1: Predictor Stats Integration (Remaining)
-
-**Description**: Integrate predictor stats persistence with StagnationPredictor.
-
-**Requirements**:
-- [ ] Load stats in `StagnationPredictor::new()`
-- [ ] Save stats after each prediction verification
-- [ ] Add stats summary to `ralph status` command
-
-### Phase 24.2: Enhanced Diagnostic Reports
-
-**Description**: Include predictor breakdown in supervisor diagnostic reports.
-
-**Requirements**:
-- [ ] Add `predictor_summary` field to `DiagnosticReport`
-- [ ] Include: current risk level, factor breakdown, recent predictions, accuracy stats
-- [ ] Add `preventive_actions_taken` field (what Ralph already tried)
-- [ ] Format predictor data in human-readable summary
-- [ ] Ensure diagnostic report is self-contained (no external lookups needed)
-
-**Test-First**:
-```rust
-// - test_diagnostic_report_includes_predictor_summary
-// - test_diagnostic_report_includes_preventive_actions
-// - test_diagnostic_report_human_readable_format
-```
-
-### Phase 24.3: Adaptive Weight Tuning (Optional)
-
-**Description**: Slowly adjust predictor weights based on recorded accuracy.
-
-**Requirements**:
-- [ ] Add `enable_adaptive_weights` config option (default: false)
-- [ ] Track which factors contributed to correct vs incorrect predictions
-- [ ] Implement simple weight adjustment: +0.1 for factors in correct predictions, -0.1 for incorrect
-- [ ] Clamp weights to [0.1, 2.0] range to prevent runaway
-- [ ] Add `ralph predictor tune` command to manually trigger tuning
-- [ ] Log weight changes
 
 ---
 
@@ -308,6 +143,29 @@
 - [ ] Add `--changed` flag as shorthand for `--changed-since HEAD~1`
 - [ ] Flags are mutually exclusive (error if both specified)
 - [ ] Log scope at start: "Running in incremental mode: 5 files changed since abc123"
+
+---
+
+## Optional: Phase 24.3 - Adaptive Weight Tuning
+
+**Description**: Slowly adjust predictor weights based on recorded accuracy.
+
+**Requirements**:
+- [ ] Add `enable_adaptive_weights` config option (default: false)
+- [ ] Track which factors contributed to correct vs incorrect predictions
+- [ ] Implement simple weight adjustment: +0.1 for factors in correct predictions, -0.1 for incorrect
+- [ ] Clamp weights to [0.1, 2.0] range to prevent runaway
+- [ ] Add `ralph predictor tune` command to manually trigger tuning
+- [ ] Log weight changes
+
+---
+
+## Pending CLI Integration
+
+These CLI flags were implemented in the library but need CLI wiring:
+
+- [ ] `--model` flag: `claude`, `openai`, `gemini`, `ollama`, `auto`
+- [ ] `--no-fallback` flag to disable automatic provider fallback
 
 ---
 
