@@ -897,3 +897,118 @@ edition = "2021"
         .stdout(predicate::str::contains("Available gates"))
         .stdout(predicate::str::contains("Clippy"));
 }
+
+// ============================================================
+// Analytics Dashboard Tests (Sprint 25, Phase 25.4)
+// ============================================================
+
+#[test]
+fn test_analytics_dashboard_generates_html() {
+    // Test: `ralph analytics dashboard` generates valid HTML dashboard
+    // Expected behavior: Generates HTML output with dashboard content
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("dashboard")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Dashboard written to"));
+}
+
+#[test]
+fn test_analytics_dashboard_creates_output_file() {
+    // Test: `ralph analytics dashboard --output <path>` creates the file
+    // Expected behavior: HTML file is created at specified path
+    let temp = TempDir::new().unwrap();
+    let output_file = temp.path().join("my-dashboard.html");
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("dashboard")
+        .arg("--output")
+        .arg(&output_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Dashboard written to"));
+
+    // Verify file was created and contains valid HTML
+    assert!(output_file.exists());
+    let content = std::fs::read_to_string(&output_file).unwrap();
+    assert!(content.contains("<!DOCTYPE html>"));
+    assert!(content.contains("Ralph Analytics Dashboard"));
+}
+
+#[test]
+fn test_analytics_dashboard_default_output_path() {
+    // Test: `ralph analytics dashboard` uses default output path
+    // Expected behavior: Creates .ralph/dashboard.html by default
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("dashboard")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(".ralph/dashboard.html"));
+
+    // Verify default file was created
+    assert!(temp.path().join(".ralph/dashboard.html").exists());
+}
+
+#[test]
+fn test_analytics_dashboard_with_sessions_filter() {
+    // Test: `ralph analytics dashboard --sessions 5` filters to last N sessions
+    // Expected behavior: Dashboard is generated with session filter applied
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("dashboard")
+        .arg("--sessions")
+        .arg("5")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Dashboard written to"));
+}
+
+#[test]
+fn test_analytics_dashboard_json_output() {
+    // Test: `ralph analytics dashboard --json` outputs raw dashboard data as JSON
+    // Expected behavior: JSON output instead of HTML file
+    let temp = TempDir::new().unwrap();
+
+    ralph()
+        .arg("--project")
+        .arg(temp.path())
+        .arg("analytics")
+        .arg("dashboard")
+        .arg("--json")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"summary\""))
+        .stdout(predicate::str::contains("\"sessions\""));
+}
+
+#[test]
+fn test_analytics_dashboard_help() {
+    // Test: `ralph analytics dashboard --help` shows usage information
+    // Expected behavior: Help text describes the dashboard command options
+    ralph()
+        .arg("analytics")
+        .arg("dashboard")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("dashboard"))
+        .stdout(predicate::str::contains("--output"))
+        .stdout(predicate::str::contains("--sessions"));
+}

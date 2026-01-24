@@ -378,6 +378,25 @@ enum AnalyticsAction {
         #[arg(short, long, default_value = "{}")]
         data: String,
     },
+
+    /// Generate HTML dashboard from analytics data
+    Dashboard {
+        /// Output file path (default: .ralph/dashboard.html)
+        #[arg(short, long)]
+        output: Option<std::path::PathBuf>,
+
+        /// Filter to last N sessions
+        #[arg(short, long)]
+        sessions: Option<usize>,
+
+        /// Output raw data as JSON instead of HTML
+        #[arg(long)]
+        json: bool,
+
+        /// Open dashboard in default browser after generating
+        #[arg(long)]
+        open: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1175,6 +1194,57 @@ async fn main() -> anyhow::Result<()> {
 
                     analytics.log_event(&session, &event, data)?;
                     println!("{} Event logged", "OK".green());
+                }
+
+                AnalyticsAction::Dashboard {
+                    output,
+                    sessions,
+                    json,
+                    open,
+                } => {
+                    use ralph::analytics::dashboard::{DashboardData, DashboardTemplate, TimeRange};
+
+                    // Determine time range filter
+                    let time_range = match sessions {
+                        Some(n) => TimeRange::LastNSessions(n),
+                        None => TimeRange::All,
+                    };
+
+                    // Aggregate dashboard data
+                    let dashboard = DashboardData::from_analytics(&analytics, time_range)?;
+
+                    if json {
+                        // Output raw JSON data
+                        println!("{}", serde_json::to_string_pretty(&dashboard)?);
+                    } else {
+                        // Generate HTML and write to file
+                        let template = DashboardTemplate::new(&dashboard);
+                        let html = template.render();
+
+                        // Determine output path (default: .ralph/dashboard.html)
+                        let output_path = output.unwrap_or_else(|| {
+                            project_path.join(".ralph/dashboard.html")
+                        });
+
+                        // Create parent directory if it doesn't exist
+                        if let Some(parent) = output_path.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+
+                        // Write HTML file
+                        std::fs::write(&output_path, &html)?;
+
+                        println!(
+                            "{} Dashboard written to: {}",
+                            "OK".green().bold(),
+                            output_path.display()
+                        );
+
+                        // Open in browser if requested
+                        if open {
+                            let _ = open_in_browser(&output_path);
+                        }
+                    }
                 }
             }
         }
@@ -2116,4 +2186,38 @@ fn format_verification_report_markdown(report: &ralph::VerificationReport) -> St
     }
 
     output
+}
+
+/// Open a file in the system's default browser.
+///
+/// Uses platform-specific commands:
+/// - macOS: `open`
+/// - Linux: `xdg-open`
+/// - Windows: `start`
+///
+/// Returns Ok(()) if the command was spawned successfully, Err otherwise.
+fn open_in_browser(path: &std::path::Path) -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(path)
+            .spawn()?;
+    }
+
+    Ok(())
 }
