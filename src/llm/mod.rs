@@ -292,7 +292,7 @@ pub trait LlmClient: Send + Sync {
     /// Run a prompt and return the model's response.
     ///
     /// This is the legacy method for simple prompt/response interactions.
-    /// For full control over parameters and response metadata, use [`complete`].
+    /// For full control over parameters and response metadata, use [`Self::complete`].
     ///
     /// # Arguments
     ///
