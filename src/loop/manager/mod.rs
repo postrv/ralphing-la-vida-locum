@@ -488,6 +488,29 @@ impl LoopDependencies {
     pub fn gate_names(&self) -> Vec<String> {
         self.gate_names.clone()
     }
+
+    /// Configure the Claude model to use for iterations.
+    ///
+    /// This replaces the default Claude process with one that uses the specified model.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_dir` - The project directory path.
+    /// * `model` - The model name (e.g., "opus", "sonnet", "haiku").
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let deps = LoopDependencies::real_polyglot(project_dir.clone())
+    ///     .with_model(project_dir, "sonnet".to_string());
+    /// ```
+    #[must_use]
+    pub fn with_model(self, project_dir: PathBuf, model: String) -> Self {
+        Self {
+            claude: Arc::new(RealClaudeProcess::with_model(project_dir, model)),
+            ..self
+        }
+    }
 }
 
 /// Configuration for creating a new `LoopManager`.
@@ -757,6 +780,17 @@ impl LoopManager {
                 LoopDependencies::real_with_quality_config(cfg.project_dir.clone(), quality_config)
             }
             None => LoopDependencies::real_polyglot(cfg.project_dir.clone()),
+        };
+
+        // Apply Claude variant from config if specified (Phase 23.5 CLI wiring)
+        // The variant is the Claude model (opus, sonnet, haiku), not the provider
+        let variant = cfg.config.llm.claude_variant().to_string();
+        let deps = if variant != "opus" {
+            // Only apply with_model for non-default variants
+            info!(variant = %variant, "Using configured Claude model variant");
+            deps.with_model(cfg.project_dir.clone(), variant)
+        } else {
+            deps
         };
 
         // Log detected quality gates for visibility

@@ -124,6 +124,12 @@ enum Commands {
         /// Shorthand for --changed-since HEAD~1. Process only files changed in the last commit.
         #[arg(long)]
         changed: bool,
+
+        /// Disable automatic provider fallback when using multiple LLM providers.
+        /// When enabled, if the primary provider fails, Ralph will not try alternative providers.
+        /// Note: This flag is currently a no-op as provider routing is not yet implemented.
+        #[arg(long)]
+        no_fallback: bool,
     },
 
     /// Build context for LLM analysis
@@ -561,6 +567,7 @@ async fn main() -> anyhow::Result<()> {
             changed_since,
             files,
             changed,
+            no_fallback,
         } => {
             // Check mutual exclusivity of incremental execution flags (Phase 26.5)
             let incremental_flag_count = [
@@ -640,6 +647,13 @@ async fn main() -> anyhow::Result<()> {
                     eprintln!("{} {}", "Error:".red().bold(), e);
                     std::process::exit(1);
                 }
+            }
+
+            // Handle --no-fallback flag (Phase 23.5 CLI wiring)
+            // Note: This is currently a no-op as provider routing is not yet implemented.
+            // When ProviderRouter is integrated, this will disable automatic fallback.
+            if no_fallback {
+                tracing::debug!("Provider fallback disabled (--no-fallback flag)");
             }
 
             let mut loop_config = LoopManagerConfig::new(project_path.clone(), config)

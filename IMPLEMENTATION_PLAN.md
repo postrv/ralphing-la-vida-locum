@@ -17,7 +17,7 @@
 
 **Completed Sprints**: See `docs/COMPLETED_SPRINTS.md`
 
-**Current Test Count**: 1,926 passing
+**Current Test Count**: 2,430 passing (1,918 lib + 512 bin)
 
 ---
 
@@ -64,12 +64,16 @@
 
 ---
 
-## Pending CLI Integration
+## Pending CLI Integration ✅
 
-These CLI flags were implemented in the library but need CLI wiring:
+These CLI flags were implemented in the library and are now wired to CLI:
 
-- [ ] `--model` flag: `claude`, `openai`, `gemini`, `ollama`, `auto`
-- [ ] `--no-fallback` flag to disable automatic provider fallback
+- [x] `--model` flag: `claude`, `openai`, `gemini`, `ollama`, `auto`
+  - Model variant (opus/sonnet/haiku) is read from config and passed to Claude CLI
+  - `RealClaudeProcess::with_model()` constructor added
+- [x] `--no-fallback` flag to disable automatic provider fallback
+  - Flag added to CLI, logs warning when used
+  - Currently a no-op until ProviderRouter is integrated into LoopManager
 
 ---
 

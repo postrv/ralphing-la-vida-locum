@@ -130,22 +130,65 @@ impl GitOperations for RealGitOperations {
 #[derive(Debug, Clone)]
 pub struct RealClaudeProcess {
     project_dir: PathBuf,
+    /// The model to use for Claude Code iterations.
+    model: String,
 }
 
 impl RealClaudeProcess {
+    /// Default model used when not explicitly specified.
+    pub const DEFAULT_MODEL: &'static str = "opus";
+
     /// Create a new Claude process instance for the given directory.
+    ///
+    /// Uses the default model ("opus").
     #[must_use]
     pub fn new(project_dir: PathBuf) -> Self {
-        Self { project_dir }
+        Self {
+            project_dir,
+            model: Self::DEFAULT_MODEL.to_string(),
+        }
+    }
+
+    /// Create a new Claude process instance with a specific model.
+    ///
+    /// # Arguments
+    ///
+    /// * `project_dir` - The directory to run Claude Code in.
+    /// * `model` - The model name (e.g., "opus", "sonnet", "haiku").
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use ralph::r#loop::operations::RealClaudeProcess;
+    ///
+    /// let claude = RealClaudeProcess::with_model(
+    ///     PathBuf::from("."),
+    ///     "sonnet".to_string()
+    /// );
+    /// ```
+    #[must_use]
+    pub fn with_model(project_dir: PathBuf, model: String) -> Self {
+        Self { project_dir, model }
+    }
+
+    /// Get the model being used for iterations.
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
     }
 }
 
 #[async_trait]
 impl ClaudeProcess for RealClaudeProcess {
     async fn run_iteration(&self, prompt: &str) -> Result<i32> {
-        let args = vec!["-p", "--dangerously-skip-permissions", "--model", "opus"];
+        let args = vec![
+            "-p",
+            "--dangerously-skip-permissions",
+            "--model",
+            &self.model,
+        ];
 
-        debug!("Running Claude Code iteration");
+        debug!(model = %self.model(), "Running Claude Code iteration");
 
         let mut child = AsyncCommand::new("claude")
             .args(&args)
@@ -775,6 +818,31 @@ mod tests {
         let claude = RealClaudeProcess::new(temp.path().to_path_buf());
         // Verify it's constructed (we don't actually run Claude in tests)
         assert_eq!(claude.project_dir, temp.path());
+    }
+
+    #[test]
+    fn test_real_claude_process_default_model() {
+        let temp = TempDir::new().unwrap();
+        let claude = RealClaudeProcess::new(temp.path().to_path_buf());
+        // Default model should be "opus"
+        assert_eq!(claude.model(), "opus");
+    }
+
+    #[test]
+    fn test_real_claude_process_with_model() {
+        let temp = TempDir::new().unwrap();
+        let claude = RealClaudeProcess::with_model(temp.path().to_path_buf(), "sonnet".to_string());
+        // Custom model should be used
+        assert_eq!(claude.model(), "sonnet");
+        assert_eq!(claude.project_dir, temp.path());
+    }
+
+    #[test]
+    fn test_real_claude_process_with_model_haiku() {
+        let temp = TempDir::new().unwrap();
+        let claude =
+            RealClaudeProcess::with_model(temp.path().to_path_buf(), "haiku".to_string());
+        assert_eq!(claude.model(), "haiku");
     }
 
     #[test]
