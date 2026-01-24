@@ -171,7 +171,9 @@ pub fn parse_colon_separated_line(line: &str, format: &LineFormat) -> Option<Gat
         } else {
             // Column wasn't a number, treat as part of message
             let msg = if parts.len() >= 4 {
-                format!("{}{}{}", parts[2], sep, parts[3]).trim().to_string()
+                format!("{}{}{}", parts[2], sep, parts[3])
+                    .trim()
+                    .to_string()
             } else {
                 parts[2].trim().to_string()
             };
@@ -276,7 +278,9 @@ fn looks_like_error_code(s: &str) -> bool {
     // - go-vet (word-word)
 
     let has_letter = s.chars().any(|c| c.is_alphabetic());
-    let has_digit_or_sep = s.chars().any(|c| c.is_ascii_digit() || c == ':' || c == '-');
+    let has_digit_or_sep = s
+        .chars()
+        .any(|c| c.is_ascii_digit() || c == ':' || c == '-');
 
     has_letter && has_digit_or_sep
 }
@@ -404,8 +408,7 @@ pub fn python_line_format() -> LineFormat {
 #[must_use]
 pub fn typescript_line_format() -> LineFormat {
     // Note: TSC uses different format, this is a simplified version
-    LineFormat::new(":")
-        .with_default_severity(IssueSeverity::Error)
+    LineFormat::new(":").with_default_severity(IssueSeverity::Error)
 }
 
 // ============================================================================
@@ -531,8 +534,7 @@ mod tests {
 
     #[test]
     fn test_extract_severity_warning() {
-        let (sev, msg) =
-            extract_severity_from_message("warning: be careful", IssueSeverity::Error);
+        let (sev, msg) = extract_severity_from_message("warning: be careful", IssueSeverity::Error);
         assert_eq!(sev, IssueSeverity::Warning);
         assert_eq!(msg, "be careful");
     }

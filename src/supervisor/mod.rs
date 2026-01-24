@@ -156,9 +156,10 @@ impl PredictorSummary {
     /// ```
     #[must_use]
     pub fn format_human_readable(&self) -> String {
-        let mut lines = vec![
-            format!("Risk Level: {:?} (score: {:.1})", self.current_risk_level, self.risk_score),
-        ];
+        let mut lines = vec![format!(
+            "Risk Level: {:?} (score: {:.1})",
+            self.current_risk_level, self.risk_score
+        )];
 
         if !self.factor_breakdown.is_empty() {
             lines.push("Factor Breakdown:".to_string());
@@ -176,7 +177,11 @@ impl PredictorSummary {
         if !self.recent_predictions.is_empty() {
             lines.push("Recent Predictions:".to_string());
             for (score, stagnated) in self.recent_predictions.iter().take(5) {
-                let outcome = if *stagnated { "stagnated" } else { "progressed" };
+                let outcome = if *stagnated {
+                    "stagnated"
+                } else {
+                    "progressed"
+                };
                 lines.push(format!("  - score={:.1}, {}", score, outcome));
             }
         }

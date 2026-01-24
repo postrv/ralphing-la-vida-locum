@@ -435,9 +435,8 @@ impl RateLimitTracker {
     /// Record a rate limit hit.
     pub fn record_rate_limit(&self, retry_after_secs: Option<u64>) {
         let multiplier = self.backoff_multiplier.fetch_add(1, Ordering::SeqCst);
-        let backoff_secs = retry_after_secs.unwrap_or_else(|| {
-            (self.base_backoff_secs * multiplier).min(self.max_backoff_secs)
-        });
+        let backoff_secs = retry_after_secs
+            .unwrap_or_else(|| (self.base_backoff_secs * multiplier).min(self.max_backoff_secs));
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -891,7 +890,10 @@ mod tests {
         let stderr = "Error: Context length exceeded. Maximum 200000 tokens.";
         let error = ClaudeApiError::from_stderr(stderr, 1);
 
-        assert!(matches!(error, ClaudeApiError::ContextLengthExceeded { .. }));
+        assert!(matches!(
+            error,
+            ClaudeApiError::ContextLengthExceeded { .. }
+        ));
         assert!(!error.is_retryable());
     }
 

@@ -173,7 +173,9 @@ impl OpenAiModel {
 
 /// Error for parsing [`OpenAiModel`] from a string.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Unknown OpenAI model: '{0}'. Valid options: gpt-4o, gpt-4o-mini, gpt-4-turbo, o1, o1-mini")]
+#[error(
+    "Unknown OpenAI model: '{0}'. Valid options: gpt-4o, gpt-4o-mini, gpt-4-turbo, o1, o1-mini"
+)]
 pub struct ParseOpenAiModelError(String);
 
 impl std::str::FromStr for OpenAiModel {
@@ -411,9 +413,8 @@ impl OpenAiRateLimitTracker {
     /// Record a rate limit hit.
     pub fn record_rate_limit(&self, retry_after_secs: Option<u64>) {
         let multiplier = self.backoff_multiplier.fetch_add(1, Ordering::SeqCst);
-        let backoff_secs = retry_after_secs.unwrap_or_else(|| {
-            (self.base_backoff_secs * multiplier).min(self.max_backoff_secs)
-        });
+        let backoff_secs = retry_after_secs
+            .unwrap_or_else(|| (self.base_backoff_secs * multiplier).min(self.max_backoff_secs));
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -678,10 +679,7 @@ impl OpenAiProvider {
         let (input_tokens, output_tokens) = response
             .usage
             .map(|u| (u.prompt_tokens, u.completion_tokens))
-            .unwrap_or((
-                (prompt.len() / 4) as u32,
-                (content.len() / 4) as u32,
-            ));
+            .unwrap_or(((prompt.len() / 4) as u32, (content.len() / 4) as u32));
 
         Ok((content, input_tokens, output_tokens))
     }
@@ -695,9 +693,10 @@ impl OpenAiProvider {
         api_key: &str,
         body: &ChatCompletionRequest,
     ) -> Result<ChatCompletionResponse, OpenAiApiError> {
-        let body_json = serde_json::to_string(body).map_err(|e| OpenAiApiError::InvalidRequest {
-            message: format!("Failed to serialize request: {}", e),
-        })?;
+        let body_json =
+            serde_json::to_string(body).map_err(|e| OpenAiApiError::InvalidRequest {
+                message: format!("Failed to serialize request: {}", e),
+            })?;
 
         // Use curl as a subprocess for HTTPS requests
         let output = tokio::process::Command::new("curl")
@@ -742,10 +741,7 @@ impl OpenAiProvider {
                     .get("message")
                     .and_then(|m| m.as_str())
                     .unwrap_or("Unknown error");
-                let error_type = error
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
+                let error_type = error.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
                 if error_type.contains("rate_limit") || message.contains("rate limit") {
                     let retry_after = OpenAiApiError::extract_retry_after(message).unwrap_or(60);
@@ -785,8 +781,7 @@ impl LlmClient for OpenAiProvider {
     async fn complete(&self, request: CompletionRequest) -> Result<LlmResponse> {
         let start = Instant::now();
 
-        let (content, input_tokens, output_tokens) =
-            self.execute_request(&request.prompt).await?;
+        let (content, input_tokens, output_tokens) = self.execute_request(&request.prompt).await?;
 
         let latency_ms = start.elapsed().as_millis() as u64;
 
@@ -970,7 +965,10 @@ mod tests {
         let body = "This model's maximum context length is 128000 tokens";
         let error = OpenAiApiError::from_response(400, body);
 
-        assert!(matches!(error, OpenAiApiError::ContextLengthExceeded { .. }));
+        assert!(matches!(
+            error,
+            OpenAiApiError::ContextLengthExceeded { .. }
+        ));
         assert!(!error.is_retryable());
     }
 

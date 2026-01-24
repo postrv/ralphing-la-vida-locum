@@ -2348,8 +2348,7 @@ mod tests {
 
     #[test]
     fn test_export_stats_includes_weights() {
-        let predictor =
-            StagnationPredictor::with_preset(WeightPreset::Conservative);
+        let predictor = StagnationPredictor::with_preset(WeightPreset::Conservative);
 
         let stats = predictor.export_stats();
 

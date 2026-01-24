@@ -350,7 +350,11 @@ impl OllamaProvider {
 
         let model_name = self.model.model_name();
 
-        debug!("Running Ollama {} ({} chars prompt)", model_name, prompt.len());
+        debug!(
+            "Running Ollama {} ({} chars prompt)",
+            model_name,
+            prompt.len()
+        );
 
         // Use ollama run command
         let mut child = AsyncCommand::new("ollama")
@@ -371,9 +375,12 @@ impl OllamaProvider {
                     message: format!("Failed to write prompt: {}", e),
                 }
             })?;
-            stdin.flush().await.map_err(|e| OllamaApiError::ConnectionError {
-                message: format!("Failed to flush stdin: {}", e),
-            })?;
+            stdin
+                .flush()
+                .await
+                .map_err(|e| OllamaApiError::ConnectionError {
+                    message: format!("Failed to flush stdin: {}", e),
+                })?;
             drop(stdin);
         }
 
@@ -503,7 +510,10 @@ mod tests {
         assert_eq!(OllamaModel::parse("codellama"), OllamaModel::CodeLlama);
         assert_eq!(OllamaModel::parse("code-llama"), OllamaModel::CodeLlama);
         assert_eq!(OllamaModel::parse("mistral"), OllamaModel::Mistral);
-        assert_eq!(OllamaModel::parse("deepseek-coder"), OllamaModel::DeepSeekCoder);
+        assert_eq!(
+            OllamaModel::parse("deepseek-coder"),
+            OllamaModel::DeepSeekCoder
+        );
     }
 
     #[test]
@@ -568,8 +578,7 @@ mod tests {
     /// Test that OllamaProvider can be used as a trait object.
     #[test]
     fn test_ollama_provider_as_trait_object() {
-        let provider: Box<dyn LlmClient> =
-            Box::new(OllamaProvider::new(OllamaModel::Llama3, None));
+        let provider: Box<dyn LlmClient> = Box::new(OllamaProvider::new(OllamaModel::Llama3, None));
         assert_eq!(provider.model_name(), "llama3");
     }
 

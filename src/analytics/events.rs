@@ -633,7 +633,8 @@ mod tests {
 
     #[test]
     fn test_event_filter_default_returns_all() {
-        let event = StructuredEvent::new("any-session", EventType::Stagnation, serde_json::json!({}));
+        let event =
+            StructuredEvent::new("any-session", EventType::Stagnation, serde_json::json!({}));
         let filter = EventFilter::new();
         assert!(filter.matches(&event));
     }

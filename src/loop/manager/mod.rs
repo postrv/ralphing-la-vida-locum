@@ -53,7 +53,6 @@ use crate::supervisor::predictor::{
     InterventionThresholds, PredictorConfig, PreventiveAction, RiskSignals, RiskWeights,
     StagnationPredictor, WeightPreset,
 };
-use ralph::stagnation::StatsPersistence;
 use crate::supervisor::{Supervisor, SupervisorVerdict};
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
@@ -65,6 +64,7 @@ use ralph::config::ProjectConfig;
 use ralph::prompt::{AssemblerConfig, AttemptOutcome, ErrorSeverity, PromptAssembler, TaskPhase};
 use ralph::quality::gates::detect_available_gates;
 use ralph::quality::EnforcerConfig;
+use ralph::stagnation::StatsPersistence;
 use ralph::testing::{ClaudeProcess, FileSystem, GitOperations, QualityChecker};
 use ralph::Analytics;
 use ralph::LanguageDetector;
@@ -1998,17 +1998,36 @@ impl LoopManager {
                                 reason
                             );
                             // Generate and save diagnostics before aborting
-                            if let Ok(mut report) = supervisor.generate_diagnostics(&self.analytics) {
+                            if let Ok(mut report) = supervisor.generate_diagnostics(&self.analytics)
+                            {
                                 // Add predictor summary if we have a predictor
                                 let predictor_stats = predictor.export_stats();
                                 // Convert RiskBreakdown to Vec for the summary
                                 let factor_breakdown = vec![
-                                    ("commit_gap".to_string(), risk_breakdown.commit_gap_contribution),
-                                    ("file_churn".to_string(), risk_breakdown.file_churn_contribution),
-                                    ("error_repeat".to_string(), risk_breakdown.error_repeat_contribution),
-                                    ("test_stagnation".to_string(), risk_breakdown.test_stagnation_contribution),
-                                    ("mode_oscillation".to_string(), risk_breakdown.mode_oscillation_contribution),
-                                    ("warning_growth".to_string(), risk_breakdown.warning_growth_contribution),
+                                    (
+                                        "commit_gap".to_string(),
+                                        risk_breakdown.commit_gap_contribution,
+                                    ),
+                                    (
+                                        "file_churn".to_string(),
+                                        risk_breakdown.file_churn_contribution,
+                                    ),
+                                    (
+                                        "error_repeat".to_string(),
+                                        risk_breakdown.error_repeat_contribution,
+                                    ),
+                                    (
+                                        "test_stagnation".to_string(),
+                                        risk_breakdown.test_stagnation_contribution,
+                                    ),
+                                    (
+                                        "mode_oscillation".to_string(),
+                                        risk_breakdown.mode_oscillation_contribution,
+                                    ),
+                                    (
+                                        "warning_growth".to_string(),
+                                        risk_breakdown.warning_growth_contribution,
+                                    ),
                                 ];
 
                                 let predictor_summary = crate::supervisor::PredictorSummary {
@@ -2020,7 +2039,8 @@ impl LoopManager {
                                     factor_breakdown,
                                     total_predictions: predictor_stats.total_predictions(),
                                     accuracy_percent: predictor_stats.accuracy().map(|a| a * 100.0),
-                                    recent_predictions: predictor.prediction_history()
+                                    recent_predictions: predictor
+                                        .prediction_history()
                                         .iter()
                                         .rev()
                                         .take(5)

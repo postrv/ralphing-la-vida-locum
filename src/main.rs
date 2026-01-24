@@ -1125,9 +1125,7 @@ async fn main() -> anyhow::Result<()> {
                             println!("\n   {} By Provider:", "─".repeat(20));
                             let mut providers: Vec<_> = tracker.all_providers().iter().collect();
                             providers.sort_by(|a, b| {
-                                b.1.total_cost_usd
-                                    .partial_cmp(&a.1.total_cost_usd)
-                                    .unwrap()
+                                b.1.total_cost_usd.partial_cmp(&a.1.total_cost_usd).unwrap()
                             });
 
                             for (name, cost) in providers {
@@ -1863,7 +1861,9 @@ async fn main() -> anyhow::Result<()> {
                     println!("   {}", predictor_stats.summary());
                     println!(
                         "   Last updated: {}",
-                        predictor_stats.last_updated().format("%Y-%m-%d %H:%M:%S UTC")
+                        predictor_stats
+                            .last_updated()
+                            .format("%Y-%m-%d %H:%M:%S UTC")
                     );
                 } else {
                     println!("   No predictions recorded yet");

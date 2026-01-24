@@ -178,7 +178,11 @@ pub enum RouterEvent {
     /// A provider was selected.
     ProviderSelected { name: String },
     /// Falling back to another provider.
-    FallingBack { from: String, to: String, reason: String },
+    FallingBack {
+        from: String,
+        to: String,
+        reason: String,
+    },
     /// All providers exhausted.
     AllProvidersExhausted { attempted: Vec<String> },
 }
@@ -396,12 +400,9 @@ impl ProviderRouter {
         }
 
         // All providers exhausted
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All providers exhausted")))
-            .context(format!(
-                "All {} providers failed: {:?}",
-                attempted.len(),
-                attempted
-            ))
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All providers exhausted"))).context(
+            format!("All {} providers failed: {:?}", attempted.len(), attempted),
+        )
     }
 }
 
@@ -465,12 +466,9 @@ impl LlmClient for ProviderRouter {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All providers exhausted")))
-            .context(format!(
-                "All {} providers failed: {:?}",
-                attempted.len(),
-                attempted
-            ))
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("All providers exhausted"))).context(
+            format!("All {} providers failed: {:?}", attempted.len(), attempted),
+        )
     }
 
     async fn available(&self) -> bool {
@@ -581,7 +579,8 @@ impl ProviderRouterBuilder {
     /// Add a provider to the router.
     #[must_use]
     pub fn add_provider(mut self, name: &str, provider: Box<dyn LlmClient>) -> Self {
-        self.providers.insert(name.to_lowercase(), Arc::from(provider));
+        self.providers
+            .insert(name.to_lowercase(), Arc::from(provider));
         self
     }
 
@@ -627,7 +626,10 @@ impl ProviderRouterBuilder {
     /// Panics if no providers have been added.
     #[must_use]
     pub fn build(self) -> ProviderRouter {
-        assert!(!self.providers.is_empty(), "At least one provider is required");
+        assert!(
+            !self.providers.is_empty(),
+            "At least one provider is required"
+        );
 
         // If no preference order, use providers in insertion order
         let preference_order = if self.preference_order.is_empty() {
@@ -660,9 +662,18 @@ mod tests {
 
     #[test]
     fn test_provider_selection_parse_str_auto() {
-        assert_eq!(ProviderSelection::parse_str("auto"), ProviderSelection::Auto);
-        assert_eq!(ProviderSelection::parse_str("AUTO"), ProviderSelection::Auto);
-        assert_eq!(ProviderSelection::parse_str("Auto"), ProviderSelection::Auto);
+        assert_eq!(
+            ProviderSelection::parse_str("auto"),
+            ProviderSelection::Auto
+        );
+        assert_eq!(
+            ProviderSelection::parse_str("AUTO"),
+            ProviderSelection::Auto
+        );
+        assert_eq!(
+            ProviderSelection::parse_str("Auto"),
+            ProviderSelection::Auto
+        );
     }
 
     #[test]
@@ -1022,7 +1033,8 @@ mod tests {
 
         assert_eq!(router.selection(), &ProviderSelection::Auto);
 
-        let explicit_router = router.with_selection(ProviderSelection::Explicit("mock".to_string()));
+        let explicit_router =
+            router.with_selection(ProviderSelection::Explicit("mock".to_string()));
         assert_eq!(
             explicit_router.selection(),
             &ProviderSelection::Explicit("mock".to_string())

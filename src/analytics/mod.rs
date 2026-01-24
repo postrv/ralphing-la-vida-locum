@@ -18,7 +18,9 @@ pub use events::{
 };
 pub use reporting::{GateStats, ReportFormat, SessionReport};
 pub use session::{AggregateStats, PredictorAccuracyStats};
-pub use storage::{AnalyticsUploadConfig, AnalyticsUploader, PrivacySettings, StubAnalyticsUploader};
+pub use storage::{
+    AnalyticsUploadConfig, AnalyticsUploader, PrivacySettings, StubAnalyticsUploader,
+};
 pub use trends::{
     calculate_trend_direction, QualityMetricsSnapshot, QualityTrend, TrendData, TrendDirection,
     TrendMetric, TrendPoint,
@@ -514,8 +516,7 @@ impl Analytics {
         };
 
         // Determine overall trend
-        let overall =
-            calculate_trend_direction(clippy_delta, test_failures_delta, security_delta);
+        let overall = calculate_trend_direction(clippy_delta, test_failures_delta, security_delta);
 
         Ok(QualityTrend {
             overall,

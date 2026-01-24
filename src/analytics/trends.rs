@@ -581,10 +581,7 @@ mod tests {
         );
 
         // Stable: weighted score near zero
-        assert_eq!(
-            calculate_trend_direction(0, 0, 0),
-            TrendDirection::Stable
-        );
+        assert_eq!(calculate_trend_direction(0, 0, 0), TrendDirection::Stable);
 
         // Security issues weighted heavily
         assert_eq!(
@@ -671,8 +668,16 @@ mod tests {
         trend_data.security_issue_points.push(TrendPoint::new(0));
 
         assert_eq!(trend_data.points_for_metric(TrendMetric::Warnings).len(), 1);
-        assert_eq!(trend_data.points_for_metric(TrendMetric::TestCount).len(), 1);
-        assert_eq!(trend_data.points_for_metric(TrendMetric::SecurityIssues).len(), 1);
+        assert_eq!(
+            trend_data.points_for_metric(TrendMetric::TestCount).len(),
+            1
+        );
+        assert_eq!(
+            trend_data
+                .points_for_metric(TrendMetric::SecurityIssues)
+                .len(),
+            1
+        );
         assert_eq!(trend_data.points_for_metric(TrendMetric::Commits).len(), 0);
     }
 
