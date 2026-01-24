@@ -96,12 +96,12 @@ cargo clippy --all-targets -- -D warnings
 **Description**: Save state on SIGTERM, SIGINT, and graceful shutdown.
 
 **Requirements**:
-- [ ] Create `src/session/signals.rs` with signal handling logic
-- [ ] Register handlers for SIGTERM and SIGINT (Unix) / CTRL_C_EVENT (Windows)
-- [ ] On signal: save session state, then exit gracefully
-- [ ] Add `--no-persist` CLI flag to disable persistence (for testing)
-- [ ] Ensure signal handler doesn't panic (catch and log errors)
-- [ ] Write tests using signal simulation where possible
+- [x] Create `src/session/signals.rs` with signal handling logic
+- [x] Register handlers for SIGTERM and SIGINT (Unix) / CTRL_C_EVENT (Windows)
+- [x] On signal: save session state, then exit gracefully
+- [x] Add `--no-persist` CLI flag to disable persistence (for testing)
+- [x] Ensure signal handler doesn't panic (catch and log errors)
+- [x] Write tests using signal simulation where possible
 
 **Test-First Requirements**:
 ```rust
@@ -881,7 +881,7 @@ cargo deny check licenses
 ### Sprint 21: Session Persistence
 - [x] Phase 21.1: Session State Domain Model
 - [x] Phase 21.2: Session Persistence Layer
-- [ ] Phase 21.3: Signal Handler Integration
+- [x] Phase 21.3: Signal Handler Integration
 - [ ] Phase 21.4: LoopManager Integration
 - [ ] Phase 21.5: Documentation & CLI Help
 
