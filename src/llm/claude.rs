@@ -7,7 +7,7 @@
 //! # Architecture
 //!
 //! The [`ClaudeProvider`] wraps the `claude` CLI tool to provide LLM capabilities.
-//! It extends the basic [`ClaudeClient`] with:
+//! It provides:
 //!
 //! - Structured error types for API errors
 //! - Rate limit detection with configurable backoff

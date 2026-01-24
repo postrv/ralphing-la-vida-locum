@@ -5,7 +5,7 @@
 //!
 //! # Architecture
 //!
-//! The [`CostTracker`] accumulates costs from [`LlmResponse`] objects
+//! The [`CostTracker`] accumulates costs from LLM response objects
 //! and persists them to `.ralph/costs.json` for cross-session tracking.
 //!
 //! # Example
@@ -257,7 +257,7 @@ impl CostTracker {
     ///
     /// # Panics
     ///
-    /// Panics if a session is already active. Call [`end_session`] first.
+    /// Panics if a session is already active. Call `end_session()` first.
     pub fn start_session(&mut self, session_id: impl Into<String>) {
         assert!(
             self.current_session.is_none(),
