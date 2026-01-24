@@ -31,10 +31,12 @@
 //! ```
 
 pub mod claude;
+pub mod ollama;
 
 pub use claude::{
     ClaudeApiError, ClaudeModel, ClaudeProvider, ParseClaudeModelError, RateLimitTracker,
 };
+pub use ollama::{OllamaApiError, OllamaModel, OllamaProvider};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -1440,15 +1442,15 @@ pub fn create_llm_client(config: &LlmConfig, project_dir: &Path) -> Result<Box<d
             Ok(Box::new(client))
         }
         "ollama" => {
-            // Return stub client - will error on run_prompt but allows testing
+            // Use the new OllamaProvider
             let model = config
                 .options
                 .get("model_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("llama3");
             let host = config.options.get("host").and_then(|v| v.as_str());
-            let client = OllamaClient::new(model, host);
-            Ok(Box::new(client))
+            let provider = OllamaProvider::from_model_name(model, host);
+            Ok(Box::new(provider))
         }
         other => {
             anyhow::bail!(
