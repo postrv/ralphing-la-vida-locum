@@ -79,7 +79,7 @@ regex = "1.11"
 
 # Plugin system
 toml = "0.8"
-libloading = "0.8"
+libloading = "0.9"
 dirs = "6.0"
 fs2 = "0.4.3"
 
