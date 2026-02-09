@@ -75,7 +75,7 @@ async-trait = "0.1"
 futures = "0.3"
 
 # Regex
-regex = "1.11"
+regex = "1.12"
 
 # Plugin system
 toml = "0.8"
